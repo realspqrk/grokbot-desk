@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "required": ["message"],
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "Short text shown in the card (plain text, newlines allowed)."
+    },
+    "copy": {
+      "type": "object",
+      "required": ["label", "text"],
+      "additionalProperties": false,
+      "description": "Optional value to copy; it is shown in full next to its button.",
+      "properties": {
+        "label": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Button label, e.g. \"IBAN kopieren\"."},
+        "text": {"type": "string", "minLength": 1, "maxLength": 5000, "description": "Exact string that lands on the clipboard."}
+      }
+    }
+  }
+}

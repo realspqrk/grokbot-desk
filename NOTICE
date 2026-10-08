@@ -1,0 +1,3 @@
+grokbot-desk includes vendored third-party material under vendor/.
+Its provenance and licensing are documented in vendor/README.md and the
+adjacent license files. Those materials remain under their respective terms.

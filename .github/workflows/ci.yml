@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows / Python ${{ matrix.python-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    runs-on: windows-latest
+    env:
+      RS_PLAYWRIGHT_CORE: ${{ github.workspace }}/node_modules/playwright-core/index.mjs
+      RS_PYTHON: python
+      RS_TOOL_PORT: "18920"
+      RS_E2E_PORT: "18921"
+      RS_BROWSER_CHANNEL: msedge
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install pytest
+          npm install --no-save playwright-core@1.58.1
+
+      - name: Python tests
+        run: python -m pytest -q
+      - name: Node tests
+        run: node --test tests_js/
+
+      - name: Source lint
+        run: python tools/lint_src.py
+
+  macos-experimental:
+    name: macOS experimental / Python ${{ matrix.python-version }}
+    # Advisory until native browser launch, clipboard, and platform tests land.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    runs-on: macos-latest
+    env:
+      RS_PLAYWRIGHT_CORE: ${{ github.workspace }}/node_modules/playwright-core/index.mjs
+      RS_PYTHON: python
+      RS_TOOL_PORT: "18920"
+      RS_E2E_PORT: "18921"
+      RS_BROWSER_CHANNEL: chrome
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install pytest
+          npm install --no-save playwright-core@1.58.1
+
+      - name: Python tests
+        run: python -m pytest -q
+
+      - name: Node tests
+        run: node --test tests_js/
+
+      - name: Source lint
+        run: python tools/lint_src.py

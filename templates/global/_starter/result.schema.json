@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["choice", "note"],
+  "additionalProperties": false,
+  "properties": {
+    "choice": {"enum": ["erledigt", "spaeter"], "description": "The option the user picked."},
+    "note": {"type": "string", "maxLength": 500, "description": "Free note, may be empty."}
+  }
+}

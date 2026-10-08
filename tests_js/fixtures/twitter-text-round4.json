@@ -1,0 +1,85 @@
+{
+  "source": "twitter-text 3.1.0 extractUrlsWithIndices and parseTweet weighting",
+  "cases": [
+    {
+      "name": "bare query without a path stays outside the URL",
+      "text": "example.com?abc",
+      "upstream_count": 27
+    },
+    {
+      "name": "bare query follows a path",
+      "text": "example.com/path?abc",
+      "upstream_count": 23
+    },
+    {
+      "name": "unmatched opening parenthesis ends the path",
+      "text": "http://example.com/a(b",
+      "upstream_count": 25
+    },
+    {
+      "name": "one balanced parenthesis level belongs to the path",
+      "text": "http://example.com/a(b)c",
+      "upstream_count": 23
+    },
+    {
+      "name": "two balanced parenthesis levels belong to the path",
+      "text": "http://example.com/a((b))c",
+      "upstream_count": 23
+    },
+    {
+      "name": "unmatched closing parentheses stay outside the path",
+      "text": "http://example.com/a(b)c))",
+      "upstream_count": 25
+    },
+    {
+      "name": "t.co slash without a slug remains a URL",
+      "text": "http://t.co/",
+      "upstream_count": 23
+    },
+    {
+      "name": "t.co shortcut consumes only its slug",
+      "text": "http://t.co/abc/def?x=1",
+      "upstream_count": 31
+    },
+    {
+      "name": "excluded bare candidate is consumed as a unit",
+      "text": "/日本語example.com",
+      "upstream_count": 18
+    },
+    {
+      "name": "excluded candidate also consumes its path and query",
+      "text": "/日本語example.com/path?abc",
+      "upstream_count": 27
+    },
+    {
+      "name": "wide candidate emits its final ASCII domain with path and query",
+      "text": "x日本語example.com/path?abc",
+      "upstream_count": 30
+    },
+    {
+      "name": "underscore-excluded query candidate is consumed as a unit",
+      "text": "_example.com?example.com",
+      "upstream_count": 24
+    },
+    {
+      "name": "invalid underscore domain does not hide a later CJK-delimited URL",
+      "text": "a_b.com/foo日本語example.com",
+      "upstream_count": 40
+    },
+    {
+      "name": "ZWJ candidate retains lightweight IDNA extraction semantics",
+      "text": "a‍b.com",
+      "upstream_count": 25
+    },
+    {
+      "name": "host-parser-invalid punycode follows upstream IDNA semantics",
+      "text": "http://xn--a.com",
+      "upstream_count": 23
+    },
+    {
+      "name": "mixed non-ASCII punycode remains invalid",
+      "text": "Hello http://xn--はじめよう.com/index.html",
+      "upstream_count": 42
+    }
+  ]
+}

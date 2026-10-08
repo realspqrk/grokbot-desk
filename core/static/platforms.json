@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "notes": [
+    "All counts run on the NFC-normalised text (String.prototype.normalize('NFC')).",
+    "code_points platforms (linkedin, linkedin_comment, instagram, facebook): count = number of Unicode code points. URLs and emoji count literally. These rules are assumptions (spec 11.1) until the template author verifies them against the real composers.",
+    "x (twitter-text v3): URL ranges are weighted first. In the remaining text, each emoji entity recognized by the pinned twemoji-parser 13.1.0 regex weighs emoji_weight (2). Invalid flag pairs, arbitrary ZWJ combinations, and selectors or joiners outside a recognized entity use the per-code-point rule. Every other code point weighs 1 in the configured inclusive ranges and default_weight (2) otherwise. Over = weighted count > limit.",
+    "URL rule (x only): extraction follows twitter-text 3.1.0 weighting needs. A scheme URL still requires a recognized domain. The pinned Apache-2.0 TLD table in twitter-text-v3-data.js includes gTLDs, ccTLDs, Unicode TLDs, and punycode. URL starts reject mention, hashtag, dollar, e-mail, filename, and adjacent-domain contexts. Paths and queries stop at twitter-text-compatible boundaries; balanced path parentheses stay in the URL, while unmatched punctuation and text after a t.co slug do not. Each extracted URL weighs url_weight (23).",
+    "Hashtags (instagram): a run of one or more '#' followed by a letter, mark, digit or '_' (\\p{L}\\p{M}\\p{N}_), where the run is not preceded by a letter, mark, digit, '_' or '&'. Each match is one hashtag ('##tag' counts once, 'a#b' and '# x' count zero). over = count > limit OR hashtags > hashtag_limit.",
+    "fold (linkedin 210, instagram 125) is a visual hint only: the preview draws a guide after that many code points. It never blocks anything.",
+    "linkedin_comment is the LinkedIn first comment (spec 4.7 first_comment, max 1250)."
+  ],
+  "platforms": {
+    "x": {
+      "name_key": "platform_x",
+      "unit": "weighted",
+      "limit": 280,
+      "default_weight": 2,
+      "ranges": [[0, 4351, 1], [8192, 8205, 1], [8208, 8223, 1], [8242, 8247, 1]],
+      "url_weight": 23,
+      "emoji_weight": 2
+    },
+    "linkedin": {
+      "name_key": "platform_linkedin",
+      "unit": "code_points",
+      "limit": 3000,
+      "fold": 210,
+      "first_comment_limit": 1250
+    },
+    "linkedin_comment": {
+      "name_key": "platform_linkedin_comment",
+      "unit": "code_points",
+      "limit": 1250
+    },
+    "instagram": {
+      "name_key": "platform_instagram",
+      "unit": "code_points",
+      "limit": 2200,
+      "fold": 125,
+      "hashtag_limit": 30
+    },
+    "facebook": {
+      "name_key": "platform_facebook",
+      "unit": "code_points",
+      "limit": 63206
+    }
+  }
+}

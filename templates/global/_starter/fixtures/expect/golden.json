@@ -1,0 +1,42 @@
+{
+  "copies": {
+    "starter-copy": "\\\\files.example.invalid\\backup\\2026-10-08\\nightly.log"
+  },
+  "counters": {},
+  "flow": [
+    {
+      "click": "rs-action-row button[value=\"erledigt\"]"
+    },
+    {
+      "fill": [
+        "#starter-note",
+        "Passt so"
+      ]
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "keyboard": [
+    {
+      "repeat": 4,
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "press": "Tab"
+    },
+    {
+      "type": "Passt so"
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "result": {
+    "choice": "erledigt",
+    "note": "Passt so"
+  }
+}

@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>report-shell · Kit</title>
+<!-- Dev-only kit preview (opened as a local file). Strings and platforms come from
+     out/kit-data.js, written by kit-preview.mjs from core/i18n/de.json and
+     core/static/platforms.json. Run `node tools/dev/kit-preview.mjs` once
+     before opening this file by hand. -->
+<link rel="stylesheet" href="../../core/static/tokens.css">
+<link rel="stylesheet" href="../../core/static/shell.css">
+<style>
+  body { height: auto; overflow: visible; }
+  .kit-frame { position: relative; width: 1500px; height: 1000px; overflow: hidden; border-bottom: 4px solid var(--rs-line-strong); }
+  .kit-frame .rs-app { height: 1000px; }
+  .kit-frame .rs-toasts { position: absolute; left: calc(var(--rs-rail-w) + (1500px - var(--rs-rail-w)) / 2); }
+  .kit-cols { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: var(--rs-sp-5); align-items: start; }
+  .kit-item-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rs-sp-2); margin-bottom: var(--rs-sp-2); }
+  .kit-item-head strong { font-weight: var(--rs-fw-bold); }
+  .kit-copies { display: flex; flex-direction: column; gap: var(--rs-sp-2); margin: var(--rs-sp-3) 0; }
+  .kit-decide { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--rs-sp-3); align-items: center; }
+  .kit-done { margin: 0; padding-left: var(--rs-sp-4); }
+  .kit-states { display: flex; flex-direction: column; gap: var(--rs-sp-3); }
+  .kit-posts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--rs-sp-4); align-items: start; }
+  .kit-posts rs-post-frame { --rs-pf-max: none; }
+  .kit-pcontrols { display: flex; flex-direction: column; gap: var(--rs-sp-2); margin-top: var(--rs-sp-2); }
+  .kit-note { margin-bottom: var(--rs-sp-4); }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ frame 1 == -->
+<section class="kit-frame" id="frame-office">
+  <div class="rs-app">
+    <header class="rs-header">
+      <div class="rs-header__brand" data-rs-t="app_name"></div>
+      <div class="rs-header__main">
+        <h1 class="rs-header__title">Proton Vorsortierung 08.10.</h1>
+        <p class="rs-header__meta"><span>Inbox Agent</span><span aria-hidden="true">·</span><span data-rs-t="created_at" data-rs-p='{"time":"Do 08.10.2026 · 10:39"}'></span></p>
+      </div>
+      <div class="rs-header__tools">
+        <button type="button" class="rs-btn rs-btn--quiet kit-theme" aria-pressed="false" data-rs-t="theme"></button>
+      </div>
+    </header>
+
+    <nav class="rs-rail" aria-labelledby="kit-rail-h">
+      <h2 class="rs-rail__heading" id="kit-rail-h" data-rs-t="rail_heading"></h2>
+      <ol class="rs-rail__list">
+        <li><button type="button" class="rs-rail__run" aria-current="true" data-state="open">
+          <span class="rs-rail__title">Proton Vorsortierung 08.10.</span>
+          <span class="rs-rail__meta">Inbox Agent · 10:39</span>
+          <span class="rs-rail__aside"><span class="rs-rail__key" data-rs-t="rail_shortcut" data-rs-p='{"n":1}'></span></span>
+        </button></li>
+        <li><button type="button" class="rs-rail__run" data-state="open">
+          <span class="rs-rail__title">Northwind Herbstkampagne</span>
+          <span class="rs-rail__meta">Social Agent · 10:52</span>
+          <span class="rs-rail__aside"><rs-badge variant="warn" data-rs-t="new"></rs-badge><span class="rs-rail__key" data-rs-t="rail_shortcut" data-rs-p='{"n":2}'></span></span>
+        </button></li>
+        <li><button type="button" class="rs-rail__run" data-state="open">
+          <span class="rs-rail__title">Rechnungsabgleich Oktober</span>
+          <span class="rs-rail__meta">Inbox Agent · 09:15</span>
+          <span class="rs-rail__aside"><span class="rs-rail__key" data-rs-t="rail_shortcut" data-rs-p='{"n":3}'></span></span>
+        </button></li>
+        <li><button type="button" class="rs-rail__run" data-state="submitted">
+          <span class="rs-rail__title">Wochenbericht Server</span>
+          <span class="rs-rail__meta">Operations Agent · Mi 07.10.</span>
+          <span class="rs-rail__aside"><rs-badge variant="ok" data-rs-t="run_state_submitted"></rs-badge></span>
+        </button></li>
+        <li><button type="button" class="rs-rail__run" data-state="expired">
+          <span class="rs-rail__title">PDF-Eingang</span>
+          <span class="rs-rail__meta">Inbox Agent · Di 06.10.</span>
+          <span class="rs-rail__aside"><rs-badge data-rs-t="run_state_expired"></rs-badge></span>
+        </button></li>
+      </ol>
+    </nav>
+
+    <main class="rs-main">
+      <div class="rs-mount">
+        <div class="kit-cols">
+          <div class="rs-stack">
+            <h2 class="rs-section-title" data-tone="warn" data-rs-t="section_todo" data-rs-p='{"n":3}'></h2>
+
+            <rs-card variant="warn">
+              <div class="kit-item-head">
+                <rs-badge variant="warn" data-rs-t="verb_pay"></rs-badge>
+                <strong>Northwind Energy</strong><span>Jahresabrechnung Strom 2026, Nachzahlung</span>
+                <rs-badge data-rs-t="due" data-rs-p='{"date":"15.10.2026"}'></rs-badge>
+              </div>
+              <div class="kit-copies">
+                <rs-copy id="copy-iban" label="IBAN kopieren" mono text="AT61 1904 3002 3457 3201"></rs-copy>
+                <rs-copy id="copy-amount" label="Betrag kopieren" mono text="184,20"></rs-copy>
+                <rs-copy id="copy-ref" label="Zweck kopieren" text="Kundennr. 4711-0815 · Rechnung 2026/10/0042"></rs-copy>
+              </div>
+              <div class="kit-decide">
+                <rs-action-row id="row-1" label="Entscheidung: Jahresabrechnung Strom 2026">
+                  <button value="erledigt" data-rs-t="choice_erledigt"></button>
+                  <button value="spaeter" data-rs-t="choice_spaeter"></button>
+                  <button value="ignorieren" data-rs-t="choice_ignorieren"></button>
+                </rs-action-row>
+                <input class="rs-input" aria-label="Notiz zu: Jahresabrechnung Strom 2026" data-rs-t-placeholder="note">
+              </div>
+            </rs-card>
+
+            <rs-card variant="warn">
+              <div class="kit-item-head">
+                <rs-badge variant="warn" data-rs-t="verb_reply"></rs-badge>
+                <strong>Northwind Accounting</strong><span>Rückfrage zu Belegen Q3</span>
+              </div>
+              <div class="kit-copies">
+                <rs-copy id="copy-draft" label="Antwort kopieren" max-lines="3" text="Guten Tag,&#10;&#10;anbei die fehlenden Belege für Juli bis September. Die Rechnung von Northwind Supplies (17.08.) reiche ich nach, sobald sie da ist.&#10;&#10;Viele Grüße&#10;Northwind Operations"></rs-copy>
+              </div>
+              <div class="kit-decide">
+                <rs-action-row id="row-2" label="Entscheidung: Rückfrage zu Belegen Q3" value="spaeter">
+                  <button value="erledigt" data-rs-t="choice_erledigt"></button>
+                  <button value="spaeter" data-rs-t="choice_spaeter"></button>
+                  <button value="ignorieren" data-rs-t="choice_ignorieren"></button>
+                </rs-action-row>
+                <input class="rs-input" aria-label="Notiz zu: Rückfrage zu Belegen Q3" value="Beleg 17.08. fehlt noch">
+              </div>
+            </rs-card>
+
+            <rs-card variant="warn">
+              <div class="kit-item-head">
+                <rs-badge variant="warn" data-rs-t="verb_unsub"></rs-badge>
+                <strong>Produkt-Newsletter</strong><span>3 Mails diese Woche, nie geöffnet</span>
+              </div>
+              <div class="kit-decide">
+                <rs-action-row id="row-3" label="Entscheidung: Produkt-Newsletter">
+                  <button value="ja" data-rs-t="choice_ja"></button>
+                  <button value="nein" data-rs-t="choice_nein"></button>
+                </rs-action-row>
+                <span class="rs-muted rs-small">Fokus (Tastatur) liegt auf „Ja“</span>
+              </div>
+            </rs-card>
+          </div>
+
+          <div class="rs-stack">
+            <rs-card variant="ok" id="card-done">
+              <ul class="kit-done">
+                <li>Paketbenachrichtigung Post archiviert</li>
+                <li>Northwind-Mobile-Rechnung Oktober abgelegt</li>
+              </ul>
+            </rs-card>
+            <rs-card id="card-feed">
+              <p class="rs-muted rs-small" data-rs-t="feed_count" data-rs-p='{"n":37}'></p>
+              <ul class="rs-chips"><li class="rs-chip">Handwerk</li><li class="rs-chip">Solar</li><li class="rs-chip">Technik</li><li class="rs-chip">Reisen</li></ul>
+            </rs-card>
+            <rs-card variant="quiet" heading="Zustände (Kit)">
+              <div class="kit-states">
+                <div class="rs-row">
+                  <rs-badge>neutral</rs-badge>
+                  <rs-badge variant="warn" data-rs-t="lint_em_dash"></rs-badge>
+                  <rs-badge variant="danger" data-rs-t="lint_ig_needs_image"></rs-badge>
+                  <rs-badge variant="ok" data-rs-t="run_state_submitted"></rs-badge>
+                </div>
+                <div class="rs-row">
+                  <rs-counter value="245" limit="280"></rs-counter>
+                  <rs-counter id="counter-over" value="301" limit="280"></rs-counter>
+                  <rs-counter value="31" limit="30" kind="hashtags"></rs-counter>
+                </div>
+                <div class="rs-row">
+                  <button type="button" class="rs-btn" data-rs-t="reveal"></button>
+                  <button type="button" class="rs-btn" disabled data-rs-t="approve"></button>
+                  <button type="button" class="rs-btn rs-btn--danger" data-rs-t="confirm"></button>
+                </div>
+                <label class="rs-check"><input type="checkbox" checked><span data-rs-t="approve_for" data-rs-p='{"platform":"LinkedIn"}'></span></label>
+              </div>
+            </rs-card>
+          </div>
+        </div>
+      </div>
+
+      <div class="rs-submitbar">
+        <p class="rs-submitbar__status" data-rs-t="items_open" data-rs-p='{"n":2,"total":3}'></p>
+        <button type="button" class="rs-btn rs-btn--secondary" data-rs-t="discard"></button>
+        <button type="button" class="rs-btn rs-btn--primary" aria-keyshortcuts="Control+Enter"><span data-rs-t="submit"></span><span class="rs-kbd" data-rs-t="submit_shortcut"></span></button>
+      </div>
+    </main>
+    <div class="rs-toasts" role="status" aria-live="polite"></div>
+  </div>
+</section>
+
+<!-- ============================================================ frame 2 == -->
+<section class="kit-frame" id="frame-social">
+  <div class="rs-app">
+    <header class="rs-header">
+      <div class="rs-header__brand" data-rs-t="app_name"></div>
+      <div class="rs-header__main">
+        <h1 class="rs-header__title">Northwind Herbstkampagne</h1>
+        <p class="rs-header__meta"><span>Social Agent</span><span aria-hidden="true">·</span><span data-rs-t="created_at" data-rs-p='{"time":"Do 08.10.2026 · 10:52"}'></span></p>
+      </div>
+      <div class="rs-header__tools">
+        <button type="button" class="rs-btn rs-btn--quiet kit-theme" aria-pressed="false" data-rs-t="theme"></button>
+      </div>
+    </header>
+    <nav class="rs-rail" aria-labelledby="kit-rail-h2">
+      <h2 class="rs-rail__heading" id="kit-rail-h2" data-rs-t="rail_heading"></h2>
+      <ol class="rs-rail__list">
+        <li><button type="button" class="rs-rail__run" data-state="open">
+          <span class="rs-rail__title">Proton Vorsortierung 08.10.</span>
+          <span class="rs-rail__meta">Inbox Agent · 10:39</span>
+          <span class="rs-rail__aside"><span class="rs-rail__key" data-rs-t="rail_shortcut" data-rs-p='{"n":1}'></span></span>
+        </button></li>
+        <li><button type="button" class="rs-rail__run" aria-current="true" data-state="open">
+          <span class="rs-rail__title">Northwind Herbstkampagne</span>
+          <span class="rs-rail__meta">Social Agent · 10:52</span>
+          <span class="rs-rail__aside"><span class="rs-rail__key" data-rs-t="rail_shortcut" data-rs-p='{"n":2}'></span></span>
+        </button></li>
+      </ol>
+    </nav>
+    <main class="rs-main">
+      <div class="rs-mount">
+        <rs-card class="kit-note" variant="quiet">
+          <p><strong data-rs-t="bot_note"></strong>: Herbst-Post zur Einwinterung. Instagram-Bild fehlt noch, X ist zu lang.</p>
+        </rs-card>
+        <div class="kit-posts">
+          <div>
+            <rs-post-frame skin="x" ratio="16:9" id="pf-x">
+              <span slot="name">Northwind</span>
+              <span slot="handle">@northwind_demo</span>
+              <div slot="text"></div>
+              <img slot="image" alt="Bienenstöcke im Herbstlicht" data-kit-img="hives">
+            </rs-post-frame>
+            <div class="kit-pcontrols">
+              <div class="rs-row"><rs-counter platform="x" data-kit-text="x"></rs-counter></div>
+              <rs-copy id="copy-x" no-value data-kit-copy="x"></rs-copy>
+            </div>
+          </div>
+          <div>
+            <rs-post-frame skin="linkedin" id="pf-li">
+              <img slot="avatar" alt="" data-kit-img="avatar">
+              <span slot="name">Northwind Team</span>
+              <span slot="headline">Unternehmen · Northwind</span>
+              <div slot="text"></div>
+              <span slot="link-domain">example.invalid</span>
+              <span slot="link-title">Einwintern: So kommen Bienen gut durch den Winter</span>
+            </rs-post-frame>
+            <div class="kit-pcontrols">
+              <div class="rs-row"><rs-counter platform="linkedin" data-kit-text="linkedin"></rs-counter><rs-badge variant="warn" data-rs-t="lint_em_dash"></rs-badge></div>
+              <rs-copy id="copy-li" no-value data-kit-copy="linkedin"></rs-copy>
+            </div>
+          </div>
+          <div>
+            <rs-post-frame skin="instagram" ratio="1:1" id="pf-ig">
+              <span slot="name">Northwind</span>
+              <span slot="handle">northwind_demo</span>
+              <div slot="text"></div>
+            </rs-post-frame>
+            <div class="kit-pcontrols">
+              <div class="rs-row"><rs-counter platform="instagram" data-kit-text="instagram"></rs-counter><rs-counter platform="instagram" kind="hashtags" data-kit-text="instagram"></rs-counter></div>
+              <div class="rs-row"><rs-badge variant="danger" data-rs-t="lint_ig_needs_image"></rs-badge></div>
+            </div>
+          </div>
+          <div>
+            <rs-post-frame skin="facebook" ratio="1.91:1" id="pf-fb">
+              <span slot="name">Northwind</span>
+              <div slot="text"></div>
+              <img slot="image" alt="Bienenstöcke im Herbstlicht" data-kit-img="hives">
+              <span slot="link-domain">example.invalid</span>
+              <span slot="link-title">Einwintern: So kommen Bienen gut durch den Winter</span>
+            </rs-post-frame>
+            <div class="kit-pcontrols">
+              <div class="rs-row"><rs-counter platform="facebook" data-kit-text="facebook"></rs-counter><rs-badge variant="warn" data-rs-t="lint_registered"></rs-badge></div>
+              <rs-copy id="copy-fb-tags" data-kit-copy="hashtags"></rs-copy>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="rs-submitbar">
+        <label class="rs-check"><input type="checkbox" checked><span data-rs-t="approve_for" data-rs-p='{"platform":"LinkedIn"}'></span></label>
+        <label class="rs-check"><input type="checkbox" disabled><span data-rs-t="approve_for" data-rs-p='{"platform":"X"}'></span></label>
+        <p class="rs-submitbar__status" data-tone="danger" data-rs-t="over_limit_blocks"></p>
+        <button type="button" class="rs-btn rs-btn--secondary" data-rs-t="request_changes"></button>
+        <button type="button" class="rs-btn rs-btn--primary" data-rs-t="approve"></button>
+      </div>
+    </main>
+    <div class="rs-toasts" role="status" aria-live="polite"></div>
+  </div>
+</section>
+
+<rs-confirm id="kit-confirm"></rs-confirm>
+
+<script src="out/kit-data.js"></script>
+<script src="../../core/static/twitter-text-v3-data.js"></script>
+<script src="../../core/static/count.js"></script>
+<script>
+/* Stub RS (the real one is core/static/rs.js, next step). */
+(function () {
+  var data = window.RS_KIT_DATA || { strings: {}, platforms: null };
+  if (data.platforms) RS_COUNT.setPlatforms(data.platforms);
+  var missing = [];
+  window.KIT = { missing: missing, nextCopy: 'ok', copies: [] };
+  function t(key, params) {
+    var s = data.strings[key];
+    if (s === undefined) { missing.push(key); return key; }
+    return s.replace(/\{([a-z0-9_]+)\}/g, function (m, k) {
+      return params && Object.prototype.hasOwnProperty.call(params, k) ? String(params[k]) : m;
+    });
+  }
+  window.RS = {
+    t: t,
+    count: function (text, platform) { return RS_COUNT.count(text, platform); },
+    copy: function (text) {
+      KIT.copies.push(text);
+      var mode = KIT.nextCopy; KIT.nextCopy = 'ok';
+      if (mode === 'busy') return Promise.resolve({ ok: false, busy: true });
+      if (mode === 'fail') return Promise.resolve({ ok: false });
+      return Promise.resolve({ ok: true });
+    },
+    toast: function (text) {
+      var host = (document.activeElement && document.activeElement.closest('.rs-app')) || document.querySelector('.rs-app');
+      var region = host.querySelector('.rs-toasts');
+      var el = document.createElement('div');
+      el.className = 'rs-toast';
+      el.textContent = text;
+      region.appendChild(el);
+      setTimeout(function () { el.remove(); }, 2500);
+    },
+    media: function (id) { return (KIT.media || {})[id] || ''; },
+    reveal: function () { return Promise.resolve({ ok: true }); }
+  };
+  document.querySelectorAll('[data-rs-t]').forEach(function (el) {
+    var p = el.getAttribute('data-rs-p');
+    el.textContent = t(el.getAttribute('data-rs-t'), p ? JSON.parse(p) : undefined);
+  });
+  document.querySelectorAll('[data-rs-t-placeholder]').forEach(function (el) {
+    el.placeholder = t(el.getAttribute('data-rs-t-placeholder'));
+  });
+  document.querySelectorAll('.kit-theme').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var root = document.documentElement;
+      var dark = root.getAttribute('data-theme') === 'dark' ||
+        (!root.hasAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'light' : 'dark');
+    });
+  });
+})();
+</script>
+<script src="../../core/static/components.js"></script>
+<script>
+/* Kit content: composed post texts (spec 4.7) and generated images. */
+(function () {
+  var tags = ['Imkerei', 'Bienen', 'Herbst'];
+  var base = 'Die Bienen sind eingewintert 🐝🍂 Varroa-Behandlung erledigt, Futter ist drin, jetzt heißt es warten. ' +
+    'Wer wissen will, wie wir das bei 12 Völkern machen: example.invalid/einwintern';
+  var variants = {
+    x: base + ' Und ja, im Frühling gibt es wieder Honig aus dem Weinviertel, versprochen. 🍯 Wer vorbestellen will, schreibt uns einfach eine Nachricht.',
+    linkedin: 'Einwintern ist Projektarbeit — nur mit 600.000 Stakeholdern pro Volk. ' + base + '\n\nDrei Dinge, die ich heuer anders mache: früher füttern, Mäusegitter vor dem ersten Frost, und ein Stockwaage-Sensor pro Stand.',
+    instagram: base + '\n\nWas ist eure wichtigste Herbst-Routine? 👇',
+    facebook: 'Herbst am Bienenstand! ' + base + ' Unser Honig® ist ab Frühling wieder erhältlich.'
+  };
+  var tagLine = tags.map(function (h) { return '#' + h; }).join(' ');
+  var composed = {};
+  Object.keys(variants).forEach(function (p) { composed[p] = variants[p] + '\n\n' + tagLine; });
+  composed.hashtags = tagLine;
+
+  function token(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function img(kind) {
+    var c = document.createElement('canvas');
+    c.width = kind === 'avatar' ? 96 : 960; c.height = kind === 'avatar' ? 96 : 540;
+    var g = c.getContext('2d');
+    var sky = g.createLinearGradient(0, 0, 0, c.height);
+    sky.addColorStop(0, token('--rs-ig-grad-1')); sky.addColorStop(1, token('--rs-ig-grad-2'));
+    g.fillStyle = sky; g.fillRect(0, 0, c.width, c.height);
+    if (kind === 'avatar') {
+      g.fillStyle = token('--rs-warn'); g.beginPath(); g.arc(48, 40, 18, 0, 7); g.fill();
+      g.beginPath(); g.ellipse(48, 96, 34, 30, 0, 0, 7); g.fill();
+      return c.toDataURL();
+    }
+    g.fillStyle = token('--rs-ig-grad-1'); g.beginPath(); g.arc(720, 150, 70, 0, 7); g.fill();
+    g.fillStyle = token('--rs-ok'); g.beginPath(); g.moveTo(0, 380);
+    g.quadraticCurveTo(300, 280, 960, 360); g.lineTo(960, 540); g.lineTo(0, 540); g.fill();
+    for (var i = 0; i < 4; i++) {
+      var x = 120 + i * 190, y = 330 + (i % 2) * 20;
+      g.fillStyle = token('--rs-card'); g.fillRect(x, y, 120, 110);
+      g.fillStyle = token('--rs-warn'); g.fillRect(x - 8, y - 18, 136, 22);
+      g.fillStyle = token('--rs-ink'); g.fillRect(x + 50, y + 90, 20, 8);
+    }
+    return c.toDataURL();
+  }
+  var imgs = { hives: img('hives'), avatar: img('avatar') };
+  document.querySelectorAll('img[data-kit-img]').forEach(function (el) { el.src = imgs[el.getAttribute('data-kit-img')]; });
+  ['x', 'linkedin', 'instagram', 'facebook'].forEach(function (p) {
+    var frame = document.querySelector('rs-post-frame[skin="' + p + '"]');
+    frame.querySelector('[slot="text"]').textContent = composed[p];
+    frame.refresh();
+  });
+  document.querySelectorAll('rs-counter[data-kit-text]').forEach(function (el) { el.text = composed[el.getAttribute('data-kit-text')]; });
+  document.querySelectorAll('rs-copy[data-kit-copy]').forEach(function (el) {
+    var k = el.getAttribute('data-kit-copy');
+    el.setAttribute('label', RS.t(k === 'hashtags' ? 'copy_hashtags' : 'copy_text'));
+    el.text = composed[k];
+  });
+  window.KIT.composed = composed;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+/* grokbot-desk design tokens (spec 4.3). The ONLY file with colour literals.
+ *
+ * Themes: light by default; dark when the OS prefers dark unless
+ * html[data-theme="light"]; html[data-theme="dark"] forces dark. The two dark
+ * blocks below must stay identical (tests_js/contrast.test.mjs checks it).
+ * Text contrast pairs are listed in contrast-pairs.json and must pass in both
+ * themes. Colours are 6-digit hex (8-digit only for shadows/overlays).
+ */
+
+:root {
+  color-scheme: light;
+
+  /* --- type --- */
+  --rs-font: "Segoe UI", system-ui, sans-serif;
+  --rs-font-mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  /* at most 3 sizes per screen (U6) */
+  --rs-fs-sm: 13px;
+  --rs-fs-md: 15px;
+  --rs-fs-lg: 20px;
+  --rs-lh-tight: 1.25;
+  --rs-lh: 1.45;
+  --rs-fw-normal: 400;
+  --rs-fw-strong: 600;
+  --rs-fw-bold: 700;
+
+  /* --- spacing, radii, sizes --- */
+  --rs-sp-1: 4px;
+  --rs-sp-2: 8px;
+  --rs-sp-3: 12px;
+  --rs-sp-4: 16px;
+  --rs-sp-5: 24px;
+  --rs-sp-6: 32px;
+  --rs-r-sm: 4px;
+  --rs-r-md: 8px;
+  --rs-r-lg: 12px;
+  --rs-r-pill: 999px;
+  --rs-focus-width: 2px;
+  --rs-focus-offset: 2px;
+  --rs-border: 1px;
+  --rs-control-h: 32px;
+  --rs-header-h: 64px;
+  --rs-rail-w: 264px;
+  --rs-submitbar-h: 64px;
+  --rs-content-max: 1180px;
+  --rs-dur-copied: 1.5s;
+
+  /* --- base palette (from today's report shell) --- */
+  --rs-paper: #f6f3ec;
+  --rs-ink: #1a1a1a;
+  --rs-muted: #5c5c5c;
+  --rs-line: #d8d4cc;
+  --rs-line-strong: #8a8378;
+  --rs-card: #fffdf8;
+  --rs-warn: #8a2b12;
+  --rs-warn-bg: #f4e4d8;
+  --rs-chip: #ece8df;
+
+  /* --- one accent + states --- */
+  --rs-accent: #1f4f78;
+  --rs-accent-hover: #173c5c;
+  --rs-on-accent: #fffdf8;
+  --rs-accent-bg: #e1e8ef;
+  --rs-ok: #2c5a1c;
+  --rs-ok-bg: #e2ecd8;
+  --rs-danger: #a3161b;
+  --rs-danger-bg: #f8dfdc;
+  --rs-on-danger: #fffdf8;
+  --rs-focus: #1f4f78;
+  --rs-disabled: #e4e0d7;
+  --rs-on-disabled: #5c5c5c;
+  --rs-shadow-1: 0 1px 2px #1a1a1a14;
+  --rs-shadow-2: 0 4px 16px #1a1a1a24;
+  --rs-overlay: #1a1a1a66;
+
+  /* --- platform skins (realistic, contrast-checked) --- */
+  --rs-x-bg: #ffffff;
+  --rs-x-text: #0f1419;
+  --rs-x-muted: #536471;
+  --rs-x-line: #eff3f4;
+  --rs-x-link: #0b67b8;
+  --rs-x-logo: #0f1419;
+  --rs-x-avatar-bg: #cfd9de;
+
+  --rs-li-page: #f4f2ee;
+  --rs-li-bg: #ffffff;
+  --rs-li-text: #1f1f1f;
+  --rs-li-muted: #666666;
+  --rs-li-line: #e8e8e8;
+  --rs-li-link: #0a66c2;
+  --rs-li-brand: #0a66c2;
+  --rs-li-on-brand: #ffffff;
+  --rs-li-avatar-bg: #dce6f1;
+
+  --rs-ig-bg: #ffffff;
+  --rs-ig-text: #0c1014;
+  --rs-ig-muted: #6b6b6b;
+  --rs-ig-line: #dbdbdb;
+  --rs-ig-link: #00376b;
+  --rs-ig-placeholder: #efefef;
+  --rs-ig-grad-1: #feda75;
+  --rs-ig-grad-2: #fa7e1e;
+  --rs-ig-grad-3: #d62976;
+  --rs-ig-grad-4: #962fbf;
+  --rs-ig-grad-5: #4f5bd5;
+  --rs-ig-avatar-bg: #efefef;
+
+  --rs-fb-page: #f0f2f5;
+  --rs-fb-bg: #ffffff;
+  --rs-fb-text: #050505;
+  --rs-fb-muted: #65676b;
+  --rs-fb-line: #ced0d4;
+  --rs-fb-link: #0759d9;
+  --rs-fb-brand: #0866ff;
+  --rs-fb-on-brand: #ffffff;
+  --rs-fb-avatar-bg: #e4e6eb;
+  --rs-fb-card: #f0f2f5;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+    --rs-paper: #171614;
+    --rs-ink: #ece7dd;
+    --rs-muted: #a8a196;
+    --rs-line: #38342f;
+    --rs-line-strong: #7a7368;
+    --rs-card: #211f1c;
+    --rs-warn: #f2a07f;
+    --rs-warn-bg: #3a2219;
+    --rs-chip: #2d2a26;
+    --rs-accent: #8db8e0;
+    --rs-accent-hover: #a9cbeb;
+    --rs-on-accent: #10161c;
+    --rs-accent-bg: #1e2c39;
+    --rs-ok: #9ccc84;
+    --rs-ok-bg: #1c2b17;
+    --rs-danger: #ff9b94;
+    --rs-danger-bg: #3d1716;
+    --rs-on-danger: #1a0d0c;
+    --rs-focus: #8db8e0;
+    --rs-disabled: #2d2a26;
+    --rs-on-disabled: #a8a196;
+    --rs-shadow-1: 0 1px 2px #00000066;
+    --rs-shadow-2: 0 4px 16px #00000099;
+    --rs-overlay: #000000a6;
+    --rs-x-bg: #000000;
+    --rs-x-text: #e7e9ea;
+    --rs-x-muted: #8b9095;
+    --rs-x-line: #2f3336;
+    --rs-x-link: #1d9bf0;
+    --rs-x-logo: #e7e9ea;
+    --rs-x-avatar-bg: #333639;
+    --rs-li-page: #000000;
+    --rs-li-bg: #1b1f23;
+    --rs-li-text: #e9e9e9;
+    --rs-li-muted: #a9adb1;
+    --rs-li-line: #38434f;
+    --rs-li-link: #71b7fb;
+    --rs-li-brand: #71b7fb;
+    --rs-li-on-brand: #1b1f23;
+    --rs-li-avatar-bg: #38434f;
+    --rs-ig-bg: #000000;
+    --rs-ig-text: #f5f5f5;
+    --rs-ig-muted: #a8a8a8;
+    --rs-ig-line: #262626;
+    --rs-ig-link: #e0f1ff;
+    --rs-ig-placeholder: #1a1a1a;
+    --rs-ig-grad-1: #feda75;
+    --rs-ig-grad-2: #fa7e1e;
+    --rs-ig-grad-3: #d62976;
+    --rs-ig-grad-4: #962fbf;
+    --rs-ig-grad-5: #4f5bd5;
+    --rs-ig-avatar-bg: #262626;
+    --rs-fb-page: #18191a;
+    --rs-fb-bg: #242526;
+    --rs-fb-text: #e4e6eb;
+    --rs-fb-muted: #b0b3b8;
+    --rs-fb-line: #3e4042;
+    --rs-fb-link: #4599ff;
+    --rs-fb-brand: #0866ff;
+    --rs-fb-on-brand: #ffffff;
+    --rs-fb-avatar-bg: #3a3b3c;
+    --rs-fb-card: #3a3b3c;
+  }
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --rs-paper: #171614;
+  --rs-ink: #ece7dd;
+  --rs-muted: #a8a196;
+  --rs-line: #38342f;
+  --rs-line-strong: #7a7368;
+  --rs-card: #211f1c;
+  --rs-warn: #f2a07f;
+  --rs-warn-bg: #3a2219;
+  --rs-chip: #2d2a26;
+  --rs-accent: #8db8e0;
+  --rs-accent-hover: #a9cbeb;
+  --rs-on-accent: #10161c;
+  --rs-accent-bg: #1e2c39;
+  --rs-ok: #9ccc84;
+  --rs-ok-bg: #1c2b17;
+  --rs-danger: #ff9b94;
+  --rs-danger-bg: #3d1716;
+  --rs-on-danger: #1a0d0c;
+  --rs-focus: #8db8e0;
+  --rs-disabled: #2d2a26;
+  --rs-on-disabled: #a8a196;
+  --rs-shadow-1: 0 1px 2px #00000066;
+  --rs-shadow-2: 0 4px 16px #00000099;
+  --rs-overlay: #000000a6;
+  --rs-x-bg: #000000;
+  --rs-x-text: #e7e9ea;
+  --rs-x-muted: #8b9095;
+  --rs-x-line: #2f3336;
+  --rs-x-link: #1d9bf0;
+  --rs-x-logo: #e7e9ea;
+  --rs-x-avatar-bg: #333639;
+  --rs-li-page: #000000;
+  --rs-li-bg: #1b1f23;
+  --rs-li-text: #e9e9e9;
+  --rs-li-muted: #a9adb1;
+  --rs-li-line: #38434f;
+  --rs-li-link: #71b7fb;
+  --rs-li-brand: #71b7fb;
+  --rs-li-on-brand: #1b1f23;
+  --rs-li-avatar-bg: #38434f;
+  --rs-ig-bg: #000000;
+  --rs-ig-text: #f5f5f5;
+  --rs-ig-muted: #a8a8a8;
+  --rs-ig-line: #262626;
+  --rs-ig-link: #e0f1ff;
+  --rs-ig-placeholder: #1a1a1a;
+  --rs-ig-grad-1: #feda75;
+  --rs-ig-grad-2: #fa7e1e;
+  --rs-ig-grad-3: #d62976;
+  --rs-ig-grad-4: #962fbf;
+  --rs-ig-grad-5: #4f5bd5;
+  --rs-ig-avatar-bg: #262626;
+  --rs-fb-page: #18191a;
+  --rs-fb-bg: #242526;
+  --rs-fb-text: #e4e6eb;
+  --rs-fb-muted: #b0b3b8;
+  --rs-fb-line: #3e4042;
+  --rs-fb-link: #4599ff;
+  --rs-fb-brand: #0866ff;
+  --rs-fb-on-brand: #ffffff;
+  --rs-fb-avatar-bg: #3a3b3c;
+  --rs-fb-card: #3a3b3c;
+}
