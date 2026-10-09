@@ -13,6 +13,7 @@ import {
   calmEvaluator,
   focusedControlFacts,
   pngBackgroundRatio,
+  settleShortAnimations,
 } from '../tools/calm.mjs';
 import { isSameOriginPath } from '../tools/dev/browser-safety.mjs';
 import {
@@ -56,7 +57,9 @@ function sandbox(overrides = {}) {
     clearTimeout,
     fetch,
     spawnSync,
+    CALM_THRESHOLDS,
     focusedControlFacts,
+    settleShortAnimations,
     isSameOriginPath,
     sleep: async () => {},
     runNetwork: { requests: [], responses: [], errors: [] },
@@ -1825,71 +1828,218 @@ test('round 5 finding 1: calmScene catches copies created by native details togg
   t.diagnostic('native toggle K13 negatives: 6/6 at 1280x720, 6/6 at 1500x1000');
 });
 
-test('round 4 finding 3: calmScene keeps the initial inventory after a 150 ms copy fade', async (t) => {
-  const chromium = await loadChromium();
-  assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
-  t.after(() => browser.close());
+async function assertAnimationSettleFailsWithinCap(operation) {
+  const started = Date.now();
+  const outcome = await Promise.race([
+    Promise.resolve().then(operation).then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    ),
+    new Promise((resolve) => setTimeout(
+      () => resolve({ externalTimeout: true }),
+      6000,
+    )),
+  ]);
+  assert.equal(outcome.externalTimeout, undefined, 'audit exceeded the external 6 s test guard');
+  assert.ok(outcome.error, `audit unexpectedly passed: ${JSON.stringify(outcome.value)}`);
+  assert.match(String(outcome.error), /animation settling exceeded 5000ms/i);
+  assert.ok(Date.now() - started < 6000, `audit took ${Date.now() - started} ms`);
+}
+
+async function frozenAnimationPage(browser, { focusOnly = true } = {}) {
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
     reducedMotion: 'no-preference',
   });
   const page = await context.newPage();
-  await page.setContent(
-    calmPage()
-      .replace('<html>', '<html lang="de">')
-      .replace('<head>', '<head><title>Calm scene</title>'),
-  );
-  const scope = {
-    AXE: path.join(ROOT, 'vendor', 'axe.min.js'),
-    CALM_THRESHOLDS,
-    auditCopyFocus,
-    auditPlatformSwitching: async () => null,
-    calmEvaluator,
-    pngBackgroundRatio,
-    cancelOpen: async () => {},
-    reveal: async () => {},
-    show: () => ({ run_id: 'resting' }),
-    openPage: async () => ({ page, context: { close: async () => {} } }),
-    tabAudit: async () => {
-      await page.evaluate(() => {
-        document.body.tabIndex = -1;
-        document.body.focus();
-      });
-      await page.keyboard.press('Tab');
-      await page.keyboard.press('Tab');
-      await page.waitForFunction(() => (
-        Number.parseFloat(getComputedStyle(
-          document.querySelector('[data-copy-id="item-copy"]'),
-        ).opacity) > 0.95
+  await page.setContent(`
+    <style>button:focus{outline:2px solid black}</style>
+    <button data-copy-id="frozen" aria-label="Frozen copy">Copy</button>
+    <script>
+      const startFrozenAnimation = () => {
+        if (window.frozenAnimation) return;
+        window.frozenAnimation = document.querySelector('button').animate(
+          [{ transform: 'translateX(0)' }, { transform: 'translateX(1px)' }],
+          { duration: 150 },
+        );
+        window.frozenAnimation.playbackRate = 0;
+      };
+      if (${focusOnly}) document.querySelector('button').addEventListener('focus', startFrozenAnimation);
+      else startFrozenAnimation();
+      window.setTimeout = () => 0;
+    </script>
+  `);
+  return { context, page };
+}
+
+test('introduced finding 1: template timers cannot defeat any animation settle deadline', async (t) => {
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
+  t.after(() => browser.close());
+
+  {
+    const { context, page } = await frozenAnimationPage(browser);
+    try {
+      await assertAnimationSettleFailsWithinCap(() => auditCopyFocus(page));
+    } finally {
+      await context.close();
+    }
+  }
+
+  {
+    const { context, page } = await frozenAnimationPage(browser);
+    try {
+      await assertAnimationSettleFailsWithinCap(() => sandbox().tabAudit(page));
+    } finally {
+      await context.close();
+    }
+  }
+
+  {
+    const { context, page } = await frozenAnimationPage(browser, { focusOnly: false });
+    try {
+      const scope = sandbox({ calmEvaluator });
+      vm.runInContext(
+        source.slice(
+          source.indexOf('async function calmRestingFacts('),
+          source.indexOf('async function calmMode('),
+        ),
+        scope,
+      );
+      await assertAnimationSettleFailsWithinCap(() => scope.calmRestingFacts(
+        page,
+        { manifest: { id: 'synthetic-calm-template' } },
+        1,
+        [],
+        true,
       ));
-      await page.evaluate(() => {
-        document.activeElement?.blur();
-        document.body.removeAttribute('tabindex');
-      });
-      return { groups: [] };
-    },
-  };
-  vm.createContext(scope);
-  vm.runInContext(
-    source.slice(
-      source.indexOf('async function calmRestingFacts('),
-      source.indexOf('async function calmMode('),
-    ),
-    scope,
-  );
+    } finally {
+      await context.close();
+    }
+  }
+});
 
-  const result = await scope.calmScene(
-    {},
-    {},
-    { fixture: 'edge-max', manifest: { id: 'synthetic-calm-template' } },
-    {
-      openRuns: 1,
-      theme: 'light',
+test('introduced finding 2: short waits preserve a simultaneous long focus fade failure', async (t) => {
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
+  t.after(() => browser.close());
+  for (const delay of ['0ms', '-900ms']) {
+    const context = await browser.newContext({
       viewport: { width: 1280, height: 720 },
-    },
-  );
+      reducedMotion: 'no-preference',
+    });
+    try {
+      const page = await context.newPage();
+      await page.setContent(`
+        <style>
+          button { opacity: 0 }
+          button:focus {
+            opacity: 1;
+            outline: 2px solid black;
+            transition: opacity 1000ms steps(1, end) ${delay};
+          }
+        </style>
+        <button data-copy-id="slow-fade" aria-label="Slow fade copy">Copy</button>
+        <script>
+          document.querySelector('button').addEventListener('focus', () => {
+            const short = document.querySelector('button').animate(
+              [{ transform: 'translateX(0)' }, { transform: 'translateX(1px)' }],
+              { duration: 150 },
+            );
+            short.playbackRate = 0;
+          });
+        </script>
+      `);
 
+      const started = Date.now();
+      const audit = await auditCopyFocus(page);
+
+      assert.equal(audit.pass, false, `${delay}: ${JSON.stringify(audit)}`);
+      assert.equal(audit.controls.length, 1, `${delay}: ${JSON.stringify(audit)}`);
+      assert.equal(audit.controls[0].visible, false, `${delay}: ${JSON.stringify(audit)}`);
+      assert.equal(audit.controls[0].motion_blocked, true, `${delay}: ${JSON.stringify(audit)}`);
+      assert.ok(Date.now() - started < 500, `${delay} focus audit took ${Date.now() - started} ms`);
+    } finally {
+      await context.close();
+    }
+  }
+});
+
+async function runCalmFadeScene(browser, playbackRate = 1) {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+    reducedMotion: 'no-preference',
+  });
+  try {
+    const page = await context.newPage();
+    if (playbackRate !== 1) {
+      const cdp = await context.newCDPSession(page);
+      await cdp.send('Animation.enable');
+      await cdp.send('Animation.setPlaybackRate', { playbackRate });
+    }
+    await page.setContent(
+      calmPage()
+        .replace('<html>', '<html lang="de">')
+        .replace('<head>', '<head><title>Calm scene</title>'),
+    );
+    const scope = {
+      AXE: path.join(ROOT, 'vendor', 'axe.min.js'),
+      CALM_THRESHOLDS,
+      auditCopyFocus,
+      auditPlatformSwitching: async () => null,
+      calmEvaluator,
+      closeAuditContext: async (contextToClose) => contextToClose.close(),
+      pngBackgroundRatio,
+      cancelOpen: async () => {},
+      reveal: async () => {},
+      show: () => ({ run_id: 'resting' }),
+      settleShortAnimations,
+      openPage: async () => ({ page, context: { close: async () => {} } }),
+      tabAudit: async () => {
+        await page.evaluate(() => {
+          document.body.tabIndex = -1;
+          document.body.focus();
+        });
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        await page.waitForFunction(() => (
+          Number.parseFloat(getComputedStyle(
+            document.querySelector('[data-copy-id="item-copy"]'),
+          ).opacity) > 0.95
+        ));
+        await page.evaluate(() => {
+          document.activeElement?.blur();
+          document.body.removeAttribute('tabindex');
+        });
+        return { groups: [] };
+      },
+    };
+    vm.createContext(scope);
+    vm.runInContext(
+      source.slice(
+        source.indexOf('async function calmRestingFacts('),
+        source.indexOf('async function calmMode('),
+      ),
+      scope,
+    );
+    return await scope.calmScene(
+      {},
+      {},
+      { fixture: 'edge-max', manifest: { id: 'synthetic-calm-template' } },
+      {
+        openRuns: 1,
+        theme: 'light',
+        viewport: { width: 1280, height: 720 },
+      },
+    );
+  } finally {
+    await context.close();
+  }
+}
+
+function assertCalmFadeResult(result) {
   assert.deepEqual(
     result.K2.items[0].non_icon_copy_controls,
     [],
@@ -1898,7 +2048,34 @@ test('round 4 finding 3: calmScene keeps the initial inventory after a 150 ms co
   assert.equal(result.K13.copy_focus.pass, true, JSON.stringify(result.K13));
   assert.equal(result.K13.keyboard.pass, true, JSON.stringify(result.K13));
   assert.equal(result.K13.accessibility.pass, true, JSON.stringify(result.K13));
-  await context.close();
+}
+
+test('round 4 finding 3: calmScene keeps the initial inventory after a 150 ms copy fade', async (t) => {
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
+  t.after(() => browser.close());
+  const repeat = Math.max(1, Number.parseInt(process.env.RS_CALM_FADE_REPEAT || '1', 10) || 1);
+  const failures = [];
+  for (let iteration = 1; iteration <= repeat; iteration += 1) {
+    try {
+      assertCalmFadeResult(await runCalmFadeScene(browser));
+      t.diagnostic(`150 ms copy fade iteration ${iteration}/${repeat}: pass`);
+    } catch (error) {
+      failures.push(error);
+      t.diagnostic(`150 ms copy fade iteration ${iteration}/${repeat}: fail: ${error}`);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, `${failures.length}/${repeat} iterations failed`);
+});
+
+test('calmScene settles a 150 ms copy fade by animation time', async (t) => {
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
+  t.after(() => browser.close());
+  assertCalmFadeResult(await runCalmFadeScene(browser, 0.1));
 });
 
 test('Tab audit includes summary and ignores descendants of closed details', async (t) => {
@@ -2052,6 +2229,7 @@ test('round 2 finding 8: calm captures the initial resting viewport before inter
     AXE: 'axe.js',
     CALM_THRESHOLDS: { backgroundChannelTolerance: 2 },
     cancelOpen: async () => {},
+    closeAuditContext: async (context) => context.close(),
     show: () => ({ run_id: 'resting' }),
     openPage: async () => ({ page, context: { close: async () => {} } }),
     calmRestingFacts: async () => {

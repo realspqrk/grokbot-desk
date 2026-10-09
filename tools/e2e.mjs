@@ -18,6 +18,7 @@ import {
   focusedControlFacts,
   judgeCalmFacts,
   pngBackgroundRatio,
+  settleShortAnimations,
 } from './calm.mjs';
 
 const PORT = Number(process.env.RS_TOOL_PORT || 18920);
@@ -59,6 +60,16 @@ function boundedMilliseconds(name, fallback) {
   return Number.isFinite(value) && value > 0
     ? Math.min(Math.max(value, 1000), 120000)
     : fallback;
+}
+
+async function closeAuditContext(context, capMs = 1000) {
+  let timer;
+  await Promise.race([
+    context.close().catch(() => {}),
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, capMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 const MEASUREMENT_BOT_ID = json(path.join(ROOT, 'tools', 'measurement.json')).bot_id;
@@ -358,7 +369,16 @@ async function focusedControl(page) {
 }
 
 async function assertFocusedOutline(page) {
-  // K12 permits transitions up to 200 ms; allow a small sampling margin.
+  const settling = await settleShortAnimations(page, { focused: true });
+  if (settling.blocked) {
+    const focused = await focusedControl(page);
+    throw new Error(`excessive focus motion: ${JSON.stringify({
+      ...focused,
+      motion_blocked: true,
+      blocking_motion: settling.blocking,
+    })}`);
+  }
+  // Fall back to polling for focus styles that settle without an animation.
   const deadline = Date.now() + 250;
   let focused;
   do {
@@ -1072,7 +1092,7 @@ async function keyboardMode() {
       let tab;
       try {
         tab = await tabAudit(opened.page, { expectedOpenRuns: 1 });
-      } finally { await opened.context.close(); }
+      } finally { await closeAuditContext(opened.context); }
       await cancelOpen(server);
       run = await show(server, testCase);
       opened = await openPage(browser, server, run.run_id, { copyHandler: () => {} });
@@ -1087,7 +1107,7 @@ async function keyboardMode() {
           throw new Error(`${testCase.manifest.id}: keyboard result mismatch`);
         }
         cases.push({ template: testCase.manifest.id, fixture: testCase.fixture, tab_stops: tab.seen.length, result: result.data });
-      } finally { await opened.context.close(); }
+      } finally { await closeAuditContext(opened.context); }
     }
     return {
       mode: 'keyboard',
@@ -1472,21 +1492,7 @@ async function calmRestingFacts(
     document.body.focus();
   });
   if (settleTransitions) {
-    try {
-      await page.waitForFunction((maximum) => (
-        document.getAnimations().every((animation) => {
-          if (animation.playState !== 'running') return true;
-          const timing = animation.effect?.getComputedTiming();
-          return !timing
-            || timing.duration > maximum
-            || timing.iterations !== 1;
-        })
-      ), CALM_THRESHOLDS.motionMaxMs, {
-        timeout: CALM_THRESHOLDS.motionMaxMs + 50,
-      });
-    } catch {
-      // The wait is bounded; K12 reports motion that remains unsettled.
-    }
+    await settleShortAnimations(page);
   }
   return page.evaluate(calmEvaluator, {
     thresholds: CALM_THRESHOLDS,
@@ -1539,6 +1545,7 @@ async function calmScene(browser, server, testCase, scene) {
       facts.K2 = recounted.K2;
       facts.K9 = recounted.K9;
     } catch (error) {
+      if (error?.code === 'RS_ANIMATION_SETTLE_TIMEOUT') throw error;
       keyboard = { pass: false, error: String(error) };
     }
     const copyFocus = await auditCopyFocus(
@@ -1606,7 +1613,7 @@ async function calmScene(browser, server, testCase, scene) {
     };
     return facts;
   } finally {
-    await opened.context.close();
+    await closeAuditContext(opened.context);
   }
 }
 
@@ -1628,12 +1635,35 @@ async function calmMode() {
             viewport,
           };
           for (const openRuns of [1, 3]) {
-            const facts = await calmScene(
-              browser,
-              server,
-              testCase,
-              { ...base, openRuns },
-            );
+            let facts;
+            try {
+              facts = await calmScene(
+                browser,
+                server,
+                testCase,
+                { ...base, openRuns },
+              );
+            } catch (error) {
+              if (error?.code !== 'RS_ANIMATION_SETTLE_TIMEOUT') throw error;
+              const reason = `audit scene did not settle: ${error.message}`;
+              scenes.push({
+                ...base,
+                open_runs: openRuns,
+                items: Object.fromEntries(Array.from(
+                  { length: 13 },
+                  (_, index) => [
+                    `K${index + 1}`,
+                    {
+                      pass: false,
+                      reasons: [reason],
+                      raw: { audit_error: error.message },
+                    },
+                  ],
+                )),
+                ok: false,
+              });
+              continue;
+            }
             const judged = judgeCalmFacts(facts, {
               templateId: testCase.manifest.id,
               k13: {

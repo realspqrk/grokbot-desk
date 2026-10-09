@@ -410,9 +410,11 @@ describe('C16 calm synthetic pages', { skip }, () => {
       );
       const source = readFileSync(path.join(ROOT, 'tools/e2e.mjs'), 'utf8');
       const scope = {
-        focusedControlFacts,
-        setTimeout,
+        CALM_THRESHOLDS,
         clearTimeout,
+        focusedControlFacts,
+        settleShortAnimations: calmTools.settleShortAnimations,
+        setTimeout,
       };
       vm.createContext(scope);
       vm.runInContext(
@@ -894,7 +896,11 @@ describe('C16 calm synthetic pages', { skip }, () => {
       assert.equal(hidden.copy_control, true);
       assert.equal(hidden.visible, false);
       const source = readFileSync(path.join(ROOT, 'tools/e2e.mjs'), 'utf8');
-      const scope = { focusedControlFacts };
+      const scope = {
+        CALM_THRESHOLDS,
+        focusedControlFacts,
+        settleShortAnimations: calmTools.settleShortAnimations,
+      };
       vm.createContext(scope);
       vm.runInContext(
         source.slice(

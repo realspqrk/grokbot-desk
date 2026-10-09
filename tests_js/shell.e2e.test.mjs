@@ -54,14 +54,27 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       colorScheme: opts.colorScheme || 'light', reducedMotion: 'reduce',
     });
     const page = await ctx.newPage();
-    const log = { errors: [], requests: [], responses: [], posts: [] };
+    const log = {
+      errors: [], requests: [], responses: [], posts: [], requestFailures: [],
+    };
     page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.errors.push(m.type() + ': ' + m.text()); });
     page.on('pageerror', (e) => log.errors.push('pageerror: ' + e.message));
     page.on('request', (r) => { log.requests.push(r.url()); if (r.method() === 'POST') log.posts.push(r); });
     page.on('response', (r) => log.responses.push(r));
+    page.on('requestfailed', (r) => {
+      log.requestFailures.push({ url: r.url(), error: r.failure()?.errorText || 'unknown' });
+    });
     const sep = q ? '&' : '';
     const response = await page.goto(server.url('?client=test' + sep + q));
     await ready(page);
+    const focusWidth = await page.evaluate(() => (
+      getComputedStyle(document.documentElement).getPropertyValue('--rs-focus-width').trim()
+    ));
+    assert.equal(
+      focusWidth,
+      '2px',
+      `--rs-focus-width=${JSON.stringify(focusWidth)}; failed URLs=${JSON.stringify(log.requestFailures)}; console errors=${JSON.stringify(log.errors)}`,
+    );
     return { ctx, page, log, response };
   }
   const ready = (page) => page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
@@ -488,7 +501,18 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
         const f = await page.evaluate(() => {
           const a = document.activeElement;
           const s = getComputedStyle(a);
-          return { tag: a.tagName, id: a.id, cls: a.className, w: parseFloat(s.outlineWidth), style: s.outlineStyle, tab: a.tabIndex };
+          return {
+            tag: a.tagName,
+            id: a.id,
+            cls: a.className,
+            w: parseFloat(s.outlineWidth),
+            style: s.outlineStyle,
+            tab: a.tabIndex,
+            fv: a.matches(':focus-visible'),
+            hasFocus: document.hasFocus(),
+            token: getComputedStyle(document.documentElement)
+              .getPropertyValue('--rs-focus-width').trim(),
+          };
         });
         seen.push(f);
         if (f.tag === 'BODY') break;

@@ -147,7 +147,84 @@ export function focusedControlFacts() {
   };
 }
 
+export async function settleShortAnimations(
+  page,
+  {
+    focused = false,
+    maximum = CALM_THRESHOLDS.motionMaxMs,
+    capMs = 5000,
+  } = {},
+) {
+  const deadline = Date.now() + capMs;
+  const timeoutError = () => {
+    const error = new Error(`animation settling exceeded ${capMs}ms`);
+    error.code = 'RS_ANIMATION_SETTLE_TIMEOUT';
+    return error;
+  };
+  const inspect = () => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return Promise.reject(timeoutError());
+    let timer;
+    return Promise.race([
+      page.evaluate(({ focusOnly, motionMaximum }) => {
+        const active = document.activeElement;
+        let blocking = 0;
+        let short = 0;
+        for (const animation of document.getAnimations()) {
+          if (animation.playState !== 'running') continue;
+          if (focusOnly) {
+            const target = animation.effect?.target;
+            if (!(target instanceof Element) || !(target === active || target.contains(active))) {
+              continue;
+            }
+          }
+          const timing = animation.effect?.getComputedTiming();
+          const duration = Number(timing?.duration);
+          const endTime = Number(timing?.endTime);
+          const iterations = Number(timing?.iterations);
+          if (
+            !Number.isFinite(duration)
+            || !Number.isFinite(endTime)
+            || iterations !== 1
+            || duration > motionMaximum
+            || endTime > motionMaximum
+          ) {
+            blocking += 1;
+          } else {
+            short += 1;
+          }
+        }
+        return { blocking, short };
+      }, { focusOnly: focused, motionMaximum: maximum }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(timeoutError()), remaining);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
+
+  while (true) {
+    const state = await inspect();
+    if (state.blocking > 0 || state.short === 0) {
+      return {
+        blocked: state.blocking > 0,
+        blocking: state.blocking,
+      };
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw timeoutError();
+    await new Promise((resolve) => setTimeout(resolve, Math.min(10, remaining)));
+  }
+}
+
 async function settledFocusedControl(page, timeout = CALM_THRESHOLDS.motionMaxMs + 50) {
+  const settling = await settleShortAnimations(page, { focused: true });
+  if (settling.blocked) {
+    return {
+      ...await page.evaluate(focusedControlFacts),
+      motion_blocked: true,
+      blocking_motion: settling.blocking,
+    };
+  }
   const deadline = Date.now() + timeout;
   let current;
   do {
@@ -305,6 +382,7 @@ async function auditCopyFocusState(page, stateIndex) {
         && item.outline_width >= 2
         && item.outline_style !== 'none'
         && item.outline_visible
+        && !item.motion_blocked
         && item.actual_identity === item.expected_identity
       )),
     controls,
