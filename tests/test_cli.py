@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import core.cli as cli_module
 from conftest import ROOT, free_port
 
 P6_RUNNER = ROOT / "tools" / "e2e.mjs"
@@ -24,6 +25,30 @@ def cli(env, port, *args, input_text=None):
         text=True,
         timeout=10,
     )
+
+
+def test_isolated_cli_http_timeout_is_configurable(monkeypatch):
+    seen = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return b'{"ok":true}'
+
+    monkeypatch.setenv("RS_CLI_HTTP_TIMEOUT", "12")
+    monkeypatch.setattr(
+        cli_module.urllib.request,
+        "urlopen",
+        lambda request, timeout: seen.append(timeout) or Response(),
+    )
+
+    assert cli_module._request(18920, "/test", body={"value": 1}) == {"ok": True}
+    assert seen == [12.0]
 
 
 def test_list_check_and_new_round_trip(tmp_path):

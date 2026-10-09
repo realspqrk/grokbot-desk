@@ -20,7 +20,7 @@ import {
   pngBackgroundRatio,
 } from './calm.mjs';
 
-const PORT = Number(process.env.RS_TOOL_PORT || 18899);
+const PORT = Number(process.env.RS_TOOL_PORT || 18920);
 const AXE = path.join(ROOT, 'vendor', 'axe.min.js');
 const AXE_SHA256 = '20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878';
 const cliArguments = process.argv.slice(2);
@@ -258,6 +258,12 @@ async function withHarness(callback) {
 }
 
 async function openPage(browser, server, runId, options = {}) {
+  const configuredTimeout = typeof process === 'undefined'
+    ? NaN
+    : Number(process.env.RS_E2E_READY_TIMEOUT_MS);
+  const readyTimeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? Math.min(Math.max(configuredTimeout, 1000), 120000)
+    : 10000;
   const context = await browser.newContext({
     viewport: options.viewport || { width: 1500, height: 1000 },
     deviceScaleFactor: 1,
@@ -302,7 +308,11 @@ async function openPage(browser, server, runId, options = {}) {
     });
   }
   await page.goto(`http://127.0.0.1:${PORT}/?run=${encodeURIComponent(runId)}&client=test`);
-  await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+  await page.waitForFunction(
+    () => document.documentElement.dataset.rsReady === '1',
+    null,
+    { timeout: readyTimeout },
+  );
   return { context, page, log };
 }
 
@@ -724,41 +734,75 @@ async function submitMode() {
 }
 
 async function waitForTabAuditReady(page, options = {}) {
-  const timeout = options.settleTimeout || 1500;
-  await page.evaluate(async () => {
-    if (document.fonts?.ready) await document.fonts.ready;
-  });
-  if (Number.isInteger(options.expectedOpenRuns)) {
-    await page.waitForFunction((expected) => {
-      if (document.documentElement.dataset.rsReady === '0') return false;
-      const rail = document.querySelector(
-        '.rs-rail,[data-rs-rail],#rs-rail,nav[aria-label*="run" i]',
-      );
-      if (!rail) return expected === 0;
-      const entries = rail.querySelectorAll(
-        '.rs-rail__run,[data-run-id]',
-      );
-      return entries.length === Math.min(expected, 12);
-    }, options.expectedOpenRuns, { timeout });
+  const configuredTimeout = typeof process === 'undefined'
+    ? NaN
+    : Number(process.env.RS_E2E_READY_TIMEOUT_MS);
+  const requestedTimeout = options.settleTimeout === undefined
+    ? null
+    : Number(options.settleTimeout);
+  if (
+    requestedTimeout !== null
+    && (!Number.isFinite(requestedTimeout) || requestedTimeout <= 0)
+  ) {
+    throw new Error('keyboard readiness timeout must be a positive finite number');
   }
-  await page.evaluate(async () => {
-    const signature = () => [...document.querySelectorAll(
-      '.rs-rail__run,[data-run-id],button,input,select,textarea,a[href],summary,[tabindex]',
-    )].map((element) => (
-      element.dataset.runId
-      || element.id
-      || element.getAttribute('aria-label')
-      || `${element.tagName}:${element.tabIndex}:${element.textContent?.trim().slice(0, 40)}`
-    )).join('|');
-    let previous = signature();
-    let stableFrames = 0;
-    while (stableFrames < 2) {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      const current = signature();
-      stableFrames = current === previous ? stableFrames + 1 : 0;
-      previous = current;
-    }
+  const timeout = requestedTimeout ?? (
+    Number.isFinite(configuredTimeout) && configuredTimeout > 0
+      ? Math.min(Math.max(configuredTimeout, 1000), 120000)
+      : 10000
+  );
+  let timeoutHandle;
+  const timeoutError = new Error(`keyboard readiness timed out after ${timeout} ms`);
+  timeoutError.code = 'RS_E2E_READY_TIMEOUT';
+  const deadline = new Promise((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(timeoutError), timeout);
   });
+  const readiness = (async () => {
+    await page.evaluate(async () => {
+      if (document.fonts?.ready) await document.fonts.ready;
+    });
+    if (Number.isInteger(options.expectedOpenRuns)) {
+      await page.waitForFunction((expected) => {
+        if (document.documentElement.dataset.rsReady === '0') return false;
+        const rail = document.querySelector(
+          '.rs-rail,[data-rs-rail],#rs-rail,nav[aria-label*="run" i]',
+        );
+        if (!rail) return expected === 0;
+        const entries = rail.querySelectorAll(
+          '.rs-rail__run,[data-run-id]',
+        );
+        return entries.length === Math.min(expected, 12);
+      }, options.expectedOpenRuns, { timeout: 0 });
+    }
+    await page.evaluate(async () => {
+      const signature = () => [...document.querySelectorAll(
+        '.rs-rail__run,[data-run-id],button,input,select,textarea,a[href],summary,[tabindex]',
+      )].map((element) => (
+        element.dataset.runId
+        || element.id
+        || element.getAttribute('aria-label')
+        || `${element.tagName}:${element.tabIndex}:${element.textContent?.trim().slice(0, 40)}`
+      )).join('|');
+      let previous = signature();
+      let stableFrames = 0;
+      while (stableFrames < 2) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const current = signature();
+        stableFrames = current === previous ? stableFrames + 1 : 0;
+        previous = current;
+      }
+    });
+  })();
+  try {
+    await Promise.race([readiness, deadline]);
+  } catch (error) {
+    if (error?.code === 'RS_E2E_READY_TIMEOUT') {
+      try { await page.close(); } catch { /* timeout result remains authoritative */ }
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 async function tabAudit(page, options = {}) {
@@ -972,6 +1016,12 @@ function validateFlowSteps(testCase, modeName, steps) {
 }
 
 async function keyboardMode() {
+  const configuredResultTimeout = typeof process === 'undefined'
+    ? NaN
+    : Number(process.env.RS_E2E_RESULT_TIMEOUT_MS);
+  const resultTimeout = Number.isFinite(configuredResultTimeout) && configuredResultTimeout > 0
+    ? Math.min(Math.max(configuredResultTimeout, 1000), 120000)
+    : 10000;
   return withHarness(async ({ server, browser }) => {
     const cases = [];
     const expectedCases = fixtureCases(
@@ -990,8 +1040,9 @@ async function keyboardMode() {
       run = await show(server, testCase);
       opened = await openPage(browser, server, run.run_id, { copyHandler: () => {} });
       try {
+        await waitForTabAuditReady(opened.page, { expectedOpenRuns: 1 });
         for (const step of testCase.expect.keyboard) await runStep(opened.page, step, true);
-        const deadline = Date.now() + 3000;
+        const deadline = Date.now() + resultTimeout;
         while (!server.result(run.run_id) && Date.now() < deadline) await sleep(5);
         const result = server.result(run.run_id);
         if (!result) throw new Error(`${testCase.manifest.id}: keyboard flow produced no result`);

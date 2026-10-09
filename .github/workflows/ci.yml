@@ -19,6 +19,9 @@ jobs:
       RS_TOOL_PORT: "18920"
       RS_E2E_PORT: "18921"
       RS_BROWSER_CHANNEL: msedge
+      RS_CLI_HTTP_TIMEOUT: "15"
+      RS_SERVER_START_TIMEOUT_MS: "15000"
+      PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +62,9 @@ jobs:
       RS_TOOL_PORT: "18920"
       RS_E2E_PORT: "18921"
       RS_BROWSER_CHANNEL: chrome
+      RS_CLI_HTTP_TIMEOUT: "15"
+      RS_SERVER_START_TIMEOUT_MS: "15000"
+      PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
       - uses: actions/checkout@v4

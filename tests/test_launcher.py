@@ -28,6 +28,7 @@ def test_missing_browser_has_exact_message(monkeypatch):
 def test_launch_uses_app_profile_and_detached_flags(tmp_path, monkeypatch):
     calls = []
     browser = tmp_path / "msedge.exe"
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
     monkeypatch.setattr(launcher, "discover_browser", lambda: ("edge", browser))
     monkeypatch.setattr(subprocess, "Popen", lambda args, **kwargs: calls.append((args, kwargs)) or type("P", (), {"pid": 41})())
     pid = launcher.launch_window("http://127.0.0.1:9999/?launch=x", tmp_path, {"window": {"x": 2, "y": 3}})
@@ -42,9 +43,33 @@ def test_launch_uses_app_profile_and_detached_flags(tmp_path, monkeypatch):
     assert kwargs["creationflags"] & launcher.CREATE_BREAKAWAY_FROM_JOB
 
 
+def test_posix_detached_launch_starts_new_session_without_creationflags(monkeypatch):
+    calls = []
+    monkeypatch.setattr(launcher.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda args, **kwargs: calls.append((args, kwargs))
+        or type("P", (), {"pid": 42})(),
+    )
+
+    assert launcher._detached_popen(["program"]).pid == 42
+    assert calls == [
+        (
+            ["program"],
+            {
+                "close_fds": True,
+                "shell": False,
+                "start_new_session": True,
+            },
+        )
+    ]
+
+
 def test_access_denied_breakaway_fallback_logs_and_warns_once(monkeypatch, capsys):
     flags = []
     events = []
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
     action_log = type(
         "Log",
         (),
@@ -73,6 +98,7 @@ def test_non_access_denied_detached_launch_error_is_not_retried(monkeypatch):
     calls = []
     error = OSError("unexpected launch failure")
     error.winerror = 87
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
 
     def popen(args, **kwargs):
         calls.append(kwargs["creationflags"])

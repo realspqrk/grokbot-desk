@@ -20,6 +20,7 @@ import {
   loadChromium,
   ROOT,
   startServer,
+  validateServerPort,
 } from '../tools/dev/rs-server.mjs';
 import { calmPage } from './fixtures/calm/pages.mjs';
 
@@ -77,6 +78,24 @@ test('publish portability: browser channel is configurable with platform default
   );
 });
 
+test('publish portability: browser tests use the configured channel', () => {
+  for (const file of ['review_findings.test.mjs', 'calm.test.mjs']) {
+    const testSource = fs.readFileSync(path.join(ROOT, 'tests_js', file), 'utf8');
+    assert.doesNotMatch(testSource, /chromium\.launch\(\{ channel: 'msedge'/u, file);
+  }
+});
+
+test('configured isolated ports outside the default allocation range are accepted', () => {
+  assert.equal(validateServerPort(18945), 18945);
+});
+
+test('the production default port is refused before any server bind', () => {
+  assert.throws(
+    () => validateServerPort(18742),
+    /refusing the production default port 18742/u,
+  );
+});
+
 test('round 3 finding 1: the real production keyboard runner imports its focus evaluator', () => {
   const result = spawnSync(
     process.execPath,
@@ -97,6 +116,86 @@ test('round 3 finding 1: the real production keyboard runner imports its focus e
   assert.doesNotMatch(output, /focusedControlFacts is not defined/u);
   assert.equal(result.status, 0, output);
 });
+
+test('keyboard flow waits for the rendered rail before replaying Tab steps', async () => {
+  const events = [];
+  const scope = sandbox();
+  let sequence = 0;
+  scope.withHarness = async (callback) => callback({
+    server: {
+      result: (runId) => (
+        runId === 'run-2' ? { data: { choice: 'erledigt', note: 'Passt so' } } : null
+      ),
+    },
+    browser: {},
+  });
+  scope.fixtureCases = () => [{
+    manifest: { id: '_starter' },
+    fixture: 'golden',
+    expect: {
+      keyboard: [{ press: 'Tab' }],
+      result: { choice: 'erledigt', note: 'Passt so' },
+    },
+  }];
+  scope.cancelOpen = async () => {};
+  scope.show = async () => ({ run_id: `run-${++sequence}` });
+  scope.openPage = async () => ({
+    context: { close: async () => {} },
+    page: {},
+  });
+  scope.tabAudit = async () => ({ seen: ['id:starter-note'] });
+  scope.waitForTabAuditReady = async () => { events.push('ready'); };
+  scope.runStep = async () => { events.push('step'); };
+
+  const result = await scope.keyboardMode();
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(events, ['ready', 'step']);
+});
+
+for (const [name, page] of [
+  [
+    'never-settling fonts',
+    {
+      evaluate: async () => new Promise(() => {}),
+      close: async function close() { this.closeCalls += 1; },
+      closeCalls: 0,
+    },
+  ],
+  [
+    'inventory changing every frame',
+    {
+      evaluateCalls: 0,
+      evaluate: async function evaluate() {
+        this.evaluateCalls += 1;
+        if (this.evaluateCalls === 1) return undefined;
+        return new Promise(() => {});
+      },
+      waitForFunction: async () => {},
+      close: async function close() { this.closeCalls += 1; },
+      closeCalls: 0,
+    },
+  ],
+]) {
+  test(`keyboard readiness closes the page when ${name} exceeds its deadline`, async () => {
+    const scope = sandbox();
+    const watchdog = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('test watchdog elapsed')), 250);
+    });
+
+    await assert.rejects(
+      Promise.race([
+        scope.waitForTabAuditReady(page, {
+          expectedOpenRuns: 1,
+          settleTimeout: 25,
+        }),
+        watchdog,
+      ]),
+      /keyboard readiness timed out after 25 ms/u,
+    );
+    assert.equal(page.closeCalls, 1);
+  });
+}
 
 test('finding 3: every page fulfils copy by default and C5 can explicitly opt out', async () => {
   const routes = [];
@@ -340,7 +439,7 @@ test('finding 9: a roving radiogroup must support arrow-key navigation', async (
 test('round 3 finding 4: a multi-entry toolbar is not collapsed as roving', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(`
@@ -765,6 +864,7 @@ test('round 3 finding 1: keyboard flow actions check newly focused controls', as
   scope.cancelOpen = async () => {};
   scope.show = () => ({ run_id: 'keyboard-outline' });
   scope.tabAudit = async () => ({ expected: [], seen: [] });
+  scope.waitForTabAuditReady = async () => {};
   scope.openPage = async () => ({ context: { close: async () => {} }, page });
 
   await assert.rejects(
@@ -1204,7 +1304,7 @@ test('fixture media paths resolve against the registered template directory', ()
 test('reveal opens lazy tabs and collapsed details before copy and counter lookup', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(`
@@ -1229,7 +1329,7 @@ test('reveal opens lazy tabs and collapsed details before copy and counter looku
 test('round 3 finding 7: calm reveal audits copies created for every reachable tab', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(`
@@ -1273,7 +1373,7 @@ test('round 3 finding 7: calm reveal audits copies created for every reachable t
 test('round 4 finding 4: retained inactive tabpanel copies are required only when active', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(`
@@ -1318,7 +1418,7 @@ test('round 4 finding 4: retained inactive tabpanel copies are required only whe
 test('round 4 finding 5: calm reveal reaches nested and native lazy disclosures', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
 
   for (const html of [
@@ -1367,7 +1467,7 @@ test('round 4 finding 5: calm reveal reaches nested and native lazy disclosures'
 test('round 5 finding 1: calmScene catches copies created by native details toggle handlers', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const rows = [];
 
@@ -1473,7 +1573,7 @@ test('round 5 finding 1: calmScene catches copies created by native details togg
 test('round 4 finding 3: calmScene keeps the initial inventory after a 150 ms copy fade', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
@@ -1549,7 +1649,7 @@ test('round 4 finding 3: calmScene keeps the initial inventory after a 150 ms co
 test('Tab audit includes summary and ignores descendants of closed details', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(`
@@ -1568,7 +1668,7 @@ test('Tab audit includes summary and ignores descendants of closed details', asy
 test('toolbar and tablist are one roving stop and tablists audit last', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(`
@@ -1598,7 +1698,7 @@ test('toolbar and tablist are one roving stop and tablists audit last', async (t
 test('round 2 findings 12 and 15: every reached control must settle visibly with an outline', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(
@@ -1614,7 +1714,7 @@ test('round 2 findings 12 and 15: every reached control must settle visibly with
 test('round 3 finding 6: a transparent outline is not visible focus evidence', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(
@@ -1630,7 +1730,7 @@ test('round 3 finding 6: a transparent outline is not visible focus evidence', a
 test('round 3 finding 10: Tab inventory waits for the expected rail to settle', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(`

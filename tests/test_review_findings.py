@@ -1,10 +1,27 @@
+import ctypes
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from tools import clipread, measure_copy, measure_result
+
+
+def test_clipread_import_is_safe_without_windll(monkeypatch):
+    source = Path(clipread.__file__).read_text(encoding="utf-8")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.delattr(ctypes, "WinDLL", raising=False)
+    namespace = {"__name__": "tools.clipread_non_windows"}
+
+    exec(compile(source, clipread.__file__, "exec"), namespace)
+
+    assert namespace["user32"] is None
+    assert namespace["kernel32"] is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Win32 clipboard API test")
 def test_round_2_finding_4_null_clipboard_handle_is_reported_as_failure(
     monkeypatch, capsys
 ):

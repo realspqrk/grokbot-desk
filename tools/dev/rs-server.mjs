@@ -11,6 +11,13 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const PY = process.env.RS_PYTHON || 'py';
 const PY_ARGS = process.env.RS_PYTHON ? [] : ['-3'];
 
+function timeoutMs(environment, name, fallback) {
+  const value = Number(environment[name]);
+  return Number.isFinite(value) && value > 0
+    ? Math.min(Math.max(value, 1000), 120000)
+    : fallback;
+}
+
 export function playwrightPath(environment = process.env) {
   return environment.RS_PLAYWRIGHT_CORE || null;
 }
@@ -47,8 +54,18 @@ async function hello(port) {
   }
 }
 
+export function validateServerPort(port) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('isolated server port must be a valid TCP port');
+  }
+  if (port === 18742) {
+    throw new Error('refusing the production default port 18742');
+  }
+  return port;
+}
+
 export async function startServer({ port, mediaRoots = [], env: environment = {} }) {
-  if (port === 18742) throw new Error('refusing to use the production port 18742');
+  validateServerPort(port);
   if (await hello(port)) throw new Error(`a grokbot-desk server is already running on ${port}`);
   const dataDir = mkdtempSync(path.join(tmpdir(), 'rs-test-'));
   if (mediaRoots.length) {
@@ -58,13 +75,22 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
       window: { x: 0, y: 0, width: 1500, height: 1000 },
     }), 'utf8');
   }
-  const env = { ...process.env, ...environment, RS_DATA_DIR: dataDir };
+  const env = {
+    ...process.env,
+    ...environment,
+    RS_CLI_HTTP_TIMEOUT: (
+      environment.RS_CLI_HTTP_TIMEOUT
+      || process.env.RS_CLI_HTTP_TIMEOUT
+      || '15'
+    ),
+    RS_DATA_DIR: dataDir,
+  };
   const proc = spawn(PY, [...PY_ARGS, path.join(ROOT, 'report_shell.py'), '--port', String(port), 'serve'], {
     cwd: ROOT, env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true,
   });
   let stderr = '';
   proc.stderr.on('data', (d) => { stderr += d; });
-  const deadline = Date.now() + 8000;
+  const deadline = Date.now() + timeoutMs(env, 'RS_SERVER_START_TIMEOUT_MS', 15000);
   while (Date.now() < deadline) {
     if (proc.exitCode !== null) throw new Error('server exited: ' + stderr);
     if (await hello(port)) break;
@@ -132,7 +158,11 @@ export function show(server, data, extra = {}) {
   const file = path.join(server.dataDir, `payload-${process.pid}-${seq}.json`);
   writeFileSync(file, JSON.stringify(envelope), 'utf8');
   const out = spawnSync(PY, [...PY_ARGS, path.join(ROOT, 'report_shell.py'), '--port', String(server.port), 'show', template, '--data', file, '--no-window'], {
-    cwd: ROOT, env: server.env, encoding: 'utf8', windowsHide: true, timeout: 20000,
+    cwd: ROOT,
+    env: server.env,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: timeoutMs(server.env, 'RS_SHOW_PROCESS_TIMEOUT_MS', 30000),
   });
   if (out.status !== 0) throw new Error(`show failed (${out.status}): ${out.stderr}`);
   return JSON.parse(out.stdout.trim().split('\n').pop());
@@ -151,8 +181,10 @@ export async function stopServer(server) {
   while (server.proc.exitCode === null && Date.now() < deadline) await sleep(50);
   if (server.proc.exitCode === null) {
     server.proc.kill();
-    // py.exe launcher: make sure the python child is gone too
-    spawnSync('taskkill', ['/PID', String(server.proc.pid), '/T', '/F'], { windowsHide: true });
+    if (process.platform === 'win32') {
+      // py.exe launcher: make sure the python child is gone too
+      spawnSync('taskkill', ['/PID', String(server.proc.pid), '/T', '/F'], { windowsHide: true });
+    }
   }
   try { rmSync(server.dataDir, { recursive: true, force: true }); } catch { /* best effort */ }
 }

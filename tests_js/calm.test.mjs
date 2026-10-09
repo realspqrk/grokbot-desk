@@ -13,8 +13,11 @@ import {
   pngBackgroundRatio,
 } from '../tools/calm.mjs';
 import * as calmTools from '../tools/calm.mjs';
-import { loadChromium } from '../tools/dev/rs-server.mjs';
-import { ROOT } from '../tools/dev/rs-server.mjs';
+import {
+  browserChannel,
+  loadChromium,
+  ROOT,
+} from '../tools/dev/rs-server.mjs';
 
 const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
@@ -23,7 +26,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
   let browser;
 
   before(async () => {
-    browser = await chromium.launch({ channel: 'msedge', headless: true });
+    browser = await chromium.launch({ channel: browserChannel(), headless: true });
   });
 
   after(async () => {
@@ -406,7 +409,11 @@ describe('C16 calm synthetic pages', { skip }, () => {
         ),
       );
       const source = readFileSync(path.join(ROOT, 'tools/e2e.mjs'), 'utf8');
-      const scope = { focusedControlFacts };
+      const scope = {
+        focusedControlFacts,
+        setTimeout,
+        clearTimeout,
+      };
       vm.createContext(scope);
       vm.runInContext(
         source.slice(

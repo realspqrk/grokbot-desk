@@ -1,6 +1,7 @@
 """Command-line interface for grokbot-desk."""
 import argparse
 import json
+import math
 import os
 import shutil
 import socket
@@ -30,6 +31,17 @@ def output(value):
 def error(message, code):
     print(f"{DISPLAY_NAME}: {message}", file=sys.stderr)
     return code
+
+
+def _http_timeout(default):
+    raw = os.environ.get("RS_CLI_HTTP_TIMEOUT")
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return min(value, 60.0) if math.isfinite(value) and value > 0 else default
 
 
 def _hello(port, timeout=.35):
@@ -91,7 +103,7 @@ def _ensure_server(base, port):
     raise RuntimeError("server did not start within 3 seconds")
 
 
-def _request(port, path, token=None, csrf=None, body=None, timeout=3):
+def _request(port, path, token=None, csrf=None, body=None, timeout=None):
     headers = {"Content-Type": "application/json", "User-Agent": RUNNER_ID}
     if token:
         headers["X-RS-Token"] = token
@@ -105,7 +117,10 @@ def _request(port, path, token=None, csrf=None, body=None, timeout=3):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(
+            request,
+            timeout=_http_timeout(3) if timeout is None else timeout,
+        ) as response:
             return json.load(response)
     except urllib.error.HTTPError as response:
         try:
@@ -195,7 +210,9 @@ def command_show(args, base, port):
                 "X-RS-Token": state["token"],
             },
         )
-        with urllib.request.urlopen(request, timeout=3) as response:
+        with urllib.request.urlopen(
+            request, timeout=_http_timeout(3)
+        ) as response:
             result = json.load(response)
     except urllib.error.HTTPError as exc:
         if exc.code == 400:

@@ -12,7 +12,7 @@ import {
 } from './dev/rs-server.mjs';
 import { isSameOriginPath } from './dev/browser-safety.mjs';
 
-const PORT = Number(process.env.RS_TOOL_PORT || 18898);
+const PORT = Number(process.env.RS_TOOL_PORT || 18920);
 const FIXTURE_CREATED = '2026-10-08T10:39:00Z';
 const FIXTURE_CLOCK_ANCHOR = '2026-10-08T10:40:00Z';
 const cliArguments = process.argv.slice(2);
