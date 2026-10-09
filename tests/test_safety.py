@@ -1501,6 +1501,8 @@ def test_free_port_skips_active_listeners(host, monkeypatch):
 
     port = free_port()
     with socket.socket() as listener:
+        # Like the POSIX server: the candidate may still be in TIME_WAIT.
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind((host, port))
         listener.listen()
         monkeypatch.setattr(conftest, "_next_test_port", port)
