@@ -18,7 +18,9 @@ import { isSameOriginPath } from '../tools/dev/browser-safety.mjs';
 import {
   browserChannel,
   loadChromium,
+  resolvePythonExecutable,
   ROOT,
+  spawnPythonProcess,
   startServer,
   validateServerPort,
 } from '../tools/dev/rs-server.mjs';
@@ -26,6 +28,7 @@ import { calmPage } from './fixtures/calm/pages.mjs';
 
 const source = fs.readFileSync(path.join(ROOT, 'tools', 'e2e.mjs'), 'utf8');
 const declarations = source.slice(source.indexOf('function json('), source.indexOf('const runners ='));
+const serverSource = fs.readFileSync(path.join(ROOT, 'tools', 'dev', 'rs-server.mjs'), 'utf8');
 const FIXTURE_CLOCK_ENV = { RS_CLOCK_ANCHOR: '2026-10-08T10:40:00Z' };
 const BASE_PORT = Number(process.env.RS_E2E_PORT || 18920);
 const REVIEW_PORT = BASE_PORT + 3;
@@ -63,11 +66,193 @@ function sandbox(overrides = {}) {
   return value;
 }
 
+function stopServerSandbox(overrides = {}) {
+  const taskkills = [];
+  const removed = [];
+  let now = 0;
+  const value = {
+    AbortSignal: { timeout: (milliseconds) => ({ milliseconds }) },
+    Date: { now: () => { now += 5000; return now; } },
+    fetch: async () => { throw new Error('server already unavailable'); },
+    path,
+    process: { platform: 'win32' },
+    readFileSync: () => { throw new Error('state already unavailable'); },
+    rmSync: (target) => { removed.push(target); },
+    sleep: async () => {},
+    spawnSync: (command, args) => {
+      taskkills.push([command, [...args]]);
+      return { status: 0 };
+    },
+    ...overrides,
+  };
+  vm.createContext(value);
+  const implementation = serverSource
+    .slice(serverSource.indexOf('export async function stopServer('))
+    .replace('export async function stopServer(', 'async function stopServer(');
+  vm.runInContext(implementation, value);
+  return { stopServer: value.stopServer, taskkills, removed };
+}
+
 async function browserDriver(t) {
   const chromium = await loadChromium();
   if (!chromium) t.skip('playwright-core not found (set RS_PLAYWRIGHT_CORE)');
   return chromium;
 }
+
+test('stopServer never taskkills a child that exited by signal', async () => {
+  const { stopServer, taskkills } = stopServerSandbox();
+  const proc = {
+    exitCode: null,
+    signalCode: 'SIGTERM',
+    pid: 765432,
+    kill: () => false,
+  };
+
+  await stopServer({ dataDir: 'already-removed', port: 18920, proc });
+
+  assert.deepEqual(taskkills, []);
+});
+
+test('repeated stopServer cleanup never taskkills an exited child', async () => {
+  const { stopServer, taskkills } = stopServerSandbox();
+  const proc = {
+    exitCode: null,
+    signalCode: 'SIGTERM',
+    pid: 765432,
+    kill: () => false,
+  };
+  const server = { dataDir: 'already-removed', port: 18920, proc };
+
+  await stopServer(server);
+  await stopServer(server);
+
+  assert.deepEqual(taskkills, []);
+});
+
+test('resolved interpreter spawn retains python itself instead of the py launcher', () => {
+  const resolveCalls = [];
+  const executable = resolvePythonExecutable(
+    { RS_PYTHON: 'py' },
+    (command, args, options) => {
+      resolveCalls.push({ command, args, options });
+      return {
+        status: 0,
+        stdout: 'C:\\Python311\\python.exe\r\n',
+        stderr: '',
+      };
+    },
+  );
+  const spawnCalls = [];
+  const child = {};
+  const result = spawnPythonProcess(
+    executable,
+    ['report_shell.py', '--port', '18920', 'serve'],
+    { cwd: ROOT },
+    (command, args, options) => {
+      spawnCalls.push({ command, args, options });
+      return child;
+    },
+  );
+
+  assert.equal(resolveCalls.length, 1);
+  assert.equal(resolveCalls[0].command, 'py');
+  assert.deepEqual(resolveCalls[0].args, [
+    '-c',
+    'import sys; print(sys.executable)',
+  ]);
+  assert.equal(executable, 'C:\\Python311\\python.exe');
+  assert.equal(result, child);
+  assert.equal(spawnCalls.length, 1);
+  assert.equal(spawnCalls[0].command, executable);
+  assert.notEqual(spawnCalls[0].command, 'py');
+  assert.equal(spawnCalls[0].options.shell, false);
+});
+
+test('stopServer authenticates with isolated state and accepts graceful exit', async () => {
+  let request;
+  const proc = {
+    exitCode: null,
+    signalCode: null,
+    kill: () => { throw new Error('graceful stop must not signal'); },
+  };
+  const { stopServer, taskkills, removed } = stopServerSandbox({
+    readFileSync: () => JSON.stringify({ token: 'isolated-stop-token' }),
+    fetch: async (url, options) => {
+      request = { url, options };
+      proc.exitCode = 0;
+      return { ok: true };
+    },
+  });
+
+  await stopServer({ dataDir: 'isolated-data', port: 18920, proc });
+
+  assert.equal(request.url, 'http://127.0.0.1:18920/stop');
+  assert.equal(request.options.headers['X-RS-Token'], 'isolated-stop-token');
+  assert.deepEqual(taskkills, []);
+  assert.deepEqual(removed, ['isolated-data']);
+});
+
+test('tree ownership model never widens retained-child cleanup to numeric descendants', async () => {
+  const snapshot = [
+    { pid: 765432, ppid: 1, started: 300, owner: 'review' },
+    { pid: 880001, ppid: 765432, started: 100, owner: 'foreign-stale-ppid' },
+    { pid: 880002, ppid: 880001, started: 200, owner: 'foreign-descendant' },
+  ];
+  const numericTreeTargets = [];
+  const numericParents = [765432];
+  while (numericParents.length) {
+    const parent = numericParents.shift();
+    for (const entry of snapshot.filter((candidate) => candidate.ppid === parent)) {
+      numericTreeTargets.push(entry.owner);
+      numericParents.push(entry.pid);
+    }
+  }
+  assert.deepEqual(numericTreeTargets, [
+    'foreign-stale-ppid',
+    'foreign-descendant',
+  ]);
+
+  const retainedSignals = [];
+  const proc = {
+    exitCode: null,
+    signalCode: null,
+    pid: 765432,
+    kill: (signal) => {
+      retainedSignals.push(signal);
+      if (signal === undefined) proc.signalCode = 'SIGTERM';
+      return true;
+    },
+  };
+  const { stopServer, taskkills } = stopServerSandbox();
+
+  await stopServer({ dataDir: 'already-removed', port: 18920, proc });
+
+  assert.deepEqual(retainedSignals, [undefined]);
+  assert.deepEqual(taskkills, []);
+});
+
+test('stopServer fails loudly and keeps temp state when retained child refuses to exit', async () => {
+  let retainedKills = 0;
+  const proc = {
+    exitCode: null,
+    signalCode: null,
+    pid: 765432,
+    kill: () => {
+      retainedKills += 1;
+      return true;
+    },
+  };
+  const { stopServer, taskkills, removed } = stopServerSandbox();
+
+  await assert.rejects(
+    stopServer({ dataDir: 'keep-for-diagnosis', port: 18920, proc }),
+    /retained server process 765432 did not exit/u,
+  );
+
+  assert.equal(retainedKills, 1);
+  assert.deepEqual(taskkills, []);
+  assert.deepEqual(removed, []);
+});
 
 test('publish portability: browser channel is configurable with platform defaults', () => {
   assert.equal(browserChannel('win32', {}), 'msedge');
@@ -83,6 +268,49 @@ test('publish portability: browser tests use the configured channel', () => {
     const testSource = fs.readFileSync(path.join(ROOT, 'tests_js', file), 'utf8');
     assert.doesNotMatch(testSource, /chromium\.launch\(\{ channel: 'msedge'/u, file);
   }
+});
+
+test('browser launch and page navigation use explicit bounded timeouts', async () => {
+  let launchOptions;
+  let gotoOptions;
+  const page = {
+    goto: async (url, options) => { gotoOptions = options; },
+    newContext: undefined,
+    newPage: undefined,
+    on: () => {},
+    route: async () => {},
+    waitForFunction: async () => {},
+  };
+  const context = {
+    newPage: async () => page,
+  };
+  const browser = {
+    close: async () => {},
+    newContext: async () => context,
+  };
+  const server = {
+    assertOpen: async () => {},
+    stop: async () => {},
+  };
+  const scope = sandbox({
+    browserChannel: () => 'chrome',
+    loadChromium: async () => ({
+      launch: async (options) => {
+        launchOptions = options;
+        return browser;
+      },
+    }),
+    mode: 'expect',
+    reportStage: () => {},
+    startServer: async () => server,
+  });
+
+  await scope.withHarness(async ({ browser: launched }) => {
+    await scope.openPage(launched, server, 'run-id');
+  });
+
+  assert.equal(launchOptions.timeout, 30000);
+  assert.equal(gotoOptions.timeout, 30000);
 });
 
 test('configured isolated ports outside the default allocation range are accepted', () => {
@@ -206,7 +434,11 @@ test('finding 3: every page fulfils copy by default and C5 can explicitly opt ou
     waitForFunction: async () => {},
   };
   const browser = { newContext: async () => ({ newPage: async () => page }) };
-  const scope = { PORT: REVIEW_PORT, isSameOriginPath };
+  const scope = {
+    PORT: REVIEW_PORT,
+    boundedMilliseconds: (name, fallback) => fallback,
+    isSameOriginPath,
+  };
   vm.createContext(scope);
   vm.runInContext(
     source.slice(source.indexOf('async function openPage('), source.indexOf('async function runStep(')),
@@ -542,6 +774,7 @@ test('finding 13: submit timing starts at browser event dispatch, after action p
 test('finding 15: browser launch failure still stops the isolated server', async () => {
   let stopped = 0;
   const scope = {
+    boundedMilliseconds: (name, fallback) => fallback,
     loadChromium: async () => ({ launch: async () => { throw new Error('Edge launch failed'); } }),
     startServer: async () => ({ stop: async () => { stopped += 1; } }),
     browserChannel: () => 'msedge',

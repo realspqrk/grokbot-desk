@@ -51,6 +51,31 @@ def valid_payload():
     }
 
 
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [("darwin", True), ("win32", False)],
+)
+def test_server_reuses_addresses_only_on_posix(
+    tmp_path, monkeypatch, platform, expected
+):
+    root = Path(__file__).resolve().parents[1]
+    data_dir = ensure_layout(tmp_path / "data")
+    monkeypatch.setattr(sys, "platform", platform)
+    server = ReportHTTPServer(
+        ("127.0.0.1", 0),
+        Handler,
+        data_dir,
+        scan_registry(root / "templates"),
+        load_config(data_dir),
+    )
+    try:
+        assert server.allow_reuse_address is expected
+        reuse = server.socket.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR)
+        assert bool(reuse) is expected
+    finally:
+        server.server_close()
+
+
 def test_host_origin_csrf_and_token_guards(server_process):
     process, env, port = server_process(os.environ)
     state = json.loads((Path(env["RS_DATA_DIR"]) / "state.json").read_text())
@@ -332,6 +357,14 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
             received += stream.recv(4096)
         return stream
 
+    def wait_for_no_window():
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            if server.hub.probe_window() is False:
+                return
+            time.sleep(.01)
+        assert server.hub.probe_window() is False
+
     streams = []
     try:
         live = connect_sse("1" * 32)
@@ -347,7 +380,7 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
         live.shutdown(socket.SHUT_RDWR)
         live.close()
         streams.remove(live)
-        assert server.hub.probe_window() is False
+        wait_for_no_window()
 
         test_peer = connect_sse("2" * 32, test=True)
         streams.append(test_peer)
@@ -364,6 +397,7 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
         dead.shutdown(socket.SHUT_RDWR)
         dead.close()
         streams.remove(dead)
+        wait_for_no_window()
         with (
             patch("core.cli.launch_window", return_value=1234) as launch,
             patch("core.cli.focus_window") as focus,

@@ -7,6 +7,7 @@ import secrets
 import select
 import socket
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -139,6 +140,7 @@ class ReportHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, address, handler, data_dir, registry, config):
+        self.allow_reuse_address = sys.platform != "win32"
         if registry:
             repo_root = next(iter(registry.values())).path.parents[2]
             findings = contract_findings(registry, repo_root)
@@ -579,7 +581,11 @@ def _write_state(server):
         "token": server.token,
         "pid": os.getpid(),
         "port": server.port,
+        "data_dir": str(server.data_dir.resolve()),
     }
+    measurement_owner = os.environ.get("RS_MEASUREMENT_OWNER")
+    if measurement_owner:
+        state["measurement_owner"] = measurement_owner
     if "browser_pid" in old:
         state["browser_pid"] = old["browser_pid"]
     temporary = path.with_suffix(".json.tmp")

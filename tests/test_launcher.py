@@ -1,6 +1,7 @@
 import ctypes
 import os
 import subprocess
+import sys
 from ctypes import wintypes
 from pathlib import Path
 
@@ -61,9 +62,48 @@ def test_posix_detached_launch_starts_new_session_without_creationflags(monkeypa
                 "close_fds": True,
                 "shell": False,
                 "start_new_session": True,
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
             },
         )
     ]
+
+
+def test_posix_detached_child_does_not_hold_captured_parent_pipes(tmp_path):
+    runner = tmp_path / "captured_launcher.py"
+    runner.write_text(
+        "import os\n"
+        "import sys\n"
+        "from types import SimpleNamespace\n"
+        "from core import launcher\n"
+        "launcher.sys = SimpleNamespace(platform='darwin')\n"
+        "if os.name == 'nt':\n"
+        "    real_popen = launcher.subprocess.Popen\n"
+        "    def portable_popen(*args, **kwargs):\n"
+        "        kwargs.pop('start_new_session', None)\n"
+        "        return real_popen(*args, **kwargs)\n"
+        "    launcher.subprocess.Popen = portable_popen\n"
+        "launcher._detached_popen([\n"
+        "    sys.executable, '-c', 'import time; time.sleep(2)'\n"
+        "])\n"
+        "print('launcher returned')\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(runner)],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        },
+        capture_output=True,
+        text=True,
+        timeout=1,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "launcher returned"
 
 
 def test_access_denied_breakaway_fallback_logs_and_warns_once(monkeypatch, capsys):

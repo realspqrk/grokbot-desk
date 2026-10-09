@@ -8,8 +8,28 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PY = process.env.RS_PYTHON || 'py';
-const PY_ARGS = process.env.RS_PYTHON ? [] : ['-3'];
+
+export function resolvePythonExecutable(environment = process.env, run = spawnSync) {
+  const command = environment.RS_PYTHON || 'py';
+  const commandArgs = environment.RS_PYTHON ? [] : ['-3'];
+  const result = run(
+    command,
+    [...commandArgs, '-c', 'import sys; print(sys.executable)'],
+    { encoding: 'utf8', windowsHide: true, shell: false },
+  );
+  const executable = result.stdout?.trim();
+  if (result.status !== 0 || !executable) {
+    const detail = result.error?.message || result.stderr?.trim() || `exit ${result.status}`;
+    throw new Error(`could not resolve Python interpreter ${command}: ${detail}`);
+  }
+  return executable;
+}
+
+export function spawnPythonProcess(executable, args, options, spawnProcess = spawn) {
+  return spawnProcess(executable, args, { ...options, shell: false });
+}
+
+const PYTHON = resolvePythonExecutable();
 
 function timeoutMs(environment, name, fallback) {
   const value = Number(environment[name]);
@@ -85,8 +105,8 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
     ),
     RS_DATA_DIR: dataDir,
   };
-  const proc = spawn(PY, [...PY_ARGS, path.join(ROOT, 'report_shell.py'), '--port', String(port), 'serve'], {
-    cwd: ROOT, env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true,
+  const proc = spawnPythonProcess(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(port), 'serve'], {
+    cwd: ROOT, env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true, shell: false,
   });
   let stderr = '';
   proc.stderr.on('data', (d) => { stderr += d; });
@@ -157,11 +177,12 @@ export function show(server, data, extra = {}) {
   };
   const file = path.join(server.dataDir, `payload-${process.pid}-${seq}.json`);
   writeFileSync(file, JSON.stringify(envelope), 'utf8');
-  const out = spawnSync(PY, [...PY_ARGS, path.join(ROOT, 'report_shell.py'), '--port', String(server.port), 'show', template, '--data', file, '--no-window'], {
+  const out = spawnSync(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(server.port), 'show', template, '--data', file, '--no-window'], {
     cwd: ROOT,
     env: server.env,
     encoding: 'utf8',
     windowsHide: true,
+    shell: false,
     timeout: timeoutMs(server.env, 'RS_SHOW_PROCESS_TIMEOUT_MS', 30000),
   });
   if (out.status !== 0) throw new Error(`show failed (${out.status}): ${out.stderr}`);
@@ -170,21 +191,36 @@ export function show(server, data, extra = {}) {
 
 export async function stopServer(server) {
   if (!server) return;
-  try {
-    const state = JSON.parse(readFileSync(path.join(server.dataDir, 'state.json'), 'utf8'));
-    await fetch(`http://127.0.0.1:${server.port}/stop`, {
-      method: 'POST', headers: { 'X-RS-Token': state.token, 'Content-Type': 'application/json' }, body: '{}',
-      signal: AbortSignal.timeout(2000),
-    });
-  } catch { /* fall through to kill */ }
-  const deadline = Date.now() + 4000;
-  while (server.proc.exitCode === null && Date.now() < deadline) await sleep(50);
-  if (server.proc.exitCode === null) {
-    server.proc.kill();
-    if (process.platform === 'win32') {
-      // py.exe launcher: make sure the python child is gone too
-      spawnSync('taskkill', ['/PID', String(server.proc.pid), '/T', '/F'], { windowsHide: true });
-    }
+  if (!server.stopPromise) {
+    server.stopPromise = (async () => {
+      const hasExited = () => (
+        server.proc.exitCode !== null || server.proc.signalCode !== null
+      );
+      const awaitExit = async (milliseconds) => {
+        const deadline = Date.now() + milliseconds;
+        while (!hasExited() && Date.now() < deadline) await sleep(50);
+        return hasExited();
+      };
+      try {
+        const state = JSON.parse(readFileSync(path.join(server.dataDir, 'state.json'), 'utf8'));
+        const response = await fetch(`http://127.0.0.1:${server.port}/stop`, {
+          method: 'POST', headers: { 'X-RS-Token': state.token, 'Content-Type': 'application/json' }, body: '{}',
+          signal: AbortSignal.timeout(2000),
+        });
+        if (!response.ok) throw new Error(`server stop returned ${response.status}`);
+      } catch { /* fall through to retained-handle cleanup */ }
+      if (!(await awaitExit(4000))) {
+        try { server.proc.kill(); } catch { /* verify exit below */ }
+        await awaitExit(4000);
+      }
+      if (!hasExited()) {
+        throw new Error(
+          `retained server process ${server.proc.pid} did not exit; `
+          + `keeping temporary state at ${server.dataDir}`,
+        );
+      }
+      try { rmSync(server.dataDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    })();
   }
-  try { rmSync(server.dataDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  await server.stopPromise;
 }

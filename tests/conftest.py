@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -77,18 +78,135 @@ def install_minimal_template(repo_root, template_id="_starter"):
     return target
 
 
-_next_test_port = None
+TEST_PORT_FIRST = 18920
+TEST_PORT_LAST = 18939
+_next_test_port = TEST_PORT_FIRST
 
 
 def free_port():
-    for port in range(18920, 18940):
+    global _next_test_port
+    count = TEST_PORT_LAST - TEST_PORT_FIRST + 1
+    for offset in range(count):
+        port = TEST_PORT_FIRST + (
+            _next_test_port - TEST_PORT_FIRST + offset
+        ) % count
         with socket.socket() as sock:
             try:
                 sock.bind(("127.0.0.1", port))
             except OSError:
                 continue
+            _next_test_port = (
+                TEST_PORT_FIRST
+                + (port - TEST_PORT_FIRST + 1) % count
+            )
             return port
-    raise RuntimeError("no free test port in 18920-18939")
+    raise RuntimeError(
+        f"no free test port in {TEST_PORT_FIRST}-{TEST_PORT_LAST}"
+    )
+
+
+def _hello(port):
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/hello", timeout=.2
+        ) as response:
+            value = json.loads(response.read())
+        if value.get("runner") == "grokbot-desk/1":
+            return value
+    except Exception:
+        pass
+    return None
+
+
+def _stop_owned_server(env, port):
+    hello = _hello(port)
+    if not hello:
+        return
+    data_dir = Path(env["RS_DATA_DIR"]).resolve()
+    owner = env.get("RS_MEASUREMENT_OWNER")
+    try:
+        state = json.loads((data_dir / "state.json").read_text())
+        state_data_dir = Path(state["data_dir"]).resolve()
+    except (KeyError, OSError, TypeError, ValueError):
+        state = {}
+        state_data_dir = None
+    pid = state.get("pid")
+    ownership_matches = (
+        isinstance(owner, str)
+        and bool(owner)
+        and state.get("measurement_owner") == owner
+        and isinstance(pid, int)
+        and pid > 0
+        and state.get("port") == port
+        and state_data_dir == data_dir
+        and isinstance(state.get("token"), str)
+        and bool(state["token"])
+        and hello.get("pid") == pid
+        and hello.get("port") == port
+    )
+    if not ownership_matches:
+        raise AssertionError(
+            f"server ownership could not be proven for port {port}; "
+            "refusing graceful stop or process signals"
+        )
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/stop",
+        method="POST",
+        headers={
+            "Host": f"127.0.0.1:{port}",
+            "X-RS-Token": state["token"],
+        },
+        data=b"{}",
+    )
+    try:
+        urllib.request.urlopen(request, timeout=1).read()
+    except Exception as error:
+        raise AssertionError(
+            f"authenticated graceful stop failed for owned server on port {port}: "
+            f"{error}"
+        ) from error
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and _hello(port):
+        time.sleep(.05)
+    if _hello(port):
+        raise AssertionError(
+            f"owned server on port {port} did not stop gracefully; "
+            "refusing process signals"
+        )
+
+
+def _terminate_owned_process(process):
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=3)
+
+
+@pytest.fixture
+def server_guard():
+    tracked = []
+
+    def register(env, port):
+        run_env = dict(env)
+        run_env["RS_MEASUREMENT_OWNER"] = secrets.token_urlsafe(32)
+        e2e_port = free_port()
+        while e2e_port == port:
+            e2e_port = free_port()
+        run_env["RS_TOOL_PORT"] = str(port)
+        run_env["RS_E2E_PORT"] = str(e2e_port)
+        tracked.extend(((run_env, port), (run_env, e2e_port)))
+        return run_env
+
+    yield register
+    seen = set()
+    for env, port in reversed(tracked):
+        if port not in seen:
+            _stop_owned_server(env, port)
+            seen.add(port)
 
 
 @pytest.fixture
@@ -123,15 +241,4 @@ def server_process(tmp_path):
 
     yield start
     for process, env, port in processes:
-        try:
-            state = json.loads((Path(env["RS_DATA_DIR"]) / "state.json").read_text())
-            request = urllib.request.Request(
-                f"http://127.0.0.1:{port}/stop",
-                method="POST",
-                headers={"Host": f"127.0.0.1:{port}", "X-RS-Token": state["token"]},
-                data=b"{}",
-            )
-            urllib.request.urlopen(request, timeout=1).read()
-        except Exception:
-            process.terminate()
-        process.wait(timeout=3)
+        _terminate_owned_process(process)

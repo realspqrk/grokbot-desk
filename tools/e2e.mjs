@@ -38,8 +38,27 @@ while (cliArguments.length) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const runNetwork = { requests: [], responses: [], errors: [] };
 
+function reportStage(message) {
+  if (process.env.RS_E2E_DIAGNOSTICS !== '1') return;
+  console.error(message);
+  if (process.env.RS_E2E_STAGE_FILE) {
+    try {
+      writeFileSync(process.env.RS_E2E_STAGE_FILE, message, 'utf8');
+    } catch {
+      // Stderr still carries diagnostics when the stage file is unavailable.
+    }
+  }
+}
+
 function json(file) {
   return JSON.parse(readFileSync(file, 'utf8'));
+}
+
+function boundedMilliseconds(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0
+    ? Math.min(Math.max(value, 1000), 120000)
+    : fallback;
 }
 
 const MEASUREMENT_BOT_ID = json(path.join(ROOT, 'tools', 'measurement.json')).bot_id;
@@ -241,6 +260,9 @@ async function show(server, testCase) {
 async function withHarness(callback) {
   const chromium = await loadChromium();
   if (!chromium) throw new Error('playwright-core not found; set RS_PLAYWRIGHT_CORE');
+  if (typeof reportStage === 'function') {
+    reportStage('rs-e2e stage: starting server');
+  }
   const server = await startServer({
     port: PORT,
     mediaRoots: [ROOT],
@@ -248,7 +270,17 @@ async function withHarness(callback) {
   });
   let browser = null;
   try {
-    browser = await chromium.launch({ channel: browserChannel(), headless: true });
+    if (typeof reportStage === 'function') {
+      reportStage('rs-e2e stage: launching browser');
+    }
+    browser = await chromium.launch({
+      channel: browserChannel(),
+      headless: true,
+      timeout: boundedMilliseconds('RS_BROWSER_LAUNCH_TIMEOUT_MS', 30000),
+    });
+    if (typeof reportStage === 'function' && mode === 'expect') {
+      reportStage('rs-e2e stage: running expect checks');
+    }
     return await callback({ server, browser });
   } finally {
     try {
@@ -258,12 +290,11 @@ async function withHarness(callback) {
 }
 
 async function openPage(browser, server, runId, options = {}) {
-  const configuredTimeout = typeof process === 'undefined'
-    ? NaN
-    : Number(process.env.RS_E2E_READY_TIMEOUT_MS);
-  const readyTimeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
-    ? Math.min(Math.max(configuredTimeout, 1000), 120000)
-    : 10000;
+  const readyTimeout = boundedMilliseconds('RS_E2E_READY_TIMEOUT_MS', 10000);
+  const navigationTimeout = boundedMilliseconds(
+    'RS_E2E_NAVIGATION_TIMEOUT_MS',
+    30000,
+  );
   const context = await browser.newContext({
     viewport: options.viewport || { width: 1500, height: 1000 },
     deviceScaleFactor: 1,
@@ -307,7 +338,13 @@ async function openPage(browser, server, runId, options = {}) {
       });
     });
   }
-  await page.goto(`http://127.0.0.1:${PORT}/?run=${encodeURIComponent(runId)}&client=test`);
+  if (typeof reportStage === 'function') {
+    reportStage('rs-e2e stage: waiting for page readiness');
+  }
+  await page.goto(
+    `http://127.0.0.1:${PORT}/?run=${encodeURIComponent(runId)}&client=test`,
+    { timeout: navigationTimeout },
+  );
   await page.waitForFunction(
     () => document.documentElement.dataset.rsReady === '1',
     null,

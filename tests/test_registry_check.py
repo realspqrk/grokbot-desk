@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -7,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import core.check as check_module
-from conftest import install_minimal_template
+from conftest import free_port, install_minimal_template
 from core.check import check_template
 from core.lint import _forbidden_js_apis, _js_tokens
 from core.paths import ensure_layout, load_config
@@ -21,7 +22,17 @@ P6_SKIP_REASON = "tools/e2e.mjs backend is unavailable"
 
 
 @pytest.mark.skipif(not P6_RUNNER.is_file(), reason=P6_SKIP_REASON)
-def test_starter_check_succeeds_with_p6_expectation_backend():
+def test_starter_check_succeeds_with_p6_expectation_backend(
+    tmp_path, monkeypatch, server_guard
+):
+    port = free_port()
+    env = server_guard(
+        dict(os.environ, RS_DATA_DIR=str(tmp_path / "data")),
+        port,
+    )
+    monkeypatch.setenv("RS_DATA_DIR", env["RS_DATA_DIR"])
+    monkeypatch.setenv("RS_TOOL_PORT", env["RS_TOOL_PORT"])
+    monkeypatch.setenv("RS_E2E_PORT", env["RS_E2E_PORT"])
     assert check_template("_starter", ROOT) == []
 
 

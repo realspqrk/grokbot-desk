@@ -52,7 +52,14 @@ def discover_browser():
 def _detached_popen(args, action_log=None):
     options = {"close_fds": True, "shell": False}
     if sys.platform != "win32":
-        return subprocess.Popen(args, start_new_session=True, **options)
+        return subprocess.Popen(
+            args,
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **options,
+        )
     options["creationflags"] = DETACHED_FLAGS
     try:
         return subprocess.Popen(args, **options)
