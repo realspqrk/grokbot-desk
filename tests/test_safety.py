@@ -1492,3 +1492,16 @@ def test_webhook_non_success_response_logs_failure(monkeypatch, tmp_path):
     )
     assert events == ["webhook_fail"]
     assert requests[0].get_header("User-agent") == "grokbot-desk/1"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SO_REUSEADDR probe")
+@pytest.mark.parametrize("host", ["0.0.0.0", "127.0.0.1"])
+def test_free_port_skips_active_listeners(host, monkeypatch):
+    import conftest
+
+    port = free_port()
+    with socket.socket() as listener:
+        listener.bind((host, port))
+        listener.listen()
+        monkeypatch.setattr(conftest, "_next_test_port", port)
+        assert free_port() != port

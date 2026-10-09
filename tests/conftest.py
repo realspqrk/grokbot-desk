@@ -1,3 +1,4 @@
+import errno
 import json
 import os
 import secrets
@@ -83,6 +84,15 @@ TEST_PORT_LAST = 18939
 _next_test_port = TEST_PORT_FIRST
 
 
+def _loopback_refuses(port):
+    with socket.socket() as probe:
+        probe.settimeout(1)
+        try:
+            return probe.connect_ex(("127.0.0.1", port)) == errno.ECONNREFUSED
+        except OSError:
+            return False
+
+
 def free_port():
     global _next_test_port
     count = TEST_PORT_LAST - TEST_PORT_FIRST + 1
@@ -90,6 +100,11 @@ def free_port():
         port = TEST_PORT_FIRST + (
             _next_test_port - TEST_PORT_FIRST + offset
         ) % count
+        if sys.platform != "win32" and not _loopback_refuses(port):
+            # With SO_REUSEADDR a 127.0.0.1 bind can coexist with another
+            # wildcard listener on macOS/BSD, so only a refused loopback
+            # connect counts as free; anything uncertain is skipped.
+            continue
         with socket.socket() as sock:
             # Mirror ReportHTTPServer: POSIX servers bind with SO_REUSEADDR,
             # so ports left in TIME_WAIT by earlier tests are usable there.
