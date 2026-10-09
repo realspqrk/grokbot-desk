@@ -20,6 +20,7 @@ import {
   loadChromium,
   resolvePythonExecutable,
   ROOT,
+  serverStderrTail,
   spawnPythonProcess,
   startServer,
   validateServerPort,
@@ -166,6 +167,27 @@ test('resolved interpreter spawn retains python itself instead of the py launche
   assert.equal(spawnCalls[0].command, executable);
   assert.notEqual(spawnCalls[0].command, 'py');
   assert.equal(spawnCalls[0].options.shell, false);
+});
+
+test('server startup diagnostics use a bounded file-backed stderr tail', () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-stderr-tail-'));
+  const stderrPath = path.join(scratch, 'server.stderr.log');
+  try {
+    fs.writeFileSync(
+      stderrPath,
+      `${'discarded\n'.repeat(2000)}darwin startup failure\n`,
+      'utf8',
+    );
+
+    const tail = serverStderrTail(stderrPath, 256);
+
+    assert.ok(Buffer.byteLength(tail, 'utf8') <= 256);
+    assert.match(tail, /darwin startup failure\n$/u);
+    assert.match(serverSource, /serverStderrTail\(stderrPath\)/u);
+    assert.match(serverSource, /server stderr tail:/u);
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
 });
 
 test('stopServer authenticates with isolated state and accepts graceful exit', async () => {

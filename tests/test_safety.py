@@ -16,7 +16,7 @@ import pytest
 
 import core.server as server_module
 import core.webhook as webhook
-from conftest import install_minimal_template
+from conftest import free_port, install_minimal_template
 from core.actionlog import ActionLog
 from core.cli import command_open
 from core.envelope import validate_payload
@@ -30,13 +30,58 @@ from core.timeutil import to_vienna
 from core.webhook import deliver, webhook_enabled, validate_webhook_url
 
 
+def _request_timeout():
+    raw = os.environ.get(
+        "RS_TEST_HTTP_TIMEOUT",
+        os.environ.get("RS_CLI_HTTP_TIMEOUT", "2"),
+    )
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = 2
+    if not value > 0:
+        value = 2
+    return min(max(value, 1), 60)
+
+
 def request(port, method, path, body=b"", headers=None):
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+    connection = http.client.HTTPConnection(
+        "127.0.0.1", port, timeout=_request_timeout()
+    )
     connection.request(method, path, body=body, headers=headers or {})
     response = connection.getresponse()
     payload = response.read()
     connection.close()
     return response.status, payload
+
+
+def test_request_uses_bounded_ci_http_timeout(monkeypatch):
+    seen = []
+
+    class Response:
+        status = 200
+
+        def read(self):
+            return b"{}"
+
+    class Connection:
+        def __init__(self, host, port, timeout):
+            seen.append((host, port, timeout))
+
+        def request(self, method, path, body, headers):
+            pass
+
+        def getresponse(self):
+            return Response()
+
+        def close(self):
+            pass
+
+    monkeypatch.setenv("RS_CLI_HTTP_TIMEOUT", "15")
+    monkeypatch.setattr(http.client, "HTTPConnection", Connection)
+
+    assert request(18920, "GET", "/hello") == (200, b"{}")
+    assert seen == [("127.0.0.1", 18920, 15.0)]
 
 
 def valid_payload():
@@ -72,6 +117,33 @@ def test_server_reuses_addresses_only_on_posix(
         assert server.allow_reuse_address is expected
         reuse = server.socket.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR)
         assert bool(reuse) is expected
+    finally:
+        server.server_close()
+
+
+def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
+    lookups = []
+
+    def unexpected_lookup(host):
+        lookups.append(host)
+        raise AssertionError(f"unexpected hostname lookup for {host}")
+
+    root = Path(__file__).resolve().parents[1]
+    data_dir = ensure_layout(tmp_path / "data")
+    monkeypatch.setattr(socket, "getfqdn", unexpected_lookup)
+    monkeypatch.setattr(socket, "gethostbyaddr", unexpected_lookup)
+
+    server = ReportHTTPServer(
+        ("127.0.0.1", free_port()),
+        Handler,
+        data_dir,
+        scan_registry(root / "templates"),
+        load_config(data_dir),
+    )
+    try:
+        assert server.server_name == "127.0.0.1"
+        assert server.server_port == server.server_address[1]
+        assert lookups == []
     finally:
         server.server_close()
 

@@ -91,6 +91,10 @@ def free_port():
             _next_test_port - TEST_PORT_FIRST + offset
         ) % count
         with socket.socket() as sock:
+            # Mirror ReportHTTPServer: POSIX servers bind with SO_REUSEADDR,
+            # so ports left in TIME_WAIT by earlier tests are usable there.
+            if sys.platform != "win32":
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 sock.bind(("127.0.0.1", port))
             except OSError:
@@ -105,10 +109,10 @@ def free_port():
     )
 
 
-def _hello(port):
+def _hello(port, timeout=1):
     try:
         with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/hello", timeout=.2
+            f"http://127.0.0.1:{port}/hello", timeout=timeout
         ) as response:
             value = json.loads(response.read())
         if value.get("runner") == "grokbot-desk/1":
@@ -116,6 +120,27 @@ def _hello(port):
     except Exception:
         pass
     return None
+
+
+def _startup_timeout_seconds(env, default=3):
+    try:
+        milliseconds = float(env.get("RS_SERVER_START_TIMEOUT_MS", default * 1000))
+    except (TypeError, ValueError):
+        milliseconds = default * 1000
+    if not milliseconds > 0:
+        milliseconds = default * 1000
+    return min(max(milliseconds / 1000, 1), 120)
+
+
+def _stderr_tail(path, limit=8192):
+    try:
+        with Path(path).open("rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            size = stream.tell()
+            stream.seek(max(0, size - limit))
+            return stream.read(limit).decode("utf-8", errors="replace")
+    except OSError:
+        return ""
 
 
 def _stop_owned_server(env, port):
@@ -224,20 +249,41 @@ def server_process(tmp_path):
         port = free_port()
         run_env = dict(env)
         run_env["RS_DATA_DIR"] = str(tmp_path / f"data-{port}")
-        process = subprocess.Popen(
-            [sys.executable, str(ROOT / "report_shell.py"), "--port", str(port), "serve"],
-            cwd=ROOT,
-            env=run_env,
-        )
+        stderr_path = tmp_path / f"server-{port}.stderr.log"
+        with stderr_path.open("w+b") as stderr:
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(ROOT / "report_shell.py"),
+                    "--port",
+                    str(port),
+                    "serve",
+                ],
+                cwd=ROOT,
+                env=run_env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr,
+            )
         processes.append((process, run_env, port))
-        deadline = time.monotonic() + 3
+        startup_timeout = _startup_timeout_seconds(run_env)
+        deadline = time.monotonic() + startup_timeout
         while time.monotonic() < deadline:
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/hello", timeout=.2):
-                    return process, run_env, port
-            except Exception:
-                time.sleep(.05)
-        raise AssertionError("server did not start")
+            if process.poll() is not None:
+                break
+            if _hello(port):
+                return process, run_env, port
+            time.sleep(.05)
+        tail = _stderr_tail(stderr_path).rstrip() or "<empty>"
+        status = (
+            f"exit code {process.returncode}"
+            if process.poll() is not None
+            else "process still running"
+        )
+        raise AssertionError(
+            f"server did not start within {startup_timeout:g} seconds "
+            f"({status}); server stderr tail: {tail}"
+        )
 
     yield start
     for process, env, port in processes:

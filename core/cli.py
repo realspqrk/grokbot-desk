@@ -44,6 +44,21 @@ def _http_timeout(default):
     return min(value, 60.0) if math.isfinite(value) and value > 0 else default
 
 
+def _server_start_timeout_seconds(default=3):
+    raw = os.environ.get("RS_SERVER_START_TIMEOUT_MS")
+    if raw is None:
+        return default
+    try:
+        value = float(raw) / 1000
+    except ValueError:
+        return default
+    return (
+        min(max(value, 1.0), 120.0)
+        if math.isfinite(value) and value > 0
+        else default
+    )
+
+
 def _hello(port, timeout=.35):
     try:
         request = urllib.request.Request(
@@ -90,7 +105,8 @@ def _ensure_server(base, port):
     if _port_open(port):
         raise RuntimeError("port is held by a foreign process")
     launch_server(ROOT / "report_shell.py", port, base)
-    deadline = time.monotonic() + 3
+    startup_timeout = _server_start_timeout_seconds()
+    deadline = time.monotonic() + startup_timeout
     while time.monotonic() < deadline:
         hello = _hello(port)
         if hello:
@@ -100,7 +116,9 @@ def _ensure_server(base, port):
         time.sleep(.05)
     if _port_open(port):
         raise RuntimeError("port is held by a foreign process")
-    raise RuntimeError("server did not start within 3 seconds")
+    raise RuntimeError(
+        f"server did not start within {startup_timeout:g} seconds"
+    )
 
 
 def _request(port, path, token=None, csrf=None, body=None, timeout=None):

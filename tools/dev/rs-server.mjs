@@ -2,7 +2,15 @@
 // Never uses port 18742 or the real %LOCALAPPDATA%\grokbot-desk:
 // every server gets its own temp RS_DATA_DIR.
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -36,6 +44,25 @@ function timeoutMs(environment, name, fallback) {
   return Number.isFinite(value) && value > 0
     ? Math.min(Math.max(value, 1000), 120000)
     : fallback;
+}
+
+export function serverStderrTail(stderrPath, maxBytes = 8192) {
+  try {
+    const content = readFileSync(stderrPath);
+    return content.subarray(Math.max(0, content.length - maxBytes)).toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+function serverStartupError(message, proc, stderrPath) {
+  const status = proc.exitCode !== null
+    ? `exit code ${proc.exitCode}`
+    : proc.signalCode !== null
+      ? `signal ${proc.signalCode}`
+      : 'process still running';
+  const tail = serverStderrTail(stderrPath).trimEnd() || '<empty>';
+  return new Error(`${message} (${status}); server stderr tail:\n${tail}`);
 }
 
 export function playwrightPath(environment = process.env) {
@@ -105,18 +132,45 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
     ),
     RS_DATA_DIR: dataDir,
   };
-  const proc = spawnPythonProcess(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(port), 'serve'], {
-    cwd: ROOT, env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true, shell: false,
-  });
-  let stderr = '';
-  proc.stderr.on('data', (d) => { stderr += d; });
+  const stderrPath = path.join(dataDir, 'server.stderr.log');
+  const stderrFd = openSync(stderrPath, 'w');
+  let proc;
+  try {
+    try {
+      proc = spawnPythonProcess(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(port), 'serve'], {
+        cwd: ROOT, env, stdio: ['ignore', 'ignore', stderrFd], windowsHide: true, shell: false,
+      });
+    } finally {
+      closeSync(stderrFd);
+    }
+  } catch (error) {
+    rmSync(dataDir, { recursive: true, force: true });
+    throw error;
+  }
   const deadline = Date.now() + timeoutMs(env, 'RS_SERVER_START_TIMEOUT_MS', 15000);
   while (Date.now() < deadline) {
-    if (proc.exitCode !== null) throw new Error('server exited: ' + stderr);
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      const error = serverStartupError('server exited before becoming ready', proc, stderrPath);
+      rmSync(dataDir, { recursive: true, force: true });
+      throw error;
+    }
     if (await hello(port)) break;
     await sleep(100);
   }
-  if (!(await hello(port))) { proc.kill(); throw new Error('server did not start: ' + stderr); }
+  if (!(await hello(port))) {
+    try { proc.kill(); } catch { /* report the retained process status below */ }
+    const exitDeadline = Date.now() + 2000;
+    while (
+      proc.exitCode === null
+      && proc.signalCode === null
+      && Date.now() < exitDeadline
+    ) await sleep(50);
+    const error = serverStartupError('server did not start', proc, stderrPath);
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+    throw error;
+  }
   const server = {
     port, dataDir, env, proc,
     url: (q = '') => `http://127.0.0.1:${port}/${q}`,

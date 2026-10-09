@@ -198,6 +198,44 @@ def test_owned_process_handle_escalates_only_that_handle():
     assert calls == ["terminate", ("wait", 3), "kill", ("wait", 3)]
 
 
+def test_server_start_timeout_is_configurable_and_bounded(monkeypatch):
+    monkeypatch.setenv("RS_SERVER_START_TIMEOUT_MS", "15000")
+    assert cli_module._server_start_timeout_seconds() == 15
+
+    monkeypatch.setenv("RS_SERVER_START_TIMEOUT_MS", "0")
+    assert cli_module._server_start_timeout_seconds() == 3
+
+    monkeypatch.setenv("RS_SERVER_START_TIMEOUT_MS", "999999")
+    assert cli_module._server_start_timeout_seconds() == 120
+
+
+def test_server_fixture_failure_includes_captured_stderr_tail(
+    tmp_path, monkeypatch
+):
+    class Process:
+        returncode = 7
+
+        def poll(self):
+            return self.returncode
+
+    def popen(*args, **kwargs):
+        kwargs["stderr"].write(b"darwin startup failure\n")
+        kwargs["stderr"].flush()
+        return Process()
+
+    monkeypatch.setattr(fixture_module.subprocess, "Popen", popen)
+    fixture = fixture_module.server_process.__wrapped__(tmp_path)
+    start = next(fixture)
+    try:
+        with pytest.raises(
+            AssertionError,
+            match="server stderr tail.*darwin startup failure",
+        ):
+            start({})
+    finally:
+        fixture.close()
+
+
 def test_cli_outer_timeout_exceeds_bounded_inner_budgets(monkeypatch):
     seen = []
     monkeypatch.setattr(

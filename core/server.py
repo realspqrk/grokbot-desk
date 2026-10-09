@@ -6,6 +6,7 @@ import re
 import secrets
 import select
 import socket
+import socketserver
 import subprocess
 import sys
 import threading
@@ -138,6 +139,10 @@ class SSEHub:
 class ReportHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = False
     daemon_threads = True
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
     def __init__(self, address, handler, data_dir, registry, config):
         self.allow_reuse_address = sys.platform != "win32"
