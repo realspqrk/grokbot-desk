@@ -15,6 +15,13 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 [![Platforms: Windows | macOS (experimental)](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%28experimental%29-lightgrey.svg)](#platforms)
 [![Version: 1.0.0-beta.1](https://img.shields.io/badge/version-1.0.0--beta.1-blue.svg)](CHANGELOG.md)
 
+</div>
+
+> [!WARNING]
+> ⚠️ This is not an official Grok Bot plugin. SpaceXAI, please don't sue me.
+
+<div align="center">
+
 <p>
   <a href="#quick-start">Quick start</a> &middot;
   <a href="#templates">Templates</a> &middot;
@@ -22,12 +29,9 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-<img src="docs/img/hero-strip-light.png" alt="Three open reports with a slim avatar strip along the top" width="760">
+<img src="docs/img/hero-strip-dark.png" alt="Three open reports with a slim avatar strip along the top, dark theme" width="760">
 
 </div>
-
-> [!WARNING]
-> ⚠️ This is not an official Grok Bot plugin. SpaceXAI, please don't sue me.
 
 Chat is awful for discussing serious work. When a bot needs your decision, a calm window pops up instead: the bot sends JSON, you decide, the bot reads your decision as JSON. Everything stays on your computer.
 
