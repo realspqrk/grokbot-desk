@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "required": ["doc"],
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "Optional lead from the agent above the document: what it is and what to look at (plain text)."
+    },
+    "format": {
+      "enum": ["markdown", "text"],
+      "default": "markdown",
+      "description": "markdown: the safe subset (headings, paragraphs, emphasis, inline code, code blocks, lists, quotes, tables, rules, links as text, images by media key). text: plain text, line breaks kept."
+    },
+    "doc": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60000,
+      "description": "The document to review. Raw HTML is shown as text; links show their address as text and are never opened."
+    },
+    "images": {
+      "type": "array",
+      "maxItems": 8,
+      "x-rs-unique-key": "key",
+      "description": "Images the Markdown may show with ![alt](key). Anything else, including web addresses, is shown as a quiet placeholder.",
+      "items": {
+        "type": "object",
+        "required": ["key", "path", "alt"],
+        "additionalProperties": false,
+        "properties": {
+          "key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$", "description": "Name used in the Markdown image target."},
+          "path": {"type": "string", "minLength": 1, "maxLength": 1000, "x-rs-media": true, "description": "Absolute path under a media root (png, jpg, jpeg, webp, gif)."},
+          "alt": {"type": "string", "minLength": 1, "maxLength": 200, "description": "Alt text, used when the Markdown gives none."}
+        }
+      }
+    }
+  }
+}

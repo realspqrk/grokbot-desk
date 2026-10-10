@@ -1,0 +1,25 @@
+{
+  "question": "Which colour should the new sign have?",
+  "options": [
+    {
+      "id": "green",
+      "name": "Green"
+    },
+    {
+      "id": "blue",
+      "name": "Blue"
+    },
+    {
+      "id": "grey",
+      "name": "Grey"
+    },
+    {
+      "id": "white",
+      "name": "White"
+    },
+    {
+      "id": "black",
+      "name": "Black"
+    }
+  ]
+}

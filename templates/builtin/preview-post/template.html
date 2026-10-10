@@ -1,0 +1,71 @@
+<div class="pp">
+  <p class="pp__note" data-pp="notes"></p>
+  <div class="pp__request" data-pp="request" hidden>
+    <label class="rs-label" for="pp-comment"><span data-rs-t="request_changes_label"></span></label>
+    <textarea class="rs-input" id="pp-comment" maxlength="2000" rows="3"></textarea>
+    <div><button type="button" class="rs-link" data-pp="request-cancel"><span data-rs-t="cancel"></span></button></div>
+  </div>
+  <div class="pp__tabs" role="tablist" data-rs-t-aria-label="platforms_label" data-pp="tabs"></div>
+  <div class="pp__panels" data-pp="panels">
+  <section class="pp__panel" data-platform="x" role="tabpanel" data-rs-item hidden>
+    <rs-post-frame skin="x" no-chrome data-pp="frame"></rs-post-frame>
+    <div class="pp__side">
+      <label class="rs-check pp__approve"><input type="checkbox" id="approve-x" value="x" data-pp="approve"><span data-pp="approve-label"></span></label>
+      <p class="rs-error pp__blocked" id="blocked-x" data-pp="blocked" hidden><span class="rs-dot" data-rs-status="danger" aria-hidden="true"></span> <span data-pp="blocked-text"></span></p>
+      <div class="pp__counts"><rs-counter platform="x" data-counter-id="x"></rs-counter></div>
+      <div class="pp__badges" data-pp="badges"></div>
+      <div class="pp__copies">
+        <rs-copy data-copy-id="x-text" data-pp="copy-text" no-value caption></rs-copy>
+        <rs-copy data-copy-id="x-hashtags" data-pp="copy-hashtags" icon="hash" caption></rs-copy>
+        <rs-copy class="pp__comment" data-copy-id="x-comment" data-pp="copy-comment" block caption></rs-copy>
+      </div>
+    </div>
+  </section>
+  <section class="pp__panel" data-platform="linkedin" role="tabpanel" data-rs-item hidden>
+    <rs-post-frame skin="linkedin" no-chrome data-pp="frame"></rs-post-frame>
+    <div class="pp__side">
+      <label class="rs-check pp__approve"><input type="checkbox" id="approve-linkedin" value="linkedin" data-pp="approve"><span data-pp="approve-label"></span></label>
+      <p class="rs-error pp__blocked" id="blocked-linkedin" data-pp="blocked" hidden><span class="rs-dot" data-rs-status="danger" aria-hidden="true"></span> <span data-pp="blocked-text"></span></p>
+      <div class="pp__counts"><rs-counter platform="linkedin" data-counter-id="linkedin"></rs-counter></div>
+      <div class="pp__badges" data-pp="badges"></div>
+      <div class="pp__copies">
+        <rs-copy data-copy-id="linkedin-text" data-pp="copy-text" no-value caption></rs-copy>
+        <rs-copy data-copy-id="linkedin-hashtags" data-pp="copy-hashtags" icon="hash" caption></rs-copy>
+        <rs-copy class="pp__comment" data-copy-id="linkedin-comment" data-pp="copy-comment" block caption></rs-copy>
+      </div>
+      <rs-counter class="pp__comment-count" platform="linkedin_comment" data-counter-id="linkedin-comment"></rs-counter>
+    </div>
+  </section>
+  <section class="pp__panel" data-platform="instagram" role="tabpanel" data-rs-item hidden>
+    <rs-post-frame skin="instagram" no-chrome data-pp="frame"></rs-post-frame>
+    <div class="pp__side">
+      <label class="rs-check pp__approve"><input type="checkbox" id="approve-instagram" value="instagram" data-pp="approve"><span data-pp="approve-label"></span></label>
+      <p class="rs-error pp__blocked" id="blocked-instagram" data-pp="blocked" hidden><span class="rs-dot" data-rs-status="danger" aria-hidden="true"></span> <span data-pp="blocked-text"></span></p>
+      <div class="pp__counts">
+        <rs-counter platform="instagram" data-counter-id="instagram"></rs-counter>
+        <span class="pp__tagcount"><span data-rs-t="hashtags"></span> <rs-counter platform="instagram" kind="hashtags" data-counter-id="instagram-hashtags"></rs-counter></span>
+      </div>
+      <div class="pp__badges" data-pp="badges"></div>
+      <div class="pp__copies">
+        <rs-copy data-copy-id="instagram-text" data-pp="copy-text" no-value caption></rs-copy>
+        <rs-copy data-copy-id="instagram-hashtags" data-pp="copy-hashtags" icon="hash" caption></rs-copy>
+        <rs-copy class="pp__comment" data-copy-id="instagram-comment" data-pp="copy-comment" block caption></rs-copy>
+      </div>
+    </div>
+  </section>
+  <section class="pp__panel" data-platform="facebook" role="tabpanel" data-rs-item hidden>
+    <rs-post-frame skin="facebook" no-chrome data-pp="frame"></rs-post-frame>
+    <div class="pp__side">
+      <label class="rs-check pp__approve"><input type="checkbox" id="approve-facebook" value="facebook" data-pp="approve"><span data-pp="approve-label"></span></label>
+      <p class="rs-error pp__blocked" id="blocked-facebook" data-pp="blocked" hidden><span class="rs-dot" data-rs-status="danger" aria-hidden="true"></span> <span data-pp="blocked-text"></span></p>
+      <div class="pp__counts"><rs-counter platform="facebook" data-counter-id="facebook"></rs-counter></div>
+      <div class="pp__badges" data-pp="badges"></div>
+      <div class="pp__copies">
+        <rs-copy data-copy-id="facebook-text" data-pp="copy-text" no-value caption></rs-copy>
+        <rs-copy data-copy-id="facebook-hashtags" data-pp="copy-hashtags" icon="hash" caption></rs-copy>
+        <rs-copy class="pp__comment" data-copy-id="facebook-comment" data-pp="copy-comment" block caption></rs-copy>
+      </div>
+    </div>
+  </section>
+  </div>
+</div>

@@ -1,0 +1,7 @@
+{
+  "summary": "Release v2.4.0 of the web shop passed staging. Deploy it to production tonight?",
+  "checks": [
+    {"label": "Unit and integration tests", "detail": "214 passed in 3m 12s", "state": "ok"},
+    {"label": "Staging smoke test", "detail": "All 18 user flows OK", "state": "passed"}
+  ]
+}

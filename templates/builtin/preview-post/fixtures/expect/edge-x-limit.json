@@ -1,0 +1,20 @@
+{
+  "copies": {
+    "x-text": "Fresh paint and a new green door: the shopfront's done. Open Monday to Saturday 7 to 18, Sunday 8 to 12. Come by for a coffee and tell us what you think. We've baked an extra tray of cinnamon rolls for the occasion, first come, first served. See you soon!\n\n#ShopFront #LindenStreet",
+    "x-hashtags": "#ShopFront #LindenStreet",
+    "linkedin-text": "The shop front got a fresh coat of paint this week, and the new green door is finally in. We are open as usual: Monday to Saturday from 7 to 18, Sunday from 8 to 12. Come by for a coffee and tell us what you think of the new look. See you soon!\n\n#ShopFront #LindenStreet",
+    "linkedin-hashtags": "#ShopFront #LindenStreet"
+  },
+  "counters": {
+    "x": {
+      "count": 281,
+      "limit": 280,
+      "over": true
+    },
+    "linkedin": {
+      "count": 270,
+      "limit": 3000,
+      "over": false
+    }
+  }
+}

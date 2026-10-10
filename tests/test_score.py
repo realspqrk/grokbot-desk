@@ -2,98 +2,117 @@ import argparse
 import json
 import re
 
-import pytest
-
 from tools import score
 from tools.score import calculate_points, score_totals
 
 
 def _complete_calm_result():
     scenes = []
+
+    def add_scene(fixture, theme, width, height, open_runs, identity=None):
+        golden_scene = fixture == "golden" or identity is not None
+        raw = {
+            "K1": {
+                "primary_ids": ["#primary"],
+                "accent_fill_ids": ["#primary"],
+                "disabled_primary": None,
+            },
+            "K2": {"items": []},
+            "K3": {
+                "open_runs": open_runs,
+                "strip_rendered": open_runs == 3,
+                "strip_width": 180 if open_runs == 3 else 0,
+                "focusable_descendants": 1 if open_runs == 3 else 0,
+            },
+            "K4": {"font_sizes": [16, 24], "font_weights": ["400", "600"]},
+            "K5": {"boxes": [], "max_box_ancestors": 0},
+            "K6": {"accent_hue": 210.0, "off_accent": []},
+            "K7": {
+                "item_gaps": [20],
+                "wide_text": [],
+                "page_background": [245, 245, 240],
+                "background_ratio": (
+                    0.8 if golden_scene and (width, height) == (1500, 1000)
+                    else None
+                ),
+                "lint_pass": None,
+            },
+            "K8": {"visible_inputs": [], "open_secondary": []},
+            "K9": {
+                "measured": golden_scene and (width, height) == (1280, 720),
+                "visible_interactive_above_fold": 5,
+            },
+            "K10": {"mockups": [], "tablists": [], "interaction": None},
+            "K11": {
+                "noise": [],
+                "header_titles": 1,
+                "header_controls": [],
+            },
+            "K12": {
+                "normal": {
+                    "reduced_motion": False,
+                    "motion": [],
+                    "max_ms": 0,
+                    "attention": [],
+                },
+                "reduced": {
+                    "reduced_motion": True,
+                    "motion": [],
+                    "max_ms": 0,
+                    "attention": [],
+                },
+            },
+            "K13": {
+                "copy_focus": {"pass": True, "controls": []},
+                "keyboard": {"pass": True, "error": None},
+                "accessibility": {
+                    "pass": True,
+                    "unnamed": 0,
+                    "positive_tabindex": 0,
+                    "violations": [],
+                },
+                "dependency": "C16 requires C12 and C13 evidence",
+            },
+        }
+        scene = {
+            "template": "_starter",
+            "fixture": fixture,
+            "theme": theme,
+            "viewport": {"width": width, "height": height},
+            "open_runs": open_runs,
+            "items": {
+                name: {"pass": True, "reasons": [], "raw": value}
+                for name, value in raw.items()
+            },
+            "ok": True,
+        }
+        if identity is not None:
+            scene["identity"] = identity
+        scenes.append(scene)
+
     for fixture in ("golden", "edge-max"):
         for theme in ("light", "dark"):
             for width, height in ((1500, 1000), (1280, 720)):
                 for open_runs in (1, 3):
-                    raw = {
-                        "K1": {
-                            "primary_ids": ["#primary"],
-                            "accent_fill_ids": ["#primary"],
-                            "disabled_primary": None,
-                        },
-                        "K2": {"items": []},
-                        "K3": {
-                            "open_runs": open_runs,
-                            "rail_rendered": open_runs == 3,
-                            "rail_width": 180 if open_runs == 3 else 0,
-                            "focusable_descendants": 1 if open_runs == 3 else 0,
-                        },
-                        "K4": {"font_sizes": [16, 24], "font_weights": ["400", "600"]},
-                        "K5": {"boxes": [], "max_box_ancestors": 0},
-                        "K6": {"accent_hue": 210.0, "off_accent": []},
-                        "K7": {
-                            "item_gaps": [20],
-                            "wide_text": [],
-                            "page_background": [245, 245, 240],
-                            "background_ratio": (
-                                0.8 if fixture == "golden" and (width, height) == (1500, 1000)
-                                else None
-                            ),
-                            "lint_pass": None,
-                        },
-                        "K8": {"visible_inputs": [], "open_secondary": []},
-                        "K9": {
-                            "measured": fixture == "golden" and (width, height) == (1280, 720),
-                            "visible_interactive_above_fold": 5,
-                        },
-                        "K10": {"mockups": [], "tablists": [], "interaction": None},
-                        "K11": {
-                            "noise": [],
-                            "header_titles": 1,
-                            "header_controls": [],
-                        },
-                        "K12": {
-                            "normal": {
-                                "reduced_motion": False,
-                                "motion": [],
-                                "max_ms": 0,
-                                "attention": [],
-                            },
-                            "reduced": {
-                                "reduced_motion": True,
-                                "motion": [],
-                                "max_ms": 0,
-                                "attention": [],
-                            },
-                        },
-                        "K13": {
-                            "copy_focus": {"pass": True, "controls": []},
-                            "keyboard": {"pass": True, "error": None},
-                            "accessibility": {
-                                "pass": True,
-                                "unnamed": 0,
-                                "positive_tabindex": 0,
-                                "violations": [],
-                            },
-                            "dependency": "C16 requires C12 and C13 evidence",
-                        },
-                    }
-                    scene_items = {
-                        name: {"pass": True, "reasons": [], "raw": value}
-                        for name, value in raw.items()
-                    }
-                    scenes.append({
-                        "template": "_starter",
-                        "fixture": fixture,
-                        "theme": theme,
-                        "viewport": {"width": width, "height": height},
-                        "open_runs": open_runs,
-                        "items": scene_items,
-                        "ok": True,
-                    })
+                    add_scene(fixture, theme, width, height, open_runs)
+    identity_accents = {
+        "golden+custom-accent": {"light": "#3b4fd8", "dark": "#0891b2"},
+        "golden+low-contrast-accent": {"light": "#3b4fd8", "dark": "#f6c945"},
+    }
+    for fixture, accents in identity_accents.items():
+        for theme in ("light", "dark"):
+            for width, height in ((1500, 1000), (1280, 720)):
+                add_scene(fixture, theme, width, height, 3, {
+                    "expected_accent": accents[theme],
+                    "observed_accent": accents[theme],
+                    "strip_accents": [],
+                    "pass": True,
+                })
     return {
         "mode": "calm",
         "template": "_starter",
         "ok": True,
+        "identity": {"scenes": 8, "failed": []},
         "passed": 13,
         "total": 13,
         "items": {
@@ -192,7 +211,7 @@ def test_c16_runs_calm_per_template_lint_and_requires_c12_c13_evidence(
     tmp_path, monkeypatch
 ):
     commands = []
-    monkeypatch.setattr(score, "_registered_templates", lambda: ["_starter", "synthetic-template"])
+    monkeypatch.setattr(score, "_registered_templates", lambda: ["_starter", "decide-list"])
 
     def command_json(command, timeout=300):
         commands.append(command)
@@ -216,7 +235,7 @@ def test_c16_runs_calm_per_template_lint_and_requires_c12_c13_evidence(
     assert set(c16["raw"]["items"]) == {f"K{index}" for index in range(1, 14)}
     assert [command[-1] for command in commands if "calm" in command] == [
         "_starter",
-        "synthetic-template",
+        "decide-list",
     ]
     assert any(command[-1:] == ["--calm"] for command in commands)
 
@@ -282,17 +301,41 @@ def test_round_2_finding_14_c16_requires_raw_schema_for_every_k_item():
     assert score._valid_calm_result(malformed) is False
 
 
-def test_review_finding_16_dev_helpers_use_portable_runtime_resolution():
+def test_c16_accepts_real_24_scene_shape_and_requires_identity_evidence():
+    complete = _complete_calm_result()
+    assert len(complete["scenes"]) == 24
+    assert score._valid_calm_result(complete) is True
+
+    missing_scene = json.loads(json.dumps(complete))
+    missing_scene["scenes"].pop()
+    assert score._valid_calm_result(missing_scene) is False
+
+    missing_identity = json.loads(json.dumps(complete))
+    missing_identity.pop("identity")
+    assert score._valid_calm_result(missing_identity) is False
+
+    missing_scene_evidence = json.loads(json.dumps(complete))
+    missing_scene_evidence["scenes"][16].pop("identity")
+    assert score._valid_calm_result(missing_scene_evidence) is False
+
+    inconsistent_identity = json.loads(json.dumps(complete))
+    inconsistent_identity["scenes"][16]["identity"]["pass"] = False
+    assert score._valid_calm_result(inconsistent_identity) is False
+
+
+def test_review_finding_16_dev_helpers_use_shared_public_defaults():
     server = (score.ROOT / "tools" / "dev" / "rs-server.mjs").read_text(encoding="utf-8")
     preview = (score.ROOT / "tools" / "dev" / "kit-preview.mjs").read_text(encoding="utf-8")
     shell_shots = (score.ROOT / "tools" / "dev" / "shell-shots.mjs").read_text(
         encoding="utf-8"
     )
-
-    combined = server + preview + shell_shots
-    assert "RS_PLAYWRIGHT_CORE" in combined
-    assert "browserChannel" in combined
+    builtin_shots = (score.ROOT / "tools" / "dev" / "builtin-shots.mjs").read_text(
+        encoding="utf-8"
+    )
+    combined = server + preview + shell_shots + builtin_shots
+    assert "browserChannel()" in combined
     assert "measurement.json" in server + shell_shots
+    assert "templates', 'builtin" in builtin_shots
 
 
 def test_review_finding_17_generated_score_output_is_not_committed():
@@ -301,7 +344,11 @@ def test_review_finding_17_generated_score_output_is_not_committed():
 
 
 def test_review_finding_18_public_measurement_wording_is_browser_neutral():
-    sources = [score.ROOT / "tools" / "score.py"]
+    sources = [
+        score.ROOT / "tools" / "score.py",
+        score.ROOT / "tools" / "e2e.mjs",
+        score.ROOT / "tools" / "visual.mjs",
+    ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in sources)
 
     assert re.search(r"\bBrave\b", text) is None
@@ -336,55 +383,33 @@ def _args(tmp_path, only, *, no_windows):
     return argparse.Namespace(
         only=only,
         no_windows=no_windows,
-        port=18920,
         automated_only=True,
+        port=None,
         shots=False,
         out=tmp_path,
     )
 
 
-def test_live_window_criteria_are_not_part_of_this_distribution(
-    tmp_path, monkeypatch
-):
+def test_finding_4_c3_is_not_run_without_window_measurements(tmp_path, monkeypatch):
     monkeypatch.setattr(
         score,
         "_command_json",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not run a tool")),
     )
 
-    result = score.run_score(_args(tmp_path, "C1,C2,C3,C4", no_windows=False))
+    result = score.run_score(_args(tmp_path, "C3", no_windows=True))
 
-    for criterion in ("C1", "C2", "C3", "C4"):
-        assert result["criteria"][criterion]["status"] == "not run"
-        assert (
-            result["criteria"][criterion]["value"]
-            == "live window measurements are not part of this distribution"
-        )
+    assert result["criteria"]["C3"]["status"] == "not run"
+    assert result["criteria"]["C3"]["value"] == score.LIVE_WINDOW_UNAVAILABLE
 
 
-def test_live_option_reports_distribution_limit(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(
-        score,
-        "run_score",
-        lambda args: {
-            "criteria": {},
-            "usability": {"points": 0.0, "file": None},
-            "totals": {"failed_gates": [], "pending_gates": []},
-            "shots": None,
-        },
-    )
-    monkeypatch.setattr(score, "_print_table", lambda result: None)
-
-    with pytest.raises(SystemExit):
-        score.main(["--live", "--out", str(tmp_path)])
-
-    assert (
-        "live window measurements are not part of this distribution"
-        in capsys.readouterr().err
-    )
 
 
-def test_finding_5_incomplete_headless_measurements_cannot_pass_or_score(
+
+
+
+
+def test_finding_5_incomplete_nonwindow_measurements_cannot_pass_or_score(
     tmp_path, monkeypatch
 ):
     def command_json(command, timeout=300):
@@ -443,18 +468,18 @@ def test_round_2_finding_5_c14_checks_audit_only_netlogs_and_missing_logs(tmp_pa
         json.dumps({
             "mode": "keyboard",
             "requests": [
-                "http://127.0.0.1:18929/",
+                "http://127.0.0.1:18899/",
                 "https://audit.example.invalid/tracker.js",
             ],
             "responses": [
                 {
-                    "url": "http://127.0.0.1:18929/audit-response",
+                    "url": "http://127.0.0.1:18899/audit-response",
                     "status": 200,
                     "headers": {},
                     "synthetic": False,
                 },
                 {
-                    "url": "http://127.0.0.1:18929/copy",
+                    "url": "http://127.0.0.1:18899/copy",
                     "status": 200,
                     "headers": {},
                     "synthetic": True,
@@ -471,7 +496,7 @@ def test_round_2_finding_5_c14_checks_audit_only_netlogs_and_missing_logs(tmp_pa
             {"command": ["node", "keyboard"], "logs": ["keyboard-audit.json"]},
             {"command": ["node", "axe"], "logs": []},
         ],
-        port=18929,
+        port=18899,
     )
 
     assert logs == 1
@@ -495,10 +520,8 @@ def test_round_2_finding_5_c14_checks_audit_only_netlogs_and_missing_logs(tmp_pa
 def test_round_4_finding_7_c5_c14_share_the_selected_alternate_port(
     tmp_path, monkeypatch
 ):
-    port = 18928
+    port = 18898
     monkeypatch.setenv("RS_TOOL_PORT", str(port))
-    args = _args(tmp_path, "C5,C14", no_windows=False)
-    args.port = port
 
     def command_json(command, timeout=300):
         directory = score.Path(score.os.environ["RS_NETLOG_DIR"])
@@ -535,12 +558,39 @@ def test_round_4_finding_7_c5_c14_share_the_selected_alternate_port(
 
     monkeypatch.setattr(score, "_command_json", command_json)
 
-    result = score.run_score(args)
+    result = score.run_score(_args(tmp_path, "C5,C14", no_windows=False))
 
     assert result["criteria"]["C5"]["status"] == "pass"
     assert result["criteria"]["C14"]["status"] == "pass"
     assert result["criteria"]["C14"]["raw"]["findings"] == []
     assert score._allowed_browser_url("https://external.invalid/", port) is False
+
+
+def test_explicit_score_port_overrides_inherited_port_for_every_child(
+    tmp_path, monkeypatch
+):
+    args = _args(tmp_path, "C8,C10", no_windows=True)
+    args.port = 18911
+    inherited = "18886"
+    monkeypatch.setenv("RS_TOOL_PORT", inherited)
+    child_ports = []
+
+    def command_json(command, timeout=300):
+        child_ports.append(score.os.environ.get("RS_TOOL_PORT"))
+        return {"ok": False, "total": 0}
+
+    def pytest_result(file):
+        child_ports.append(score.os.environ.get("RS_TOOL_PORT"))
+        return {"ok": True, "returncode": 0, "output": "pass"}
+
+    monkeypatch.setattr(score, "_command_json", command_json)
+    monkeypatch.setattr(score, "_pytest", pytest_result)
+
+    score.run_score(args)
+
+    assert child_ports
+    assert set(child_ports) == {"18911"}
+    assert score.os.environ["RS_TOOL_PORT"] == inherited
 
 
 def test_round_2_finding_7_score_json_redacts_prior_clipboard_text(
@@ -663,30 +713,3 @@ def test_round_3_finding_5_score_uses_neutral_human_review_labels(
     })
     output = capsys.readouterr().out
     assert "Human review: six x 0.5" in output
-
-
-def test_explicit_score_port_overrides_inherited_port_for_every_child(
-    tmp_path, monkeypatch
-):
-    args = _args(tmp_path, "C8,C10", no_windows=True)
-    args.port = 18921
-    inherited = "18920"
-    monkeypatch.setenv("RS_TOOL_PORT", inherited)
-    child_ports = []
-
-    def command_json(command, timeout=300):
-        child_ports.append(score.os.environ.get("RS_TOOL_PORT"))
-        return {"ok": False, "total": 0}
-
-    def pytest_result(file):
-        child_ports.append(score.os.environ.get("RS_TOOL_PORT"))
-        return {"ok": True, "returncode": 0, "output": "pass"}
-
-    monkeypatch.setattr(score, "_command_json", command_json)
-    monkeypatch.setattr(score, "_pytest", pytest_result)
-
-    score.run_score(args)
-
-    assert child_ports
-    assert set(child_ports) == {"18921"}
-    assert score.os.environ["RS_TOOL_PORT"] == inherited

@@ -1,0 +1,9 @@
+{
+  "copies": {
+    "item-1-copy-1": "〒100-0005\r\n東京都千代田区丸の内1-9-1\r\nJapan",
+    "item-1-copy-2": "Item\tQty\tPrice\r\nChair\t6\t¥ 38,000\r\nDelivery\t1\t¥ 4,500\r\n",
+    "item-2-copy-1": "👩‍❤️‍👨 Schönes Wochenende! 🇦🇹 👍🏽",
+    "item-3-copy-1": "Müller\tMüller"
+  },
+  "counters": {}
+}

@@ -1,0 +1,32 @@
+{
+  "id": "decide-list",
+  "namespace": "global",
+  "version": 1,
+  "title_de": "Entscheidungen",
+  "description": "Built-in (calm): approve, reject or defer up to 5 items, one at a time. The current item is a card (kind, due date, detail, copy icons, a segmented choice and an optional note); the others are one-line rows. What the agent already handled sits under one closed disclosure. Result: one choice and note per item plus an overall note.",
+  "components": [
+    "rs-card",
+    "rs-action-row",
+    "rs-copy",
+    "rs-badge"
+  ],
+  "strings": [
+    "section_todo",
+    "section_done",
+    "handled_summary",
+    "handled_done",
+    "choice_approve",
+    "choice_reject",
+    "choice_defer",
+    "choice_group_label",
+    "due",
+    "add_note",
+    "add_note_overall",
+    "note_for",
+    "note_overall",
+    "items_open_named",
+    "items_all_decided",
+    "sep_names",
+    "copy"
+  ]
+}

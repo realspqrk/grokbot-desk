@@ -1,0 +1,20 @@
+<div class="dl" data-dl="root">
+  <p class="dl-intro" data-dl="intro"></p>
+  <section class="dl-todo" aria-labelledby="dl-todo-h">
+    <h2 class="rs-section-title" id="dl-todo-h"><span data-rs-t="section_todo"></span></h2>
+    <div class="dl-list" role="list" data-dl="list"></div>
+  </section>
+  <details class="rs-disclosure dl-handled" data-dl="handled">
+    <summary><span data-dl="handled-summary"></span></summary>
+    <div class="rs-disclosure__body">
+      <ul class="dl-plain" data-dl="done-list" data-rs-t-aria-label="section_done"></ul>
+    </div>
+  </details>
+  <div class="dl-overall">
+    <button type="button" class="rs-link" data-dl="overall-open" data-rs-icon="plus"><span data-rs-t="add_note_overall"></span></button>
+    <div class="dl-overall__field" data-dl="overall-field" hidden>
+      <label class="rs-label" for="dl-note"><span data-rs-t="note_overall"></span></label>
+      <textarea class="rs-input" id="dl-note" maxlength="2000" rows="3"></textarea>
+    </div>
+  </div>
+</div>

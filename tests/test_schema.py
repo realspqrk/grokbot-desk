@@ -1,10 +1,13 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from core.envelope import (
     EnvelopeError,
+    generate_run_id,
     validate_payload,
     validate_payload_bytes,
 )
@@ -48,6 +51,9 @@ def test_one_of_requires_exactly_one_match():
         {"required": "name"},
         {"minLength": -1},
         {"additionalProperties": "no"},
+        {"type": "array", "x-rs-unique-key": ""},
+        {"type": "array", "x-rs-unique-key": ["id"]},
+        {"type": "object", "x-rs-unique-key": "id"},
     ],
 )
 def test_schema_definition_rejects_malformed_keywords(schema):
@@ -74,22 +80,27 @@ def valid_payload():
         "schema": "report-shell/payload@1",
         "template": "_starter",
         "version": 1,
-        "bot": "example-dev-bot",
+        "bot": "automation-agent",
         "title": "Test report",
         "created": "2026-10-08T10:39:00+02:00",
         "data": {"message": "Hello"},
     }
 
 
-def test_generated_run_id_uses_the_generic_bot_slug_without_private_rewriting():
-    payload = valid_payload()
-    payload["bot"] = "acme-example-bot"
-    run_id = validate_payload(
-        payload,
-        scan_registry(ROOT / "templates"),
-    )["run_id"]
+def test_generated_run_id_uses_twelve_random_hex_characters():
+    with (
+        patch(
+            "core.envelope.vienna_now",
+            return_value=datetime(2026, 10, 9, 10, 18, tzinfo=timezone.utc),
+        ),
+        patch(
+            "core.envelope.secrets.token_hex",
+            side_effect=lambda byte_count: "ab" * byte_count,
+        ),
+    ):
+        run_id = generate_run_id("Example Bot")
 
-    assert "-acme-example-bot-" in run_id
+    assert run_id == "20261009-101800-example-bot-abababababab"
 
 
 @pytest.mark.parametrize(
@@ -179,6 +190,67 @@ def test_schema_json_equality_keeps_booleans_distinct_from_numbers(value, schema
 def test_schema_unique_items_treats_equivalent_json_numbers_as_duplicates():
     with pytest.raises(SchemaError, match="unique"):
         validate([1, 1.0], {"type": "array", "uniqueItems": True})
+
+
+UNIQUE_IDS = {
+    "type": "array",
+    "x-rs-unique-key": "id",
+    "items": {"type": "object", "properties": {"id": {"type": "string"}}},
+}
+
+
+def test_unique_key_accepts_distinct_values_and_items_without_the_key():
+    validate([{"id": "a"}, {"id": "b"}, {}, {}], UNIQUE_IDS)
+    validate([{"id": "a"}, "a", "a"], {"type": "array", "x-rs-unique-key": "id"})
+
+
+def test_unique_key_rejects_a_repeated_value_at_the_later_item():
+    items = [{"id": "a", "name": "Morning"}, {"id": "b"}, {"id": "a", "name": "Evening"}]
+    with pytest.raises(SchemaError) as error:
+        validate(items, UNIQUE_IDS, "/data/options")
+    assert error.value.pointer == "/data/options/2/id"
+    assert error.value.message == "duplicate id 'a', already used by /data/options/0"
+
+
+def test_unique_key_reports_an_invalid_item_before_the_repeat():
+    schema = dict(UNIQUE_IDS, items={"type": "object", "properties": {"id": {"type": "string", "maxLength": 1}}})
+    with pytest.raises(SchemaError) as error:
+        validate([{"id": "a"}, {"id": "a"}, {"id": "long"}], schema)
+    assert error.value.pointer == "/2/id"
+
+
+def test_unique_key_compares_json_values():
+    with pytest.raises(SchemaError):
+        validate([{"id": 1}, {"id": 1.0}], {"type": "array", "x-rs-unique-key": "id"})
+    validate([{"id": 1}, {"id": True}], {"type": "array", "x-rs-unique-key": "id"})
+
+
+@pytest.mark.parametrize(
+    ("template", "fixture", "array", "key"),
+    [("pick-option", "edge-two", "options", "id"), ("review-doc", "edge-max", "images", "key")],
+)
+def test_builtin_payload_rejects_repeated_keys_before_registration(template, fixture, array, key):
+    registry = scan_registry(ROOT / "templates")
+    path = registry[template].path / "fixtures" / f"{fixture}.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    validate(data, json.loads((registry[template].path / "schema.json").read_text(encoding="utf-8")))
+    data[array].append(dict(data[array][0]))
+    payload = dict(valid_payload(), template=template, data=data)
+    with pytest.raises(EnvelopeError) as error:
+        validate_payload(payload, registry)
+    assert error.value.pointer == f"/data/{array}/{len(data[array]) - 1}/{key}"
+    assert f"already used by /data/{array}/0" in error.value.message
+
+
+def test_pick_option_duplicate_id_fixture_names_the_second_option():
+    template = scan_registry(ROOT / "templates")["pick-option"]
+    data = json.loads((template.path / "fixtures" / "invalid-duplicate-ids.json").read_text(encoding="utf-8"))
+    assert data["options"][0]["id"] == data["options"][1]["id"]
+    assert data["options"][0]["name"] != data["options"][1]["name"]
+    assert data["options"][0]["facts"] != data["options"][1]["facts"]
+    with pytest.raises(SchemaError) as error:
+        validate(data, json.loads((template.path / "schema.json").read_text(encoding="utf-8")), "/data")
+    assert error.value.pointer == "/data/options/1/id"
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])

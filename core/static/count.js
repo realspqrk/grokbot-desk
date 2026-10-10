@@ -490,7 +490,7 @@
     return out;
   }
 
-  /** UTF-16 index (in the NFC text) where the platform's fold guide goes, or -1. */
+  /** UTF-16 index (in the NFC text) where the platform's fold (its "… more") goes, or -1. */
   function foldIndex(text, platform) {
     var p = platformCfg(platform);
     if (!p.fold) return -1;

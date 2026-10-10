@@ -3,19 +3,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import {
-  browserChannel,
-  startServer,
-  loadChromium,
-  ROOT,
-} from './dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, ROOT } from './dev/rs-server.mjs';
 import { isSameOriginPath } from './dev/browser-safety.mjs';
+import { resolvedTemplates } from './template-registry.mjs';
 import {
   CALM_THRESHOLDS,
   auditCopyFocus,
   auditPlatformSwitching,
   calmEvaluator,
   focusedControlFacts,
+  isSocialPreview,
   judgeCalmFacts,
   pngBackgroundRatio,
   settleShortAnimations,
@@ -165,18 +162,7 @@ function expectedViennaOffset(value) {
 }
 
 function templates(selected = null) {
-  const found = [];
-  for (const namespace of readdirSync(path.join(ROOT, 'templates'), { withFileTypes: true }).filter((e) => e.isDirectory())) {
-    const nsPath = path.join(ROOT, 'templates', namespace.name);
-    for (const entry of readdirSync(nsPath, { withFileTypes: true }).filter((e) => e.isDirectory())) {
-      const dir = path.join(nsPath, entry.name);
-      const manifestPath = path.join(dir, 'template.json');
-      if (!existsSync(manifestPath)) continue;
-      const manifest = json(manifestPath);
-      if (!selected || selected === '--all' || manifest.id === selected) found.push({ dir, manifest });
-    }
-  }
-  if (selected && selected !== '--all' && found.length === 0) throw new Error(`unknown template: ${selected}`);
+  const found = resolvedTemplates(ROOT, selected);
   if (found.length === 0) throw new Error('no registered templates found');
   return found.sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
 }
@@ -248,7 +234,7 @@ function resolveTemplatePaths(data, dir) {
   );
 }
 
-function registrationEnvelope(testCase) {
+function registrationEnvelope(testCase, identity = null) {
   const namespace = testCase.manifest.namespace;
   return {
     template: testCase.manifest.id,
@@ -256,19 +242,20 @@ function registrationEnvelope(testCase) {
     bot: namespace === 'global' ? MEASUREMENT_BOT_ID : namespace,
     title: testCase.manifest.title_de,
     created: TIME_BASELINE.default.created,
+    ...(identity ? { identity } : {}),
   };
 }
 
-async function show(server, testCase) {
+async function show(server, testCase, identity = null) {
   const run = server.show(
     resolveTemplatePaths(testCase.data, testCase.dir),
-    registrationEnvelope(testCase),
+    registrationEnvelope(testCase, identity),
   );
   await server.assertOpen(run.run_id, `${testCase.manifest.id}/${testCase.fixture}`);
   return run;
 }
 
-async function withHarness(callback) {
+async function withSession(callback) {
   const chromium = await loadChromium();
   if (!chromium) throw new Error('playwright-core not found; set RS_PLAYWRIGHT_CORE');
   if (typeof reportStage === 'function') {
@@ -356,11 +343,20 @@ async function openPage(browser, server, runId, options = {}) {
     `http://127.0.0.1:${PORT}/?run=${encodeURIComponent(runId)}&client=test`,
     { timeout: navigationTimeout },
   );
-  await page.waitForFunction(
-    () => document.documentElement.dataset.rsReady === '1',
-    null,
-    { timeout: readyTimeout },
-  );
+  try {
+    await page.waitForFunction(
+      () => document.documentElement.dataset.rsReady === '1',
+      null,
+      { timeout: readyTimeout },
+    );
+  } catch (error) {
+    // name the run and any page errors: a bare readiness timeout is not actionable
+    if (error && typeof error.message === 'string') {
+      error.message += ` (page readiness for run ${runId}${log.errors.length ? `; ${log.errors.join('; ')}` : ''})`;
+    }
+    await context.close().catch(() => {});
+    throw error;
+  }
   return { context, page, log };
 }
 
@@ -444,7 +440,7 @@ async function copyMode() {
   if (process.env.RS_ALLOW_CLIPBOARD !== '1') {
     throw new Error('copy mode may only be run by tools/measure_copy.py');
   }
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const cases = [];
     const network = { requests: [], responses: [], errors: [] };
     const expectedCases = fixtureCases(requestedTemplate, { expectOnly: true });
@@ -613,7 +609,7 @@ async function clickAndCaptureCopy(page, selector, timeout = 5000) {
 
 async function expectMode() {
   if (!requestedTemplate) throw new Error('expect mode requires a template id');
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const findings = [];
     const expectedCases = fixtureCases(requestedTemplate, { expectOnly: true });
     const executedCases = [];
@@ -742,7 +738,7 @@ function validateObservedResult(testCase, result) {
 }
 
 async function submitMode() {
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const source = fixtureCases(
       requestedTemplate, { expectOnly: true, goldenOnly: true },
     );
@@ -821,19 +817,20 @@ async function waitForTabAuditReady(page, options = {}) {
     if (Number.isInteger(options.expectedOpenRuns)) {
       await page.waitForFunction((expected) => {
         if (document.documentElement.dataset.rsReady === '0') return false;
-        const rail = document.querySelector(
-          '.rs-rail,[data-rs-rail],#rs-rail,nav[aria-label*="run" i]',
-        );
-        if (!rail) return expected === 0;
-        const entries = rail.querySelectorAll(
-          '.rs-rail__run,[data-run-id]',
+        // the shell's strip; legacy rails only outside the template mount
+        const strip = document.getElementById('rs-strip-nav') || [...document.querySelectorAll(
+          '.rs-strip,[data-rs-strip],#rs-strip,.rs-rail,[data-rs-rail],#rs-rail,nav[aria-label*="run" i]',
+        )].find((element) => !element.closest('#rs-mount'));
+        if (!strip) return expected === 0;
+        const entries = strip.querySelectorAll(
+          '.rs-strip__run,.rs-rail__run,[data-run-id]',
         );
         return entries.length === Math.min(expected, 12);
       }, options.expectedOpenRuns, { timeout: 0 });
     }
     await page.evaluate(async () => {
       const signature = () => [...document.querySelectorAll(
-        '.rs-rail__run,[data-run-id],button,input,select,textarea,a[href],summary,[tabindex]',
+        '.rs-strip__run,.rs-rail__run,[data-run-id],button,input,select,textarea,a[href],summary,[tabindex]',
       )].map((element) => (
         element.dataset.runId
         || element.id
@@ -921,16 +918,29 @@ async function tabAudit(page, options = {}) {
       const entry = compositeMembers.get(group)
         .find((element) => element.tabIndex === 0)?.dataset.rsTabAuditId;
       if (entry) {
+        // P8d: the shell's report strip (only #rs-strip in #rs-strip-nav,
+        // never markup inside the template mount) switches the shown report
+        // with its arrow keys; its members are identified by run id
+        const runs = compositeMembers.get(group).map((element) => element.dataset.runId || null);
+        const switcher = group.id === 'rs-strip'
+          && Boolean(group.closest('#rs-strip-nav'))
+          && !group.closest('#rs-mount')
+          && runs.every(Boolean)
+          && new Set(runs).size === runs.length;
         groups.push({
           identity: `group-${allCompositeGroups.indexOf(group)}`,
           kind: group.getAttribute('role'),
           members,
           entry,
+          switcher,
+          ...(switcher ? { runs } : {}),
         });
       }
     }
+    // the report strip last: arrowing through it re-mounts the template
     groups.sort((left, right) => (
-      Number(left.kind === 'tablist') - Number(right.kind === 'tablist')
+      Number(Boolean(left.switcher)) - Number(Boolean(right.switcher))
+      || Number(left.kind === 'tablist') - Number(right.kind === 'tablist')
     ));
     const native = new Map();
     for (const element of candidates.filter((item) => item.matches('input[type="radio"][name]'))) {
@@ -968,6 +978,10 @@ async function tabAudit(page, options = {}) {
     if (!focused.key) {
       focused.key = await page.evaluate(() => {
         const element = document.activeElement;
+        // a roving group re-rendered its members (the report strip after a
+        // list update): the group container keeps its audit key
+        const group = element.closest?.('[data-rs-tab-audit-group]');
+        if (group) return `${group.getAttribute('role')}:${group.dataset.rsTabAuditGroup}`;
         return element.id ? `id:${element.id}` :
           element.dataset?.runId ? `run:${element.dataset.runId}` :
             element.closest?.('[data-copy-id]') ? `copy:${element.closest('[data-copy-id]').dataset.copyId}` :
@@ -991,12 +1005,21 @@ async function tabAudit(page, options = {}) {
   }
   await page.evaluate(() => document.body.removeAttribute('tabindex'));
   for (const group of scan.groups) {
-    const entry = await page.evaluate((identity) => {
-      const element = document.querySelector(`[data-rs-tab-audit-id="${identity}"]`);
+    // the strip may be re-rendered at any time: find its entry by report
+    const entryRun = group.switcher ? group.runs[group.members.indexOf(group.entry)] : null;
+    const entry = await page.evaluate(({ identity, runId }) => {
+      const element = runId
+        ? [...document.querySelectorAll('#rs-strip [data-run-id]')].find((item) => item.dataset.runId === runId)
+        : document.querySelector(`[data-rs-tab-audit-id="${identity}"]`);
+      if (!element) throw new Error(`keyboard audit lost ${runId ? `report ${runId}` : identity}`);
       element.focus();
       return document.activeElement.dataset.rsTabAuditId;
-    }, group.entry);
+    }, { identity: group.entry, runId: entryRun });
     await assertFocusedOutline(page);
+    if (group.switcher) {
+      group.arrowed = await auditStripArrows(page, group);
+      continue;
+    }
     const arrowSeen = new Set([entry]);
     let previous = entry;
     for (let index = 0; index < group.members.length; index += 1) {
@@ -1021,6 +1044,38 @@ async function tabAudit(page, options = {}) {
     }
   }
   return { expected, seen, groups: scan.groups };
+}
+
+/* P8d: the report strip's own keyboard evidence. ArrowRight must move the
+   focus to the next entry, make that report the shown one (aria-current,
+   one Tab stop, ready again) with a visible focus ring, and wrap around to
+   the entry, so it ends on the report it started from. */
+async function auditStripArrows(page, group) {
+  const start = group.runs.indexOf(
+    await page.evaluate(() => document.activeElement?.dataset?.runId || null),
+  );
+  if (start < 0) throw new Error(`${group.kind} entry is not a report`);
+  const arrowed = [];
+  for (let index = 1; index <= group.runs.length; index += 1) {
+    const expected = group.runs[(start + index) % group.runs.length];
+    await page.keyboard.press('ArrowRight');
+    try {
+      await page.waitForFunction((runId) => {
+        const focused = document.activeElement;
+        return document.documentElement.dataset.rsReady !== '0'
+          && Boolean(focused?.closest?.('#rs-strip'))
+          && focused.dataset.runId === runId
+          && focused.getAttribute('aria-current') === 'page'
+          && focused.tabIndex === 0
+          && [...document.querySelectorAll('#rs-strip [tabindex="0"]')].length === 1;
+      }, expected, { timeout: 4000 });
+    } catch {
+      throw new Error(`ArrowRight did not move within ${group.kind}`);
+    }
+    await assertFocusedOutline(page);
+    arrowed.push(expected);
+  }
+  return arrowed;
 }
 
 function validateKeyboardSteps(templateId, steps) {
@@ -1079,7 +1134,7 @@ async function keyboardMode() {
   const resultTimeout = Number.isFinite(configuredResultTimeout) && configuredResultTimeout > 0
     ? Math.min(Math.max(configuredResultTimeout, 1000), 120000)
     : 10000;
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const cases = [];
     const expectedCases = fixtureCases(
       requestedTemplate, { expectOnly: true, goldenOnly: true },
@@ -1124,7 +1179,7 @@ async function keyboardMode() {
 }
 
 async function a11yBasicMode() {
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const findings = [];
     let pages = 0;
     const expectedCases = fixtureCases(requestedTemplate, { goldenOnly: true });
@@ -1163,7 +1218,7 @@ async function axeMode() {
   if (!existsSync(AXE)) throw new Error('vendor/axe.min.js is missing');
   const actualHash = createHash('sha256').update(readFileSync(AXE)).digest('hex');
   if (actualHash !== AXE_SHA256) throw new Error(`axe.min.js SHA-256 mismatch: ${actualHash}`);
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const violations = [];
     let pages = 0;
     const expectedCases = fixtureCases(requestedTemplate, { goldenOnly: true });
@@ -1197,7 +1252,7 @@ async function axeMode() {
 }
 
 async function networkMode() {
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const findings = [];
     const requests = [];
     const responses = [];
@@ -1324,8 +1379,13 @@ function flattenStrings(value, output = []) {
 
 function textMatchers() {
   const de = json(path.join(ROOT, 'core', 'i18n', 'de.json'));
-  const bots = Object.values(json(path.join(ROOT, 'core', 'bots.json')));
-  const regexes = Object.values(de).map((value) => {
+  /* registry entries: legacy "Display name" or { name, avatar, accent } */
+  const bots = Object.values(json(path.join(ROOT, 'core', 'bots.json')))
+    .map((value) => (typeof value === 'string' ? value : value?.name))
+    .filter((value) => typeof value === 'string');
+  /* a value made only of placeholders would match any text */
+  const literal = (value) => value.replace(/\{[^}]+\}/g, '').trim() !== '';
+  const regexes = Object.values(de).filter(literal).map((value) => {
     const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\{[^}]+\\\}/g, '.+?');
     return new RegExp(`^${escaped}$`, 'u');
   });
@@ -1334,7 +1394,7 @@ function textMatchers() {
 
 async function stringsMode() {
   const { regexes, bots } = textMatchers();
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const findings = [];
     let nodes = 0;
     const expectedCases = fixtureCases(requestedTemplate);
@@ -1418,7 +1478,7 @@ async function stringsMode() {
             if (!renderedRects(node).length) continue;
             result.push({
               text,
-              created_metadata: Boolean(parent.closest('#rs-meta span:last-child')),
+              created_metadata: Boolean(parent.closest('#rs-meta > span:last-child')),
             });
           }
           return result;
@@ -1502,12 +1562,130 @@ async function calmRestingFacts(
   });
 }
 
+// Identity calibration: the shown report uses its bot's accent; the other open
+// runs carry different accents that must never reach the strip (C16/K1, K6).
+const IDENTITY_FOREIGN = [
+  { name: 'Desk Agent', accent: '#a855f7' },
+  { name: 'Notes Agent', accent: '#3d8b6e' },
+];
+const IDENTITY_SCENES = [
+  { fixture: 'golden+custom-accent', identity: { name: 'Research Agent', accent: '#0891b2' }, fallback: ['light'] },
+  { fixture: 'golden+low-contrast-accent', identity: { name: 'Travel Agent', accent: '#f6c945' }, fallback: ['light'] },
+  // P8c shape avatars: every shape is in a strip across the scenes; the shown
+  // report's colour seeds its accent (violet fails dark, orange fails light).
+  // Avatar fills are media like an image, not accent fills.
+  {
+    fixture: 'golden+shape-avatars',
+    identity: { name: 'Shape Agent', avatar_shape: 'teardrop', avatar_color: 'violet' },
+    seed: 'violet',
+    fallback: ['dark'],
+    foreign: [
+      { name: 'Desk Agent', avatar_shape: 'blob', avatar_color: 'black' },
+      { name: 'Notes Agent', avatar_shape: 'squircle', avatar_color: 'blue' },
+    ],
+  },
+  {
+    fixture: 'golden+shape-avatars-2',
+    identity: { name: 'Pebble Agent', avatar_shape: 'pebble', avatar_color: 'orange' },
+    seed: 'orange',
+    fallback: ['light'],
+    foreign: [
+      { name: 'Market Agent', avatar_shape: 'hex', avatar_color: 'gray' },
+      { name: 'Tablet Agent', avatar_shape: 'tablet', avatar_color: 'green' },
+    ],
+  },
+  // fallbacks: unknown shape -> initials, shape without colour -> default fill
+  {
+    fixture: 'golden+shape-fallbacks',
+    identity: { name: 'Fallback Agent', avatar_shape: 'star', avatar_color: 'teal' },
+    fallback: ['light', 'dark'],
+    foreign: [
+      { name: 'Plain Agent', avatar_shape: 'blob' },
+      { name: 'Notes Agent', avatar_shape: 'squircle', avatar_color: 'magenta', avatar: 'avatars/missing.png' },
+    ],
+  },
+];
+
+/* a token's #rrggbb in the light (:root) and forced-dark blocks of tokens.css */
+function themeToken(name) {
+  const css = readFileSync(path.join(ROOT, 'core', 'static', 'tokens.css'), 'utf8');
+  const value = (block) => {
+    const start = block.indexOf(`${name}:`);
+    return start < 0 ? null : block.slice(start + name.length + 1).match(/^\s*(#[0-9a-f]{6})/iu)[1].toLowerCase();
+  };
+  return {
+    light: value(css.match(/:root\s*\{([^}]*)\}/u)[1]),
+    dark: value(css.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/u)[1]),
+  };
+}
+
+function defaultAccents() {
+  return themeToken('--rs-accent');
+}
+
+async function calmIdentityScenes(browser, server, cases) {
+  const defaults = defaultAccents();
+  const found = [];
+  for (const testCase of cases.filter((item) => item.fixture === 'golden')) {
+    for (const variant of IDENTITY_SCENES) {
+      for (const theme of ['light', 'dark']) {
+        for (const viewport of [
+          { width: 1500, height: 1000 },
+          { width: 1280, height: 720 },
+        ]) {
+          const base = {
+            template: testCase.manifest.id,
+            fixture: variant.fixture,
+            theme,
+            viewport,
+          };
+          const seeded = variant.seed ? themeToken(`--rs-avatar-${variant.seed}`) : null;
+          const expectedAccent = variant.fallback.includes(theme)
+            ? defaults[theme]
+            : (seeded ? seeded[theme] : variant.identity.accent);
+          const openRuns = 3;
+          const foreign = variant.foreign || IDENTITY_FOREIGN;
+          const facts = await calmScene(browser, server, testCase, {
+            ...base,
+            openRuns,
+            identities: [...foreign, variant.identity],
+            expectedAccent,
+            accents: [
+              ...foreign.map((item) => item.accent).filter(Boolean),
+              ...(variant.identity.accent ? [variant.identity.accent] : []),
+              defaults.light,
+              defaults.dark,
+            ],
+          });
+          const judged = judgeCalmFacts(facts, {
+            templateId: testCase.manifest.id,
+            k13: {
+              keyboard: facts.K13.keyboard.pass,
+              accessibility: facts.K13.accessibility.pass,
+              copy_focus: facts.K13.copy_focus.pass,
+            },
+          });
+          found.push({
+            ...base,
+            open_runs: openRuns,
+            items: judged.items,
+            identity: facts.identity,
+            ok: judged.ok && facts.identity.pass,
+          });
+        }
+      }
+    }
+  }
+  return found;
+}
+
 async function calmScene(browser, server, testCase, scene) {
   await cancelOpen(server);
-  const runs = await Promise.all(Array.from(
-    { length: scene.openRuns },
-    () => show(server, testCase),
-  ));
+  const identities = scene.identities || [];
+  const runs = [];
+  for (let index = 0; index < scene.openRuns; index += 1) {
+    runs.push(await show(server, testCase, identities[index] || null));
+  }
   const active = runs.at(-1);
   const opened = await openPage(browser, server, active.run_id, {
     colorScheme: scene.theme,
@@ -1517,6 +1695,40 @@ async function calmScene(browser, server, testCase, scene) {
   });
   try {
     const facts = await calmRestingFacts(opened.page, testCase, scene.openRuns);
+    if (scene.expectedAccent) {
+      const observed = await opened.page.evaluate(() => (
+        getComputedStyle(document.documentElement).getPropertyValue('--rs-accent').trim().toLowerCase()
+      ));
+      const stripAccents = await opened.page.evaluate((accents) => {
+        const hex = (value) => {
+          const parts = String(value).match(/\d+(?:\.\d+)?/gu);
+          return parts && parts.length >= 3
+            ? `#${parts.slice(0, 3).map((part) => Number(part).toString(16).padStart(2, '0')).join('')}`
+            : '';
+        };
+        const found = new Set();
+        const properties = [
+          'color', 'backgroundColor', 'borderTopColor', 'borderRightColor',
+          'borderBottomColor', 'borderLeftColor', 'outlineColor',
+        ];
+        for (const element of document.querySelectorAll('#rs-strip-nav, #rs-strip-nav *')) {
+          for (const pseudo of [null, '::before', '::after']) {
+            const style = getComputedStyle(element, pseudo);
+            for (const property of properties) {
+              const value = hex(style[property]);
+              if (accents.includes(value)) found.add(value);
+            }
+          }
+        }
+        return [...found];
+      }, scene.accents);
+      facts.identity = {
+        expected_accent: scene.expectedAccent,
+        observed_accent: observed,
+        strip_accents: stripAccents,
+        pass: observed === scene.expectedAccent && stripAccents.length === 0,
+      };
+    }
     if (
       testCase.fixture === 'golden'
       && scene.viewport.width === 1500
@@ -1556,7 +1768,7 @@ async function calmScene(browser, server, testCase, scene) {
         { all: true, visit },
       ),
     );
-    const platformSwitching = testCase.manifest.id === 'synthetic-platform-preview'
+    const platformSwitching = isSocialPreview(testCase.manifest)
       ? await auditPlatformSwitching(opened.page)
       : null;
     let accessibility;
@@ -1619,7 +1831,7 @@ async function calmScene(browser, server, testCase, scene) {
 
 async function calmMode() {
   if (!requestedTemplate) throw new Error('calm mode requires a template id');
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const cases = calmFixtureCases(requestedTemplate);
     const scenes = [];
     for (const testCase of cases) {
@@ -1644,7 +1856,13 @@ async function calmMode() {
                 { ...base, openRuns },
               );
             } catch (error) {
-              if (error?.code !== 'RS_ANIMATION_SETTLE_TIMEOUT') throw error;
+              if (error?.code !== 'RS_ANIMATION_SETTLE_TIMEOUT') {
+                if (error && typeof error.message === 'string') {
+                  error.message = `calm scene ${base.template}/${base.fixture} ${theme} `
+                    + `${viewport.width}x${viewport.height} open=${openRuns}: ${error.message}`;
+                }
+                throw error;
+              }
               const reason = `audit scene did not settle: ${error.message}`;
               scenes.push({
                 ...base,
@@ -1666,6 +1884,7 @@ async function calmMode() {
             }
             const judged = judgeCalmFacts(facts, {
               templateId: testCase.manifest.id,
+              manifest: testCase.manifest,
               k13: {
                 keyboard: facts.K13.keyboard.pass,
                 accessibility: facts.K13.accessibility.pass,
@@ -1682,6 +1901,7 @@ async function calmMode() {
         }
       }
     }
+    scenes.push(...await calmIdentityScenes(browser, server, cases));
     const items = {};
     for (let index = 1; index <= 13; index += 1) {
       const name = `K${index}`;
@@ -1704,10 +1924,21 @@ async function calmMode() {
         })),
       };
     }
+    const identityScenes = scenes.filter((scene) => scene.identity);
+    const identityFailures = identityScenes.filter((scene) => !scene.identity.pass);
     return {
       mode: 'calm',
       template: requestedTemplate,
-      ok: Object.values(items).every((item) => item.pass),
+      ok: Object.values(items).every((item) => item.pass) && identityFailures.length === 0,
+      identity: {
+        scenes: identityScenes.length,
+        failed: identityFailures.map((scene) => (
+          `${scene.template}/${scene.fixture}/${scene.theme}/`
+          + `${scene.viewport.width}x${scene.viewport.height}: `
+          + `accent ${scene.identity.observed_accent} (expected ${scene.identity.expected_accent}), `
+          + `strip accents ${scene.identity.strip_accents.join(' ') || 'none'}`
+        )),
+      },
       passed: Object.values(items).filter((item) => item.pass).length,
       total: 13,
       thresholds: CALM_THRESHOLDS,
@@ -1720,7 +1951,7 @@ async function calmMode() {
 }
 
 async function timeMode() {
-  return withHarness(async ({ server, browser }) => {
+  return withSession(async ({ server, browser }) => {
     const testCase = fixtureCases('_starter', {
       expectOnly: true,
       goldenOnly: true,
@@ -1770,7 +2001,7 @@ async function timeMode() {
       }
       const { context, page } = await openPage(browser, server, run.run_id);
       try {
-        const rendered = await page.textContent('#rs-meta span:last-child');
+        const rendered = await page.textContent('#rs-meta > span:last-child');
         const display = String(rendered || '').replace(/^Erstellt\s+/u, '');
         const decidedOffset = offsetSuffix(result?.decided);
         const expectedDecidedOffset = result?.decided

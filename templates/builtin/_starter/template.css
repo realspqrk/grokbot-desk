@@ -1,0 +1,7 @@
+/* Tokens only: var(--rs-*) colours, var(--space-*) spacing, no colour
+   literals, no URLs. The model of a calm template: one item (data-rs-item),
+   text first, copy as an icon, one choice, the note behind "Add note". */
+.starter { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-4); }
+.starter__message { max-width: var(--rs-measure); white-space: pre-wrap; overflow-wrap: anywhere; }
+.starter__decide { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.starter__note { width: 100%; max-width: var(--rs-measure); }

@@ -1,0 +1,193 @@
+{
+  "intro": "Five long requests with every field at its maximum length, to check wrapping, clamping and the status line. Five long requests with every field at its maximum length, to check wrapping, clamping and the status line. Five long requests with every field at its maximum length, to check wrapping, clamp.",
+  "items": [
+    {
+      "id": "request-1-request-1-request-1-request-1x",
+      "kind": "Purchase request with a.",
+      "source": "Northwind Facilities and Workplace Services, team 1 Northwi.",
+      "title": "Request 1: renew the service agreement for the shared meeting rooms and the reception desk for another year Request 1: renew the service ag.",
+      "detail": "Detail 1: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 1: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 1: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 1: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 1: the provider keeps the current rate, adds evening.",
+      "due": "2026-10-11",
+      "copy": [
+        {
+          "label": "Copy contract number Co.",
+          "text": "NWF-2026-0001 contract reference and cost centre 4410 NWF-2."
+        },
+        {
+          "label": "Copy amount",
+          "text": "1,234.51"
+        },
+        {
+          "label": "Copy cost centre",
+          "text": "CC-4410"
+        },
+        {
+          "label": "Copy reply draft",
+          "text": "Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal at the current rate and would like evening cleaning on Thursdays to start in November. Hello, thank you for the offer. We accept the renewal . End ✓ äöü"
+        }
+      ],
+      "choices": [
+        "approve",
+        "reject",
+        "defer"
+      ]
+    },
+    {
+      "id": "request-2-request-2-request-2-request-2x",
+      "kind": "Travel request with a l.",
+      "source": "Northwind Facilities and Workplace Services, team 2 Northwi.",
+      "title": "Request 2: renew the service agreement for the shared meeting rooms and the reception desk for another year Request 2: renew the service ag.",
+      "detail": "Detail 2: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 2: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 2: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 2: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 2: the provider keeps the current rate, adds evening.",
+      "due": "2026-10-12",
+      "copy": [
+        {
+          "label": "Copy contract number Co.",
+          "text": "NWF-2026-0002 contract reference and cost centre 4410 NWF-2."
+        },
+        {
+          "label": "Copy amount",
+          "text": "2,234.52"
+        },
+        {
+          "label": "Copy cost centre",
+          "text": "CC-4420"
+        },
+        {
+          "label": "Copy reply draft",
+          "text": "Short reply 2\nsecond line with umlauts äöü"
+        }
+      ],
+      "choices": [
+        "approve",
+        "reject"
+      ]
+    },
+    {
+      "id": "request-3-request-3-request-3-request-3x",
+      "kind": "Access request with a l.",
+      "source": "Northwind Facilities and Workplace Services, team 3 Northwi.",
+      "title": "Request 3: renew the service agreement for the shared meeting rooms and the reception desk for another year Request 3: renew the service ag.",
+      "detail": "Detail 3: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 3: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 3: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 3: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 3: the provider keeps the current rate, adds evening.",
+      "due": "2026-10-13",
+      "copy": [
+        {
+          "label": "Copy contract number Co.",
+          "text": "NWF-2026-0003 contract reference and cost centre 4410 NWF-2."
+        },
+        {
+          "label": "Copy amount",
+          "text": "3,234.53"
+        },
+        {
+          "label": "Copy cost centre",
+          "text": "CC-4430"
+        },
+        {
+          "label": "Copy reply draft",
+          "text": "Short reply 3\nsecond line with umlauts äöü"
+        }
+      ],
+      "choices": [
+        "approve",
+        "defer"
+      ]
+    },
+    {
+      "id": "request-4-request-4-request-4-request-4x",
+      "kind": "Contract request with a.",
+      "source": "Northwind Facilities and Workplace Services, team 4 Northwi.",
+      "title": "Request 4: renew the service agreement for the shared meeting rooms and the reception desk for another year Request 4: renew the service ag.",
+      "detail": "Detail 4: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 4: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 4: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 4: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 4: the provider keeps the current rate, adds evening.",
+      "due": "2026-10-14",
+      "copy": [
+        {
+          "label": "Copy contract number Co.",
+          "text": "NWF-2026-0004 contract reference and cost centre 4410 NWF-2."
+        },
+        {
+          "label": "Copy amount",
+          "text": "4,234.54"
+        },
+        {
+          "label": "Copy cost centre",
+          "text": "CC-4440"
+        },
+        {
+          "label": "Copy reply draft",
+          "text": "Short reply 4\nsecond line with umlauts äöü"
+        }
+      ],
+      "choices": [
+        "reject",
+        "defer"
+      ]
+    },
+    {
+      "id": "request-5-request-5-request-5-request-5x",
+      "kind": "Event request with a lo.",
+      "source": "Northwind Facilities and Workplace Services, team 5 Northwi.",
+      "title": "Request 5: renew the service agreement for the shared meeting rooms and the reception desk for another year Request 5: renew the service ag.",
+      "detail": "Detail 5: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 5: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 5: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 5: the provider keeps the current rate, adds evening cleaning on Thursdays and asks for a decision before the end of the month. Detail 5: the provider keeps the current rate, adds evening.",
+      "due": "2026-10-15",
+      "copy": [
+        {
+          "label": "Copy contract number Co.",
+          "text": "NWF-2026-0005 contract reference and cost centre 4410 NWF-2."
+        },
+        {
+          "label": "Copy amount",
+          "text": "5,234.55"
+        },
+        {
+          "label": "Copy cost centre",
+          "text": "CC-4450"
+        },
+        {
+          "label": "Copy reply draft",
+          "text": "Short reply 5\nsecond line with umlauts äöü"
+        }
+      ],
+      "choices": [
+        "approve"
+      ]
+    }
+  ],
+  "done": [
+    {
+      "text": "Handled 1: filed the signed delivery note and the matching invoice under October expenses Handled 1: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 2: filed the signed delivery note and the matching invoice under October expenses Handled 2: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 3: filed the signed delivery note and the matching invoice under October expenses Handled 3: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 4: filed the signed delivery note and the matching invoice under October expenses Handled 4: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 5: filed the signed delivery note and the matching invoice under October expenses Handled 5: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 6: filed the signed delivery note and the matching invoice under October expenses Handled 6: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 7: filed the signed delivery note and the matching invoice under October expenses Handled 7: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 8: filed the signed delivery note and the matching invoice under October expenses Handled 8: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 9: filed the signed delivery note and the matching invoice under October expenses Handled 9: filed the signed delivery note and the."
+    },
+    {
+      "text": "Handled 10: filed the signed delivery note and the matching invoice under October expenses Handled 10: filed the signed delivery note and t."
+    },
+    {
+      "text": "Handled 11: filed the signed delivery note and the matching invoice under October expenses Handled 11: filed the signed delivery note and t."
+    },
+    {
+      "text": "Handled 12: filed the signed delivery note and the matching invoice under October expenses Handled 12: filed the signed delivery note and t."
+    }
+  ]
+}

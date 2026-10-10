@@ -1,0 +1,4 @@
+{
+  "approve_label": "Approve deploy",
+  "facts": [{"label": "Version", "value": "v2.3.7 → v2.4.0", "mono": true}]
+}

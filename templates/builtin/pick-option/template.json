@@ -1,0 +1,20 @@
+{
+  "id": "pick-option",
+  "namespace": "global",
+  "version": 1,
+  "title_de": "Option wählen",
+  "description": "Built-in (calm): compare 2 to 4 options side by side (name, short summary, aligned facts) and pick exactly one, with an optional note. The options form one radio group: arrow keys move and pick, Ctrl+Enter sends.",
+  "components": [
+    "rs-action-row"
+  ],
+  "strings": [
+    "choice_group_label",
+    "po_suggested",
+    "po_pick",
+    "po_choose",
+    "po_choose_idle",
+    "po_note_placeholder",
+    "add_note",
+    "note"
+  ]
+}

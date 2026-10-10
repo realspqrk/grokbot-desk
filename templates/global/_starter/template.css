@@ -1,5 +1,0 @@
-/* Tokens only: var(--rs-*), no colour literals, no URLs. */
-.starter { display: flex; flex-direction: column; gap: var(--rs-sp-4); max-width: 760px; }
-.starter__heading { font-size: var(--rs-fs-lg); font-weight: var(--rs-fw-bold); line-height: var(--rs-lh-tight); }
-.starter__message { white-space: pre-wrap; overflow-wrap: anywhere; }
-.starter__decide { display: flex; align-items: center; gap: var(--rs-sp-3); }

@@ -1,23 +1,41 @@
-"""Command-line interface for grokbot-desk."""
+"""Command-line interface for report-shell."""
 import argparse
 import json
 import math
 import os
 import shutil
 import socket
+import stat
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .check import check_template
+from . import __version__
+from .check import check_template_details
 from .envelope import EnvelopeError, MAX_PAYLOAD, validate_payload_bytes
+from .identity import registry_warnings
 from .jsonutil import JSONBoundaryError, dumps as json_dumps, loads as json_loads
-from .launcher import BrowserNotFound, focus_window, launch_server, launch_window
+from .launch_coordination import (
+    clear_launch_pending,
+    launch_is_pending,
+    mark_launch_pending,
+    release_launch_lock,
+    try_acquire_launch_lock,
+)
 from .media import MediaError, replace_media
 from .paths import ROOT, data_dir, ensure_layout, load_config, selected_port
-from .product import DISPLAY_NAME, PRODUCT_NAME, RUNNER_ID
+from .platform import (
+    BrowserLaunchError,
+    BrowserNotFound,
+    focus_window,
+    launch_server,
+    launch_window,
+)
+from .platform_types import LaunchResult, WindowLaunchStatus
+from .product import PRODUCT_NAME, RUNNER_ID
 from .registry import ID_RE, RegistryError, scan_registry
 from .server import run_server
 from .timeutil import iso_now
@@ -29,7 +47,7 @@ def output(value):
 
 
 def error(message, code):
-    print(f"{DISPLAY_NAME}: {message}", file=sys.stderr)
+    print(f"report-shell: {message}", file=sys.stderr)
     return code
 
 
@@ -61,11 +79,7 @@ def _server_start_timeout_seconds(default=3):
 
 def _hello(port, timeout=.35):
     try:
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{port}/hello",
-            headers={"User-Agent": RUNNER_ID},
-        )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/hello", timeout=timeout) as response:
             value = json.load(response)
         return value if value.get("runner") == RUNNER_ID else None
     except Exception:
@@ -87,21 +101,88 @@ def _state(base):
         return {}
 
 
+def _browser_identity(state):
+    result = LaunchResult.from_state(state.get("browser"))
+    if result is not None:
+        return result.identity
+    return state.get("browser_pid")
+
+
+def _write_browser_state(base, state):
+    (Path(base) / "state.json").write_text(
+        json_dumps(state, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _save_browser_result(base, result):
+    state = _state(base)
+    if isinstance(result, LaunchResult):
+        state["browser"] = result.to_state()
+        state.pop("browser_pid", None)
+    else:
+        # Compatibility for test doubles and state written by older versions.
+        state["browser_pid"] = result
+    state.pop("browser_launch_pending_until", None)
+    _write_browser_state(base, state)
+
+
+def _launch_is_pending(base, state):
+    return launch_is_pending(base, state)
+
+
+def _mark_launch_pending(base):
+    return mark_launch_pending(base)
+
+
+def _clear_launch_pending(base, generation):
+    clear_launch_pending(base, generation)
+    state = _state(base)
+    if "browser_launch_pending_until" in state:
+        state.pop("browser_launch_pending_until", None)
+        _write_browser_state(base, state)
+
+
+def _window_is_ready(url):
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.hostname not in {"127.0.0.1", "localhost"}:
+            return False
+        hello = _hello(parsed.port)
+    except (TypeError, ValueError):
+        return False
+    return bool(hello and hello.get("window_alive"))
+
+
+def _launch_window_once(base, url, config):
+    descriptor = try_acquire_launch_lock(base)
+    if descriptor is None:
+        return WindowLaunchStatus.PENDING
+    try:
+        if _window_is_ready(url):
+            return WindowLaunchStatus.READY
+        state = _state(base)
+        if _launch_is_pending(base, state):
+            return WindowLaunchStatus.PENDING
+        generation = _mark_launch_pending(base)
+        try:
+            # the one-time app token: only the page this launch opens may
+            # close itself after its last decision (server: event window)
+            separator = "&" if urllib.parse.urlsplit(url).query else "?"
+            launched = launch_window(f"{url}{separator}app={generation}", base, config)
+        except Exception:
+            _clear_launch_pending(base, generation)
+            raise
+        _save_browser_result(base, launched)
+        return WindowLaunchStatus.LAUNCHED
+    finally:
+        release_launch_lock(base, descriptor)
+
+
 def _ensure_server(base, port):
     hello = _hello(port)
     if hello:
-        expected_owner = os.environ.get("RS_MEASUREMENT_OWNER")
-        if expected_owner:
-            state = _state(base)
-            if not (
-                state.get("pid") == hello.get("pid")
-                and state.get("port") == port
-                and state.get("measurement_owner") == expected_owner
-            ):
-                raise RuntimeError("tracked measurement server ownership changed")
         return hello
-    if os.environ.get("RS_REQUIRE_RUNNING_SERVER") == "1":
-        raise RuntimeError("tracked measurement server is not running")
     if _port_open(port):
         raise RuntimeError("port is held by a foreign process")
     launch_server(ROOT / "report_shell.py", port, base)
@@ -122,7 +203,7 @@ def _ensure_server(base, port):
 
 
 def _request(port, path, token=None, csrf=None, body=None, timeout=None):
-    headers = {"Content-Type": "application/json", "User-Agent": RUNNER_ID}
+    headers = {"Content-Type": "application/json"}
     if token:
         headers["X-RS-Token"] = token
     if csrf:
@@ -149,11 +230,7 @@ def _request(port, path, token=None, csrf=None, body=None, timeout=None):
 
 
 def _csrf(port):
-    request = urllib.request.Request(
-        f"http://127.0.0.1:{port}/",
-        headers={"User-Agent": RUNNER_ID},
-    )
-    with urllib.request.urlopen(request, timeout=2) as response:
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as response:
         page = response.read().decode("utf-8")
     marker = '<script id="rs-boot" type="application/json">'
     start = page.index(marker) + len(marker)
@@ -182,21 +259,29 @@ def _load_show_payload(args, template, registry, used_ids=()):
             "schema": "report-shell/payload@1",
             "template": template.id,
             "version": template.version,
-            "bot": template.namespace if template.namespace != "global" else "agent",
+            "bot": template.namespace if template.namespace != "global" else "operations-agent",
             "title": template.title_de,
             "created": iso_now(),
             "data": value,
         }
+    explicit_run_id = "run_id" in payload
     if payload.get("template") != template.id:
         raise EnvelopeError("/template", f"must equal {template.id}")
-    return validate_payload_bytes(
-        json_dumps(payload, ensure_ascii=False).encode("utf-8"), registry, used_ids
+    validated = validate_payload_bytes(
+        json_dumps(payload, ensure_ascii=False).encode("utf-8"),
+        registry,
+        used_ids if explicit_run_id else (),
     )
+    if not explicit_run_id:
+        validated.pop("run_id")
+    return validated
 
 
 def command_show(args, base, port):
     try:
-        registry = scan_registry(ROOT / "templates")
+        registry = scan_registry(
+            ROOT / "templates", Path(base) / "templates"
+        )
         template = registry.get(args.template)
         if template is None:
             return error(f"unknown template: {args.template}", 2)
@@ -210,8 +295,15 @@ def command_show(args, base, port):
         notify = payload.get("notify", {}).get("webhook_url")
         if notify:
             validate_webhook_url(notify, config)
-        schema = json_loads((template.path / "schema.json").read_text(encoding="utf-8"))
-        replace_media(payload["data"], schema, config.get("media_roots", []), {}, template.path)
+        schema = json_loads(template.read_text("schema.json"))
+        replace_media(
+            payload["data"],
+            schema,
+            config.get("media_roots", []),
+            {},
+            template.path,
+            template_identity=template.root_identity,
+        )
     except (OSError, ValueError, EnvelopeError, RegistryError, MediaError) as exc:
         return error(str(exc), 2)
     try:
@@ -222,11 +314,7 @@ def command_show(args, base, port):
             f"http://127.0.0.1:{port}/push",
             data=raw,
             method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": RUNNER_ID,
-                "X-RS-Token": state["token"],
-            },
+            headers={"Content-Type": "application/json", "X-RS-Token": state["token"]},
         )
         with urllib.request.urlopen(
             request, timeout=_http_timeout(3)
@@ -247,19 +335,18 @@ def command_show(args, base, port):
         try:
             if result.get("window_alive"):
                 if args.focus:
-                    focus_window(state.get("browser_pid"), result.get("window_title"))
+                    focus_window(
+                        _browser_identity(state),
+                        result.get("window_title"),
+                    )
             else:
-                pid = launch_window(
-                    f"http://127.0.0.1:{port}/?launch={payload['run_id']}&run={payload['run_id']}",
+                _launch_window_once(
                     base,
+                    f"http://127.0.0.1:{port}/?launch={result['run_id']}&run={result['run_id']}",
                     load_config(base),
                 )
-                state["browser_pid"] = pid
-                (Path(base) / "state.json").write_text(
-                    json_dumps(state, separators=(",", ":")) + "\n", encoding="utf-8"
-                )
-        except BrowserNotFound as exc:
-            return error(str(exc).removeprefix(f"{DISPLAY_NAME}: "), 3)
+        except (BrowserNotFound, BrowserLaunchError) as exc:
+            return error(str(exc).removeprefix("report-shell: "), 3)
     output({key: result[key] for key in ("run_id", "url", "result_path")})
     return 0
 
@@ -310,16 +397,22 @@ def command_open(base, port):
             return 0
         state = _state(base)
         if hello.get("window_alive"):
-            focus_window(state.get("browser_pid"), hello.get("window_title"))
+            focus_window(
+                _browser_identity(state), hello.get("window_title")
+            )
             output({"ok": True, "opened": False})
         else:
-            pid = launch_window(f"http://127.0.0.1:{port}/", base, load_config(base))
-            state["browser_pid"] = pid
-            (Path(base) / "state.json").write_text(json_dumps(state) + "\n", encoding="utf-8")
-            output({"ok": True, "opened": True})
+            launch_status = _launch_window_once(
+                base, f"http://127.0.0.1:{port}/", load_config(base)
+            )
+            output({
+                "ok": True,
+                "opened": launch_status is WindowLaunchStatus.LAUNCHED,
+                "pending": launch_status is WindowLaunchStatus.PENDING,
+            })
         return 0
-    except BrowserNotFound as exc:
-        return error(str(exc).removeprefix(f"{DISPLAY_NAME}: "), 3)
+    except (BrowserNotFound, BrowserLaunchError) as exc:
+        return error(str(exc).removeprefix("report-shell: "), 3)
     except RuntimeError as exc:
         return error(str(exc), 4)
 
@@ -338,18 +431,67 @@ def command_cancel(args, base, port):
 
 def command_list():
     try:
-        registry = scan_registry(ROOT / "templates")
+        registry = scan_registry(
+            ROOT / "templates", data_dir() / "templates"
+        )
     except RegistryError as exc:
         return error(str(exc), 7)
     output([item.summary() for item in registry.values()])
     return 0
 
 
+def command_templates(args):
+    try:
+        registry = scan_registry(
+            ROOT / "templates", data_dir() / "templates"
+        )
+    except RegistryError as exc:
+        return error(str(exc), 7)
+    items = [
+        template.listing(include_path=args.paths)
+        for template in registry.values()
+    ]
+    if args.json or args.paths:
+        output(items)
+    else:
+        print("ID\tSOURCE\tEXTENDS\tTITLE")
+        for item in items:
+            print(
+                f"{item['id']}\t{item['source']}\t"
+                f"{item['extends'] or '-'}\t{item['title']}"
+            )
+    return 0
+
+
+def command_doctor():
+    try:
+        registry = scan_registry(
+            ROOT / "templates", data_dir() / "templates"
+        )
+    except RegistryError as exc:
+        return error(str(exc), 7)
+    output({
+        "ok": True,
+        "templates": len(registry),
+        "warnings": list(registry.warnings),
+        "identity_warnings": registry_warnings(data_dir()),
+    })
+    return 0
+
+
 def command_check(args):
-    findings = check_template("--all" if args.all else args.template, ROOT, args.visual)
-    if findings:
-        return error("; ".join(findings), 7)
-    output({"ok": True, "template": "--all" if args.all else args.template, "visual": args.visual})
+    selected = "--all" if args.all else args.template
+    details = check_template_details(
+        selected, ROOT, data_dir_path=data_dir(), visual=args.visual
+    )
+    if details["findings"]:
+        return error("; ".join(details["findings"]), 7)
+    output({
+        "ok": True,
+        "template": selected,
+        "visual": args.visual,
+        "warnings": details["warnings"],
+    })
     return 0
 
 
@@ -359,16 +501,32 @@ def command_new(args):
     namespace, name = args.name.split("/", 1)
     if not ID_RE.fullmatch(namespace) or not ID_RE.fullmatch(name):
         return error("invalid template name", 7)
-    templates_root = (ROOT / "templates").resolve()
-    target = (templates_root / namespace / name).resolve()
-    if not target.is_relative_to(templates_root):
-        return error("invalid template name", 7)
-    if target.exists():
-        return error(f"template already exists: {args.name}", 7)
+    declared_data_root = Path(data_dir())
+    target = None
     try:
-        if name in scan_registry(ROOT / "templates"):
-            return error(f"template id already exists: {name}", 7)
-        shutil.copytree(ROOT / "templates" / "global" / "_starter", target)
+        data_root = declared_data_root.resolve(strict=declared_data_root.exists())
+        templates_path = declared_data_root / "templates"
+        if templates_path.exists():
+            templates_root = templates_path.resolve(strict=True)
+            try:
+                templates_root.relative_to(data_root)
+            except ValueError:
+                return error("templates root is outside data directory", 7)
+        else:
+            templates_root = data_root / "templates"
+        target = templates_root / name
+        if target.parent != templates_root:
+            return error("invalid template name", 7)
+        if os.path.lexists(target):
+            return error(f"template already exists: {args.name}", 7)
+        data_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        templates_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if (
+            templates_root.resolve(strict=True) != templates_root
+            or target.parent.resolve(strict=True) != templates_root
+        ):
+            return error("template destination is outside data directory", 7)
+        shutil.copytree(ROOT / "templates" / "builtin" / "_starter", target)
         manifest_path = target / "template.json"
         manifest = json_loads(manifest_path.read_text(encoding="utf-8"))
         manifest["id"] = name
@@ -378,7 +536,20 @@ def command_new(args):
         output({"ok": True, "id": name, "path": str(target)})
         return 0
     except Exception as exc:
-        shutil.rmtree(target, ignore_errors=True)
+        if target is not None:
+            try:
+                target_stat = target.lstat()
+                is_reparse = bool(
+                    getattr(target_stat, "st_file_attributes", 0)
+                    & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+                )
+                if (
+                    not is_reparse
+                    and target.resolve(strict=True).parent == templates_root
+                ):
+                    shutil.rmtree(target, ignore_errors=True)
+            except OSError:
+                pass
         return error(str(exc), 7)
 
 
@@ -398,6 +569,7 @@ def command_stop(base, port):
 def build_parser():
     parser = argparse.ArgumentParser(prog=PRODUCT_NAME)
     parser.add_argument("--port", type=int)
+    parser.add_argument("--version", action="version", version=f"{PRODUCT_NAME} {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     show = commands.add_parser("show")
     show.add_argument("template")
@@ -414,6 +586,10 @@ def build_parser():
     cancel = commands.add_parser("cancel")
     cancel.add_argument("run_id")
     commands.add_parser("list")
+    templates = commands.add_parser("templates")
+    templates.add_argument("--json", action="store_true")
+    templates.add_argument("--paths", action="store_true", help=argparse.SUPPRESS)
+    commands.add_parser("doctor")
     check = commands.add_parser("check")
     group = check.add_mutually_exclusive_group(required=True)
     group.add_argument("template", nargs="?")
@@ -441,6 +617,10 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.command == "list":
         return command_list()
+    if args.command == "templates":
+        return command_templates(args)
+    if args.command == "doctor":
+        return command_doctor()
     if args.command == "check":
         return command_check(args)
     if args.command == "new":

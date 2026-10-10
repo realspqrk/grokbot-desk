@@ -1,9 +1,10 @@
 // Isolated grokbot-desk server for browser tests and dev screenshots.
-// Never uses port 18742 or the real %LOCALAPPDATA%\grokbot-desk:
+// Never uses the product port or the real %LOCALAPPDATA%\spqrk-report-shell:
 // every server gets its own temp RS_DATA_DIR.
 import { spawn, spawnSync } from 'node:child_process';
 import {
   closeSync,
+  cpSync,
   existsSync,
   mkdtempSync,
   openSync,
@@ -38,6 +39,9 @@ export function spawnPythonProcess(executable, args, options, spawnProcess = spa
 }
 
 const PYTHON = resolvePythonExecutable();
+const MEASUREMENT_BOT_ID = JSON.parse(
+  readFileSync(path.join(ROOT, 'tools', 'measurement.json'), 'utf8'),
+).bot_id;
 
 function timeoutMs(environment, name, fallback) {
   const value = Number(environment[name]);
@@ -91,6 +95,25 @@ export async function loadChromium() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function copyUserTemplates(dataDir, environment) {
+  const sourceDataDir = environment.RS_DATA_DIR || process.env.RS_DATA_DIR;
+  if (!sourceDataDir || path.resolve(sourceDataDir) === path.resolve(dataDir)) return;
+  const source = path.join(sourceDataDir, 'templates');
+  if (existsSync(source)) {
+    cpSync(source, path.join(dataDir, 'templates'), { recursive: true });
+  }
+}
+
+function processHasExited(proc) {
+  return proc.exitCode !== null || proc.signalCode != null;
+}
+
+export async function awaitProcessExit(proc, timeoutMs, sleepFn = sleep) {
+  const deadline = Date.now() + timeoutMs;
+  while (!processHasExited(proc) && Date.now() < deadline) await sleepFn(50);
+  return processHasExited(proc);
+}
+
 async function hello(port) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/hello`, { signal: AbortSignal.timeout(500) });
@@ -106,15 +129,16 @@ export function validateServerPort(port) {
     throw new Error('isolated server port must be a valid TCP port');
   }
   if (port === 18742) {
-    throw new Error('refusing the production default port 18742');
+    throw new Error('refusing the product default port 18742');
   }
   return port;
 }
 
 export async function startServer({ port, mediaRoots = [], env: environment = {} }) {
   validateServerPort(port);
-  if (await hello(port)) throw new Error(`a grokbot-desk server is already running on ${port}`);
+  if (await hello(port)) throw new Error(`a report-shell server is already running on ${port}`);
   const dataDir = mkdtempSync(path.join(tmpdir(), 'rs-test-'));
+  copyUserTemplates(dataDir, environment);
   if (mediaRoots.length) {
     writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({
       port,
@@ -149,7 +173,7 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
   }
   const deadline = Date.now() + timeoutMs(env, 'RS_SERVER_START_TIMEOUT_MS', 15000);
   while (Date.now() < deadline) {
-    if (proc.exitCode !== null || proc.signalCode !== null) {
+    if (processHasExited(proc)) {
       const error = serverStartupError('server exited before becoming ready', proc, stderrPath);
       rmSync(dataDir, { recursive: true, force: true });
       throw error;
@@ -158,15 +182,10 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
     await sleep(100);
   }
   if (!(await hello(port))) {
-    try { proc.kill(); } catch { /* report the retained process status below */ }
-    const exitDeadline = Date.now() + 2000;
-    while (
-      proc.exitCode === null
-      && proc.signalCode === null
-      && Date.now() < exitDeadline
-    ) await sleep(50);
+    try { proc.kill(); } catch { /* report retained process status below */ }
+    await awaitProcessExit(proc, 2000);
     const error = serverStartupError('server did not start', proc, stderrPath);
-    if (proc.exitCode !== null || proc.signalCode !== null) {
+    if (processHasExited(proc)) {
       rmSync(dataDir, { recursive: true, force: true });
     }
     throw error;
@@ -186,7 +205,7 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
       const m = page.match(/<script id="rs-boot" type="application\/json">([\s\S]*?)<\/script>/);
       return JSON.parse(m[1]).csrf;
     },
-    /** Cancels every open run through the real API (deterministic rail for the next test). */
+    /** Cancels every open run through the real API (deterministic strip for the next test). */
     async clearRuns() {
       const csrf = await server.csrf();
       const headers = { 'X-RS-CSRF': csrf, 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${port}` };
@@ -223,7 +242,7 @@ export function show(server, data, extra = {}) {
     schema: 'report-shell/payload@1',
     template,
     version: 1,
-    bot: 'agent',
+    bot: MEASUREMENT_BOT_ID,
     title: 'Testbericht ' + seq,
     created: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
     data,
@@ -243,18 +262,13 @@ export function show(server, data, extra = {}) {
   return JSON.parse(out.stdout.trim().split('\n').pop());
 }
 
-export async function stopServer(server) {
+export async function stopServer(
+  server,
+  { waitForExit = awaitProcessExit } = {},
+) {
   if (!server) return;
   if (!server.stopPromise) {
     server.stopPromise = (async () => {
-      const hasExited = () => (
-        server.proc.exitCode !== null || server.proc.signalCode !== null
-      );
-      const awaitExit = async (milliseconds) => {
-        const deadline = Date.now() + milliseconds;
-        while (!hasExited() && Date.now() < deadline) await sleep(50);
-        return hasExited();
-      };
       try {
         const state = JSON.parse(readFileSync(path.join(server.dataDir, 'state.json'), 'utf8'));
         const response = await fetch(`http://127.0.0.1:${server.port}/stop`, {
@@ -263,11 +277,11 @@ export async function stopServer(server) {
         });
         if (!response.ok) throw new Error(`server stop returned ${response.status}`);
       } catch { /* fall through to retained-handle cleanup */ }
-      if (!(await awaitExit(4000))) {
+      if (!(await waitForExit(server.proc, 4000))) {
         try { server.proc.kill(); } catch { /* verify exit below */ }
-        await awaitExit(4000);
+        await waitForExit(server.proc, 4000);
       }
-      if (!hasExited()) {
+      if (!processHasExited(server.proc)) {
         throw new Error(
           `retained server process ${server.proc.pid} did not exit; `
           + `keeping temporary state at ${server.dataDir}`,

@@ -1,9 +1,10 @@
 import { inflateSync } from 'node:zlib';
 
 export const CALM_THRESHOLDS = Object.freeze({
-  // Provisional owner amendments are documented in docs/calm-checker-limits.md.
+  // Threshold exceptions are documented in docs/calm-checker-limits.md.
   itemInteractiveMax: 3,
   iconControlMaxPx: 32,
+  avatarMaxPx: 32,
   fontSizeMax: 3,
   fontWeightMax: 2,
   boxAncestorMax: 1,
@@ -20,6 +21,18 @@ export const CALM_THRESHOLDS = Object.freeze({
   socialMockupMinPx: 480,
   motionMaxMs: 200,
 });
+
+// K10 (one wide mockup, stateful platform tabs) applies to the shipped social
+// post preview and any user template that extends it.
+export const SOCIAL_PREVIEW_TEMPLATES = Object.freeze(['preview-post']);
+
+export function isSocialPreview(manifest) {
+  if (typeof manifest === 'string') return SOCIAL_PREVIEW_TEMPLATES.includes(manifest);
+  return Boolean(manifest) && (
+    SOCIAL_PREVIEW_TEMPLATES.includes(manifest.id)
+    || SOCIAL_PREVIEW_TEMPLATES.includes(manifest.extends)
+  );
+}
 
 export function focusedControlFacts() {
   const element = document.activeElement;
@@ -340,7 +353,11 @@ async function auditCopyFocusState(page, stateIndex) {
     const rovingMembers = await page.evaluate(() => {
       const groupSelector = '[role=radiogroup],[role=toolbar],[role=tablist]';
       const group = document.activeElement?.closest?.(groupSelector);
-      if (!group) return 0;
+      // P8d: arrows on the shell's report strip switch reports and it holds
+      // no copies (tools/e2e.mjs audits its arrows); template groups arrow
+      if (!group || (
+        group.id === 'rs-strip' && group.closest('#rs-strip-nav') && !group.closest('#rs-mount')
+      )) return 0;
       const members = [...group.querySelectorAll(
         'button,input,select,textarea,a[href],summary,[tabindex]',
       )].filter((element) => element.closest(groupSelector) === group);
@@ -978,9 +995,12 @@ export function calmEvaluator(options) {
       };
     });
 
-  const rail = document.querySelector('.rs-rail,[data-rs-rail],nav[aria-label*="run" i]');
-  const railFocusable = rail
-    ? [...rail.querySelectorAll(interactiveSelector)].filter((element) => (
+  // P8d: the avatar strip of open reports (older pages and fixtures: a rail)
+  const strip = document.getElementById('rs-strip-nav') || [...document.querySelectorAll(
+    '.rs-strip,[data-rs-strip],.rs-rail,[data-rs-rail],nav[aria-label*="run" i]',
+  )].find((element) => !element.closest('#rs-mount')) || null;
+  const stripFocusable = strip
+    ? [...strip.querySelectorAll(interactiveSelector)].filter((element) => (
       focusable(element)
       && !element.closest('[inert]')
       && element.getClientRects().length > 0
@@ -1020,6 +1040,20 @@ export function calmEvaluator(options) {
   const isBox = (element) => {
     if (!visible(element)) return false;
     if (element.hasAttribute('data-rs-mockup')) return true;
+    // A small avatar (initials disc, its image or a core-drawn shape) is
+    // media like an <img>, not a container; it is a box again once larger
+    // or holding content.
+    if (element.hasAttribute('data-rs-avatar')) {
+      const rect = rectOf(element);
+      if (
+        rect.width <= thresholds.avatarMaxPx
+        && rect.height <= thresholds.avatarMaxPx
+        && [...element.children].every((child) => (
+          child.tagName === 'IMG'
+          || (child.namespaceURI === 'http://www.w3.org/2000/svg' && child.hasAttribute('data-rs-shape'))
+        ))
+      ) return false;
+    }
     const style = getComputedStyle(element);
     const ownColor = ownBackground(style);
     const parentColor = effectiveBackground(element.parentElement);
@@ -1322,9 +1356,9 @@ export function calmEvaluator(options) {
     K2: { items },
     K3: {
       open_runs: options.openRuns,
-      rail_rendered: Boolean(rail && visible(rail) && rectOf(rail).width > 0),
-      rail_width: rail ? rectOf(rail).width : 0,
-      focusable_descendants: railFocusable,
+      strip_rendered: Boolean(strip && visible(strip) && rectOf(strip).width > 0),
+      strip_width: strip ? rectOf(strip).width : 0,
+      focusable_descendants: stripFocusable,
     },
     K4: { font_sizes: fontSizes, font_weights: fontWeights },
     K5: {
@@ -1394,10 +1428,10 @@ export function judgeCalmFacts(facts, options = {}) {
   const k3Samples = facts.K3.samples || [facts.K3];
   for (const sample of k3Samples) {
     if (sample.open_runs === 1 && (
-      sample.rail_rendered || sample.rail_width !== 0 || sample.focusable_descendants !== 0
-    )) k3Reasons.push('K3 rail must not render for 1 open run');
-    if (sample.open_runs >= 2 && !sample.rail_rendered) {
-      k3Reasons.push(`K3 rail must render for ${sample.open_runs} open runs`);
+      sample.strip_rendered || sample.strip_width !== 0 || sample.focusable_descendants !== 0
+    )) k3Reasons.push('K3 strip must not render for 1 open run');
+    if (sample.open_runs >= 2 && !sample.strip_rendered) {
+      k3Reasons.push(`K3 strip must render for ${sample.open_runs} open runs`);
     }
   }
   set('K3', k3Reasons);
@@ -1437,7 +1471,7 @@ export function judgeCalmFacts(facts, options = {}) {
     || facts.K9.visible_interactive_above_fold <= thresholds.aboveFoldInteractiveMax
     ? [] : [`K9 found ${facts.K9.visible_interactive_above_fold} visible controls above the fold`]);
 
-  if (options.templateId === 'synthetic-platform-preview') {
+  if (isSocialPreview(options.manifest || options.templateId)) {
     const wide = facts.K10.mockups.filter((item) => item.width >= thresholds.socialMockupMinPx);
     const tablist = facts.K10.tablists.find((item) => item.tabs > 0);
     const interaction = facts.K10.interaction;

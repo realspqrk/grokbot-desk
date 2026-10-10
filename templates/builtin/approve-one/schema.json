@@ -1,0 +1,73 @@
+{
+  "type": "object",
+  "required": ["summary"],
+  "additionalProperties": false,
+  "properties": {
+    "summary": {"type": "string", "minLength": 1, "maxLength": 600, "description": "The question or summary sentence, shown first (plain text, newlines kept)."},
+    "approve_label": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Optional label of the primary button once Approve is picked, e.g. \"Approve deploy\"; default \"Approve\"."},
+    "allow_changes": {"type": "boolean", "default": false, "description": "Offer \"Request changes\" (comment required) as a third choice."},
+    "facts": {
+      "type": "array",
+      "maxItems": 6,
+      "description": "Key facts as label/value pairs under the summary (amount, requester, version, period).",
+      "items": {
+        "type": "object",
+        "required": ["label", "value"],
+        "additionalProperties": false,
+        "properties": {
+          "label": {"type": "string", "minLength": 1, "maxLength": 24},
+          "value": {"type": "string", "minLength": 1, "maxLength": 120},
+          "mono": {"type": "boolean", "default": false, "description": "Show the value in the monospace font (versions, ids, amounts)."}
+        }
+      }
+    },
+    "copy": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "Values the person would otherwise retype; each is shown in full next to its button.",
+      "items": {
+        "type": "object",
+        "required": ["label", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "label": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Button label, e.g. \"Copy username\"."},
+          "text": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "Exact string that lands on the clipboard."}
+        }
+      }
+    },
+    "points_title": {"type": "string", "minLength": 1, "maxLength": 40, "description": "Heading of the points list; default \"Details\"."},
+    "points": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Short bullet points (what changes, why it is needed).",
+      "items": {"type": "string", "minLength": 1, "maxLength": 160}
+    },
+    "checks": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Checks with a status dot (tests, policies, prior approvals).",
+      "items": {
+        "type": "object",
+        "required": ["label", "state"],
+        "additionalProperties": false,
+        "properties": {
+          "label": {"type": "string", "minLength": 1, "maxLength": 80},
+          "detail": {"type": "string", "minLength": 1, "maxLength": 120},
+          "state": {"enum": ["ok", "warn", "fail"]}
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["title", "label", "text"],
+      "additionalProperties": false,
+      "description": "A longer value behind a closed disclosure (rollback command, full terms), with a copy button.",
+      "properties": {
+        "title": {"type": "string", "minLength": 1, "maxLength": 40, "description": "Disclosure title, e.g. \"Rollback\"."},
+        "label": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Copy button label."},
+        "text": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "Exact string that lands on the clipboard."},
+        "mono": {"type": "boolean", "default": false, "description": "Show the text in the monospace font (commands, paths)."}
+      }
+    }
+  }
+}

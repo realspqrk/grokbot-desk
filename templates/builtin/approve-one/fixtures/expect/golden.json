@@ -1,0 +1,43 @@
+{
+  "copies": {
+    "reference": "deploy rollback --to v2.3.7"
+  },
+  "counters": {},
+  "flow": [
+    {
+      "click": "rs-action-row[data-item=\"decision\"] button[value=\"request_changes\"]"
+    },
+    {
+      "fill": [
+        "#ao-comment",
+        "Please deploy after the Friday sale ends."
+      ]
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "keyboard": [
+    {
+      "repeat": 2,
+      "press": "Tab"
+    },
+    {
+      "repeat": 2,
+      "press": "ArrowRight"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "type": "Please deploy after the Friday sale ends."
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "result": {
+    "decision": "request_changes",
+    "comment": "Please deploy after the Friday sale ends."
+  }
+}

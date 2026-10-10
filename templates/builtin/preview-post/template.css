@@ -1,0 +1,66 @@
+/* preview-post (built-in, calm). Tokens only: var(--rs-*) colours,
+   var(--space-*) spacing, no colour literals, no URLs, block comments only.
+   One platform at a time: tabs (each with its approval tick) above one large,
+   faithful preview; approval, counts and copy icons in a narrow side column. */
+.pp { display: flex; flex-direction: column; gap: var(--space-5); }
+
+.pp__note { max-width: var(--rs-measure); color: var(--rs-muted); }
+.pp__request { display: flex; flex-direction: column; gap: var(--space-1); max-width: var(--rs-measure); }
+
+/* ---- tabs ---- */
+.pp__tabs {
+  display: flex;
+  gap: var(--space-5);
+  border-bottom: var(--rs-border) solid var(--rs-line);
+}
+.pp__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--rs-primary-h);
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--rs-muted);
+  cursor: pointer;
+  transition: color var(--rs-dur) var(--rs-ease), border-color var(--rs-dur) var(--rs-ease);
+}
+.pp__tab:hover { color: var(--rs-ink); }
+.pp__tab[aria-selected="true"] {
+  border-bottom-color: var(--rs-ink);
+  color: var(--rs-ink);
+  font-weight: var(--rs-fw-strong);
+}
+.pp__tab .rs-ico { width: 16px; height: 16px; }
+/* per-tab approval state (data-rs-status): tick when approved, dot when blocked */
+.pp__state { display: inline-flex; color: var(--rs-ink); }
+.pp__state[data-rs-status="open"] > .rs-ico { display: none; }
+/* the blocked dot carries the status hue through its fill only (K6) */
+.pp__state[data-rs-status="blocked"] .rs-ico-fill { fill: var(--rs-status-danger); }
+.pp__state > .rs-ico { width: 16px; height: 16px; }
+
+/* ---- the one preview + side column ---- */
+.pp__panel {
+  display: grid;
+  grid-template-columns: minmax(480px, 520px) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+.pp__panel rs-post-frame { --rs-pf-max: none; }
+
+.pp__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-1);
+  min-width: 0;
+}
+.pp__approve { align-self: flex-start; }
+.pp__panel[data-blocked] .pp__approve { color: var(--rs-muted); cursor: not-allowed; }
+.pp__counts { display: flex; flex-direction: column; gap: var(--space-1); }
+.pp__tagcount { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.pp__badges { display: flex; flex-direction: column; gap: var(--space-1); }
+.pp__badges:empty { display: none; }
+.pp__copies { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.pp__comment .rs-copy__value { font-size: var(--rs-fs-sm); }

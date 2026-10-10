@@ -9,6 +9,9 @@ KEYWORDS = {
     "maxLength", "pattern", "minimum", "maximum", "oneOf", "default",
     "description",
 }
+# Extension keyword on an array of objects: the named property must not
+# repeat across items (e.g. option ids). JSON Schema has no such keyword.
+UNIQUE_KEY = "x-rs-unique-key"
 TYPES = {
     "object": dict,
     "array": list,
@@ -93,6 +96,11 @@ def check_schema(schema, pointer=""):
             raise SchemaError(_pointer(pointer, key), "must be a number")
     if "uniqueItems" in schema and not isinstance(schema["uniqueItems"], bool):
         raise SchemaError(_pointer(pointer, "uniqueItems"), "must be a boolean")
+    if UNIQUE_KEY in schema:
+        if not isinstance(schema[UNIQUE_KEY], str) or not schema[UNIQUE_KEY]:
+            raise SchemaError(_pointer(pointer, UNIQUE_KEY), "must be a non-empty property name")
+        if schema.get("type", "array") != "array":
+            raise SchemaError(_pointer(pointer, UNIQUE_KEY), "only applies to arrays")
     if "enum" in schema and (not isinstance(schema["enum"], list) or not schema["enum"]):
         raise SchemaError(_pointer(pointer, "enum"), "must be a non-empty array")
     if "pattern" in schema:
@@ -160,6 +168,20 @@ def _json_equal(left, right):
     return type(left) is type(right) and left == right
 
 
+def _check_unique_key(items, key, pointer):
+    seen = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or key not in item:
+            continue
+        for first, previous in seen:
+            if _json_equal(item[key], previous):
+                raise SchemaError(
+                    _pointer(_pointer(pointer, index), key),
+                    f"duplicate {key} {item[key]!r}, already used by {_pointer(pointer, first)}",
+                )
+        seen.append((index, item[key]))
+
+
 def validate(value, schema, pointer=""):
     check_schema(schema)
     if isinstance(value, float) and not math.isfinite(value):
@@ -216,6 +238,8 @@ def validate(value, schema, pointer=""):
         if "items" in schema:
             for index, item in enumerate(value):
                 validate(item, schema["items"], _pointer(pointer, index))
+        if UNIQUE_KEY in schema:
+            _check_unique_key(value, schema[UNIQUE_KEY], pointer)
     if isinstance(value, str):
         if len(value) < schema.get("minLength", 0):
             raise SchemaError(pointer, f"must be at least {schema['minLength']} characters")

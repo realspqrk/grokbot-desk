@@ -1,0 +1,46 @@
+{
+  "copies": {},
+  "counters": {},
+  "flow": [
+    {
+      "click": "rs-action-row button[value=\"old-mill\"]"
+    },
+    {
+      "click": "[data-po=\"note-open\"]"
+    },
+    {
+      "fill": [
+        "#po-note",
+        "Please ask whether the garden has step-free access."
+      ]
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "keyboard": [
+    {
+      "repeat": 2,
+      "press": "Tab"
+    },
+    {
+      "press": "ArrowRight"
+    },
+    {
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "type": "Please ask whether the garden has step-free access."
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "result": {
+    "choice": "old-mill",
+    "note": "Please ask whether the garden has step-free access."
+  }
+}

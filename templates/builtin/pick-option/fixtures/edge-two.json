@@ -1,0 +1,13 @@
+{
+  "question": "Which delivery slot works for the new desks?",
+  "options": [
+    {
+      "id": "tue-am",
+      "name": "Tuesday, 08:00 to 12:00"
+    },
+    {
+      "id": "thu-pm",
+      "name": "Thursday, 13:00 to 17:00"
+    }
+  ]
+}

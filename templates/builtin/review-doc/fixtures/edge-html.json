@@ -1,0 +1,4 @@
+{
+  "summary": "Notice board text copied from the old website. Some HTML tags came along; they are shown as plain text here and will be removed before publishing.",
+  "doc": "## Notice board\n\n<p>The garden is open <b>every day from 8:00 to 20:00</b>.</p>\n\nPlease close the gate behind you. <script>alert(1)</script> Dogs on a lead are welcome.\n\n![Photo of the gate](https://larkspur.example/gate.jpg)\n\n## Contact\n\nWrite to <hello@larkspur.example> or see [our page](https://larkspur.example/contact \"Contact page\"), or call during the opening hours.\n\n<a href=\"https://larkspur.example/rules\">Garden rules</a>\n"
+}

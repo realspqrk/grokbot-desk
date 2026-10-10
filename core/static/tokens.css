@@ -1,4 +1,12 @@
-/* grokbot-desk design tokens (spec 4.3). The ONLY file with colour literals.
+/* report-shell design tokens (calm UI, addendum 2026-10-08). The ONLY file
+ * with colour literals.
+ *
+ * System: 1 neutral canvas, 1 accent hue (indigo, for the one primary action
+ * and the focus ring), neutral greys, status hues only on small dots marked
+ * data-rs-status. A report may replace the four accent tokens with its bot's
+ * accent (contrast-checked per theme by core/identity.py; the
+ * page applies them in a style[data-rs-accent] block). Type: 2 body sizes + 1 title size, 2 weights. Spacing only
+ * through var(--space-*). Motion <= 200 ms and none with reduced motion.
  *
  * Themes: light by default; dark when the OS prefers dark unless
  * html[data-theme="light"]; html[data-theme="dark"] forces dark. The two dark
@@ -10,27 +18,32 @@
 :root {
   color-scheme: light;
 
-  /* --- type --- */
-  --rs-font: "Segoe UI", system-ui, sans-serif;
-  --rs-font-mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
-  /* at most 3 sizes per screen (U6) */
-  --rs-fs-sm: 13px;
-  --rs-fs-md: 15px;
-  --rs-fs-lg: 20px;
-  --rs-lh-tight: 1.25;
-  --rs-lh: 1.45;
+  /* --- type: system fonts on Windows and macOS, no web fonts --- */
+  --rs-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --rs-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Cascadia Mono", "Liberation Mono", monospace;
+  --rs-fs-sm: 13px;   /* meta, labels, values */
+  --rs-fs-md: 15px;   /* body */
+  --rs-fs-lg: 20px;   /* the one title per view */
+  --rs-lh-tight: 1.3;
+  --rs-lh: 1.5;
   --rs-fw-normal: 400;
   --rs-fw-strong: 600;
-  --rs-fw-bold: 700;
+  --rs-pf-fw-bold: 700; /* platform mockups only (they imitate third-party UIs) */
+  --rs-measure: 72ch;  /* reading column for text blocks */
 
-  /* --- spacing, radii, sizes --- */
-  --rs-sp-1: 4px;
-  --rs-sp-2: 8px;
-  --rs-sp-3: 12px;
-  --rs-sp-4: 16px;
-  --rs-sp-5: 24px;
-  --rs-sp-6: 32px;
-  --rs-r-sm: 4px;
+  /* --- spacing scale (the only spacing values in CSS) --- */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* --- radii, sizes, motion --- */
+  --rs-r-sm: 6px;
   --rs-r-md: 8px;
   --rs-r-lg: 12px;
   --rs-r-pill: 999px;
@@ -38,39 +51,62 @@
   --rs-focus-offset: 2px;
   --rs-border: 1px;
   --rs-control-h: 32px;
-  --rs-header-h: 64px;
-  --rs-rail-w: 264px;
-  --rs-submitbar-h: 64px;
-  --rs-content-max: 1180px;
+  --rs-primary-h: 36px;
+  --rs-icon-btn: 28px;
+  --rs-dot: 8px;
+  --rs-avatar-sm: 24px;  /* "…" menu */
+  --rs-avatar-md: 32px;  /* strip, header */
+  --rs-header-h: 72px;
+  --rs-column: 760px;
+  --rs-fade-h: var(--space-5);  /* fold fade above the submit bar */
+  --rs-dur: 160ms;
+  --rs-ease: cubic-bezier(0.2, 0, 0, 1);
   --rs-dur-copied: 1.5s;
 
-  /* --- base palette (from today's report shell) --- */
-  --rs-paper: #f6f3ec;
-  --rs-ink: #1a1a1a;
-  --rs-muted: #5c5c5c;
-  --rs-line: #d8d4cc;
-  --rs-line-strong: #8a8378;
-  --rs-card: #fffdf8;
-  --rs-warn: #8a2b12;
-  --rs-warn-bg: #f4e4d8;
-  --rs-chip: #ece8df;
+  /* --- neutral canvas --- */
+  --rs-paper: #ffffff;
+  --rs-card: #ffffff;
+  --rs-rail-bg: #f5f5f7;
+  --rs-ink: #1c1c1e;
+  --rs-muted: #636366;
+  --rs-line: #e4e4e7;
+  --rs-line-strong: #8e8e93;
+  --rs-hover: #f2f2f4;
+  --rs-selected: #e9e9ed;
+  --rs-disabled: #ebebee;
+  --rs-on-disabled: #636366;
+  --rs-avatar-bg: #dcdce1;  /* neutral initials disc, ink text */
 
-  /* --- one accent + states --- */
-  --rs-accent: #1f4f78;
-  --rs-accent-hover: #173c5c;
-  --rs-on-accent: #fffdf8;
-  --rs-accent-bg: #e1e8ef;
-  --rs-ok: #2c5a1c;
-  --rs-ok-bg: #e2ecd8;
-  --rs-danger: #a3161b;
-  --rs-danger-bg: #f8dfdc;
-  --rs-on-danger: #fffdf8;
-  --rs-focus: #1f4f78;
-  --rs-disabled: #e4e0d7;
-  --rs-on-disabled: #5c5c5c;
-  --rs-shadow-1: 0 1px 2px #1a1a1a14;
-  --rs-shadow-2: 0 4px 16px #1a1a1a24;
-  --rs-overlay: #1a1a1a66;
+  /* --- shape avatars (P8c): fills of the named colours; the eyes are holes.
+     Vivid like the bot app's avatars; decorative (the name is the text).
+     --rs-avatar-default = the theme's default accent (no colour given) --- */
+  --rs-avatar-blue: #0e74e0;
+  --rs-avatar-orange: #ff6700;
+  --rs-avatar-yellow: #ff9800;
+  --rs-avatar-magenta: #d9339c;
+  --rs-avatar-red: #e5302f;
+  --rs-avatar-violet: #8b4cf0;
+  --rs-avatar-black: #161618;
+  --rs-avatar-green: #1fa45a;
+  --rs-avatar-gray: #777777;
+  --rs-avatar-default: #3b4fd8;
+
+  /* --- one accent --- */
+  --rs-accent: #3b4fd8;
+  --rs-accent-hover: #2f40b8;
+  --rs-on-accent: #ffffff;
+  --rs-focus: #3b4fd8;
+
+  /* --- status: dots and error text only --- */
+  --rs-status-ok: #2e9d58;
+  --rs-status-warn: #d98a0b;
+  --rs-status-danger: #d93025;
+  --rs-danger: #b3261e;
+  --rs-on-danger: #ffffff;
+
+  --rs-shadow-1: 0 1px 2px #1c1c1e0f, 0 4px 16px #1c1c1e0d;
+  --rs-shadow-2: 0 8px 32px #1c1c1e29;
+  --rs-overlay: #1c1c1e59;
 
   /* --- platform skins (realistic, contrast-checked) --- */
   --rs-x-bg: #ffffff;
@@ -119,29 +155,39 @@
 @media (prefers-color-scheme: dark) {
   html:not([data-theme="light"]) {
     color-scheme: dark;
-    --rs-paper: #171614;
-    --rs-ink: #ece7dd;
-    --rs-muted: #a8a196;
-    --rs-line: #38342f;
-    --rs-line-strong: #7a7368;
-    --rs-card: #211f1c;
-    --rs-warn: #f2a07f;
-    --rs-warn-bg: #3a2219;
-    --rs-chip: #2d2a26;
-    --rs-accent: #8db8e0;
-    --rs-accent-hover: #a9cbeb;
-    --rs-on-accent: #10161c;
-    --rs-accent-bg: #1e2c39;
-    --rs-ok: #9ccc84;
-    --rs-ok-bg: #1c2b17;
-    --rs-danger: #ff9b94;
-    --rs-danger-bg: #3d1716;
-    --rs-on-danger: #1a0d0c;
-    --rs-focus: #8db8e0;
-    --rs-disabled: #2d2a26;
-    --rs-on-disabled: #a8a196;
-    --rs-shadow-1: 0 1px 2px #00000066;
-    --rs-shadow-2: 0 4px 16px #00000099;
+    --rs-paper: #18181a;
+    --rs-card: #202023;
+    --rs-rail-bg: #141416;
+    --rs-ink: #ececee;
+    --rs-muted: #a1a1a8;
+    --rs-line: #2e2e33;
+    --rs-line-strong: #77777f;
+    --rs-hover: #26262a;
+    --rs-selected: #323237;
+    --rs-disabled: #2c2c30;
+    --rs-on-disabled: #a1a1a8;
+    --rs-avatar-bg: #3d3d44;
+    --rs-avatar-blue: #0e74e0;
+    --rs-avatar-orange: #ff6700;
+    --rs-avatar-yellow: #ff9800;
+    --rs-avatar-magenta: #d9339c;
+    --rs-avatar-red: #e5302f;
+    --rs-avatar-violet: #8b4cf0;
+    --rs-avatar-black: #ffffff;
+    --rs-avatar-green: #1fa45a;
+    --rs-avatar-gray: #777777;
+    --rs-avatar-default: #8f9cf7;
+    --rs-accent: #8f9cf7;
+    --rs-accent-hover: #a9b3f9;
+    --rs-on-accent: #14152b;
+    --rs-focus: #8f9cf7;
+    --rs-status-ok: #4cc27a;
+    --rs-status-warn: #f0b23a;
+    --rs-status-danger: #ff6b5e;
+    --rs-danger: #ff8a80;
+    --rs-on-danger: #1c0b0a;
+    --rs-shadow-1: 0 1px 2px #00000066, 0 4px 16px #00000040;
+    --rs-shadow-2: 0 8px 32px #000000a6;
     --rs-overlay: #000000a6;
     --rs-x-bg: #000000;
     --rs-x-text: #e7e9ea;
@@ -186,29 +232,39 @@
 
 html[data-theme="dark"] {
   color-scheme: dark;
-  --rs-paper: #171614;
-  --rs-ink: #ece7dd;
-  --rs-muted: #a8a196;
-  --rs-line: #38342f;
-  --rs-line-strong: #7a7368;
-  --rs-card: #211f1c;
-  --rs-warn: #f2a07f;
-  --rs-warn-bg: #3a2219;
-  --rs-chip: #2d2a26;
-  --rs-accent: #8db8e0;
-  --rs-accent-hover: #a9cbeb;
-  --rs-on-accent: #10161c;
-  --rs-accent-bg: #1e2c39;
-  --rs-ok: #9ccc84;
-  --rs-ok-bg: #1c2b17;
-  --rs-danger: #ff9b94;
-  --rs-danger-bg: #3d1716;
-  --rs-on-danger: #1a0d0c;
-  --rs-focus: #8db8e0;
-  --rs-disabled: #2d2a26;
-  --rs-on-disabled: #a8a196;
-  --rs-shadow-1: 0 1px 2px #00000066;
-  --rs-shadow-2: 0 4px 16px #00000099;
+  --rs-paper: #18181a;
+  --rs-card: #202023;
+  --rs-rail-bg: #141416;
+  --rs-ink: #ececee;
+  --rs-muted: #a1a1a8;
+  --rs-line: #2e2e33;
+  --rs-line-strong: #77777f;
+  --rs-hover: #26262a;
+  --rs-selected: #323237;
+  --rs-disabled: #2c2c30;
+  --rs-on-disabled: #a1a1a8;
+  --rs-avatar-bg: #3d3d44;
+  --rs-avatar-blue: #0e74e0;
+  --rs-avatar-orange: #ff6700;
+  --rs-avatar-yellow: #ff9800;
+  --rs-avatar-magenta: #d9339c;
+  --rs-avatar-red: #e5302f;
+  --rs-avatar-violet: #8b4cf0;
+  --rs-avatar-black: #ffffff;
+  --rs-avatar-green: #1fa45a;
+  --rs-avatar-gray: #777777;
+  --rs-avatar-default: #8f9cf7;
+  --rs-accent: #8f9cf7;
+  --rs-accent-hover: #a9b3f9;
+  --rs-on-accent: #14152b;
+  --rs-focus: #8f9cf7;
+  --rs-status-ok: #4cc27a;
+  --rs-status-warn: #f0b23a;
+  --rs-status-danger: #ff6b5e;
+  --rs-danger: #ff8a80;
+  --rs-on-danger: #1c0b0a;
+  --rs-shadow-1: 0 1px 2px #00000066, 0 4px 16px #00000040;
+  --rs-shadow-2: 0 8px 32px #000000a6;
   --rs-overlay: #000000a6;
   --rs-x-bg: #000000;
   --rs-x-text: #e7e9ea;

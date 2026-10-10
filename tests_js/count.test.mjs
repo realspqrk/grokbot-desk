@@ -456,7 +456,7 @@ test('Instagram: hashtag count and 30/31 boundary', () => {
 });
 
 test('Instagram: hashtags with umlauts, no false positives', () => {
-  assert.equal(count('#Imkerei #Bienenstöcke #österreich', 'instagram').hashtags, 3);
+  assert.equal(count('#Café #Übergröße #österreich', 'instagram').hashtags, 3);
   assert.equal(count('Preis 5 # Stück, a#b, #', 'instagram').hashtags, 0);
   assert.equal(count('##doppelt', 'instagram').hashtags, 1);
 });

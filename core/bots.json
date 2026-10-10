@@ -1,3 +1,9 @@
 {
-  "agent": "Agent"
+  "inbox-agent": { "name": "Inbox Agent" },
+  "research-agent": { "name": "Research Agent" },
+  "operations-agent": "Operations Agent",
+  "web-agent": "Web Agent",
+  "mobile-agent": "Mobile Agent",
+  "desktop-agent": "Desktop Agent",
+  "automation-agent": "Automation Agent"
 }

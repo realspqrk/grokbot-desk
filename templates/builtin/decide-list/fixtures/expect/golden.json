@@ -1,0 +1,148 @@
+{
+  "copies": {
+    "item-1-copy-1": "NW-TRV-20418",
+    "item-1-copy-2": "412.80",
+    "item-2-copy-1": "Q-2026-0381",
+    "item-4-copy-1": "NWF-7731-B"
+  },
+  "counters": {},
+  "flow": [
+    {
+      "click": "[data-item-id=\"travel-workshop\"] .dl-add-note"
+    },
+    {
+      "fill": [
+        "#dl-note-1",
+        "Booked on the cheaper fare"
+      ]
+    },
+    {
+      "click": "rs-action-row[data-item=\"travel-workshop\"] button[value=\"approve\"]"
+    },
+    {
+      "click": "rs-action-row[data-item=\"laptop-refresh\"] button[value=\"defer\"]"
+    },
+    {
+      "click": "rs-action-row[data-item=\"billing-repo-access\"] button[value=\"approve\"]"
+    },
+    {
+      "click": "[data-item-id=\"cleaning-renewal\"] .dl-add-note"
+    },
+    {
+      "fill": [
+        "#dl-note-4",
+        "Ask for a six-month option"
+      ]
+    },
+    {
+      "click": "rs-action-row[data-item=\"cleaning-renewal\"] button[value=\"reject\"]"
+    },
+    {
+      "click": "rs-action-row[data-item=\"offsite-date\"] button[value=\"approve\"]"
+    },
+    {
+      "click": "[data-dl=\"overall-open\"]"
+    },
+    {
+      "fill": [
+        "#dl-note",
+        "Thanks, all set."
+      ]
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "keyboard": [
+    {
+      "repeat": 5,
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "type": "Booked on the cheaper fare"
+    },
+    {
+      "press": "Shift+Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "repeat": 2,
+      "press": "ArrowRight"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "press": "ArrowRight"
+    },
+    {
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "type": "Ask for a six-month option"
+    },
+    {
+      "press": "Shift+Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "repeat": 2,
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "type": "Thanks, all set."
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "result": {
+    "items": [
+      {
+        "id": "travel-workshop",
+        "choice": "approve",
+        "note": "Booked on the cheaper fare"
+      },
+      {
+        "id": "laptop-refresh",
+        "choice": "defer",
+        "note": ""
+      },
+      {
+        "id": "billing-repo-access",
+        "choice": "approve",
+        "note": ""
+      },
+      {
+        "id": "cleaning-renewal",
+        "choice": "reject",
+        "note": "Ask for a six-month option"
+      },
+      {
+        "id": "offsite-date",
+        "choice": "approve",
+        "note": ""
+      }
+    ],
+    "note": "Thanks, all set."
+  }
+}

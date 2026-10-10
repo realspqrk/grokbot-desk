@@ -4,7 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>%%RS_WINDOW_TITLE%%</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/icons/icon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="manifest" href="/static/manifest.webmanifest">
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/shell.css">
   <script id="rs-boot" type="application/json">%%RS_BOOT%%</script>
@@ -14,30 +17,44 @@
   <script src="/static/components.js"></script>
 </head>
 <body>
-  <div class="rs-app">
-    <header class="rs-header">
-      <div class="rs-header__brand" data-rs-t="app_name"></div>
-      <div class="rs-header__main">
-        <h1 class="rs-header__title" id="rs-title" tabindex="-1"></h1>
-        <p class="rs-header__meta" id="rs-meta"></p>
-      </div>
-      <div class="rs-header__tools">
-        <button type="button" class="rs-btn rs-btn--quiet" id="rs-theme" aria-pressed="false" data-rs-t="theme"></button>
-      </div>
-    </header>
-
-    <nav class="rs-rail" aria-labelledby="rs-rail-heading">
-      <h2 class="rs-rail__heading" id="rs-rail-heading" data-rs-t="rail_heading"></h2>
-      <ol class="rs-rail__list" id="rs-rail"></ol>
-      <p class="rs-rail__empty" id="rs-rail-empty" data-rs-t="no_runs" hidden></p>
-    </nav>
-
+  <div class="rs-app" id="rs-app" data-strip="off">
     <main class="rs-main">
+      <nav class="rs-strip" id="rs-strip-nav" data-rs-strip data-rs-t-aria-label="strip_label" hidden>
+        <div class="rs-column rs-strip__inner">
+          <div class="rs-strip__list" id="rs-strip" role="toolbar" aria-orientation="horizontal" data-rs-t-aria-label="strip_label"></div>
+          <p class="rs-strip__count" id="rs-strip-count"></p>
+        </div>
+      </nav>
+
+      <header class="rs-header">
+        <div class="rs-column rs-header__inner">
+          <div class="rs-bot" id="rs-bot" hidden>
+            <span class="rs-avatar rs-avatar--md" id="rs-bot-avatar" data-rs-avatar aria-hidden="true"></span>
+            <div class="rs-bot__text">
+              <p class="rs-bot__name" id="rs-bot-name"></p>
+              <h1 class="rs-header__title" id="rs-title" tabindex="-1"></h1>
+            </div>
+          </div>
+          <div class="rs-more" id="rs-more">
+            <button type="button" class="rs-icon-btn" id="rs-more-btn" aria-expanded="false" aria-controls="rs-more-panel" data-rs-t-aria-label="more" data-rs-t-title="more" data-rs-icon="more"></button>
+            <div class="rs-more__panel" id="rs-more-panel" hidden>
+              <p class="rs-more__meta" id="rs-meta"></p>
+              <button type="button" class="rs-more__item" id="rs-theme" aria-pressed="false"><span data-rs-t="theme_dark"></span></button>
+              <div class="rs-more__extra" id="rs-more-extra"></div>
+            </div>
+          </div>
+        </div>
+      </header>
+
       <div class="rs-mount" id="rs-mount"></div>
+
       <div class="rs-submitbar" id="rs-submitbar">
-        <p class="rs-submitbar__status" id="rs-status"></p>
-        <button type="button" class="rs-btn rs-btn--secondary" id="rs-discard" data-rs-t="discard"></button>
-        <button type="button" class="rs-btn rs-btn--primary" id="rs-submit" aria-keyshortcuts="Control+Enter" disabled><span id="rs-submit-label" data-rs-t="submit"></span><span class="rs-kbd" data-rs-t="submit_shortcut"></span></button>
+        <div class="rs-column rs-submitbar__inner">
+          <div class="rs-submitbar__status" id="rs-status" aria-live="polite"></div>
+          <button type="button" class="rs-btn rs-btn--quiet rs-submitbar__discard" id="rs-discard"><span data-rs-t="discard"></span></button>
+          <button type="button" class="rs-btn rs-btn--quiet" id="rs-alt" hidden></button>
+          <button type="button" class="rs-btn rs-btn--primary" id="rs-submit" data-rs-primary aria-keyshortcuts="Control+Enter Meta+Enter" disabled><span id="rs-submit-label" data-rs-t="submit"></span></button>
+        </div>
       </div>
     </main>
 
@@ -49,7 +66,7 @@
       <h2 class="rs-confirm__heading" id="rs-discard-h" data-rs-t="discard_confirm_title"></h2>
       <p id="rs-discard-t" data-rs-t="discard_confirm_text"></p>
       <div class="rs-confirm__buttons">
-        <button type="submit" class="rs-btn rs-btn--secondary" value="cancel" data-rs-t="cancel"></button>
+        <button type="submit" class="rs-btn rs-btn--quiet" value="cancel" data-rs-t="cancel"></button>
         <button type="submit" class="rs-btn rs-btn--danger" value="discard" data-rs-t="discard"></button>
       </div>
     </form>

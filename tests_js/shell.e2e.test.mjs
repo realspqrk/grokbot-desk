@@ -1,5 +1,5 @@
-// Browser tests for the served shell + _starter + core components.
-// Isolated server with a temp RS_DATA_DIR; headless Edge via
+// Browser tests for the served shell + _starter + core components (plan 2.5).
+// Isolated server in the worker's assigned range with a temp RS_DATA_DIR; headless Edge via
 // playwright-core loaded by absolute path. The server is stopped in after().
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,19 +7,14 @@ import { readFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
-import {
-  browserChannel,
-  startServer,
-  loadChromium,
-  ROOT,
-} from '../tools/dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
 import round5Corpus from './fixtures/twitter-text-round5.mjs';
 
 // RS_E2E_PORT: another worktree may run this suite at the same time
-const PORT = Number(process.env.RS_E2E_PORT || 18920);
-if (PORT === 18742) throw new Error('refusing the product default port');
+const PORT = Number(process.env.RS_E2E_PORT || 18900);
+if (PORT === 18742) throw new Error('refusing the product port');
 const ORIGIN = `http://127.0.0.1:${PORT}`;
-const STARTER = path.join(ROOT, 'templates/global/_starter');
+const STARTER = path.join(ROOT, 'templates/builtin/_starter');
 const golden = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/golden.json'), 'utf8'));
 const expect = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/expect/golden.json'), 'utf8'));
 const de = JSON.parse(readFileSync(path.join(ROOT, 'core/i18n/de.json'), 'utf8'));
@@ -34,13 +29,18 @@ const nodeCount = require('../core/static/count.js').count;
 const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
 
-describe('grokbot-desk page (served, headless browser)', { skip }, () => {
+describe('report-shell page (served, headless Edge)', { skip }, () => {
   beforeEach((t) => { if (process.env.RS_TRACE) console.error('START', t.name, new Date().toISOString()); });
   let server;
   let browser;
 
   before(async () => {
     server = await startServer({ port: PORT });
+    const show = server.show;
+    server.show = (data, extra = {}) => show(data, {
+      bot: 'operations-agent',
+      ...extra,
+    });
     browser = await chromium.launch({ channel: browserChannel(), headless: true });
   });
 
@@ -78,6 +78,12 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     return { ctx, page, log, response };
   }
   const ready = (page) => page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+  // calm UI: the starter note sits behind its "Notiz hinzufügen" text button
+  async function fillNote(page, text) {
+    const opener = page.locator('[data-starter="note-open"]');
+    if (await opener.isVisible()) await opener.click();
+    await page.fill('#starter-note', text);
+  }
   const activeId = (page) => page.evaluate(() => window.RS.activeRun);
 
   test('renders the starter golden: strings, copy text, CSP, same-origin only, no console errors', async () => {
@@ -87,16 +93,18 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       assert.match(response.headers()['content-security-policy'], /default-src 'self'/);
       assert.equal(await page.getAttribute('html', 'lang'), 'de');
       // shown in a visible, focused window -> POST /read -> no "● " prefix
-      await page.waitForFunction(() => document.title === 'Sicherung prüfen · Agent', null, { timeout: 3000 });
+      await page.waitForFunction(() => document.title === 'Sicherung prüfen · Operations Agent', null, { timeout: 3000 });
       assert.equal(await page.textContent('#rs-title'), 'Sicherung prüfen');
-      assert.match(await page.textContent('#rs-meta'), /^Agent·Erstellt (Mo|Di|Mi|Do|Fr|Sa|So) \d\d\.\d\d\.\d{4} · \d\d:\d\d$/);
+      // calm UI: bot and creation time live in the header overflow panel
+      assert.match(await page.textContent('#rs-meta'), /^Von Operations AgentErstellt (Mo|Di|Mi|Do|Fr|Sa|So) \d\d\.\d\d\.\d{4} · \d\d:\d\d$/);
       assert.equal(await page.textContent('[data-starter="message"]'), golden.message);
       assert.equal(await page.textContent('[data-copy-id="starter-copy"] .rs-copy__value'), expect.copies['starter-copy']);
-      assert.equal(await page.textContent('.starter__heading'), de.starter_heading);
+      // calm UI: no visible item heading; it names the decision group instead
+      assert.equal(await page.getAttribute('rs-action-row', 'aria-label'), de.choice_group_label.replace('{what}', de.starter_heading));
       assert.equal(await page.textContent('#rs-submit-label'), de.submit);
       assert.equal(await page.isDisabled('#rs-submit'), true);
       assert.equal(await page.textContent('#rs-status'), de.starter_pick_choice);
-      assert.equal(await page.textContent('#rs-theme'), de.theme);
+      assert.equal(await page.textContent('#rs-theme'), de.theme_dark);
       // static files carry the CSP too
       const js = log.responses.find((r) => r.url().endsWith('/static/rs.js'));
       assert.ok(js && /default-src 'self'/.test(js.headers()['content-security-policy'] || ''), 'CSP on /static/rs.js');
@@ -175,30 +183,23 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       for (const [name, text, expected, limit] of cases) {
         const measurement = await page.evaluate(async ({ text }) => {
           const platforms = JSON.parse(document.querySelector('#rs-boot').textContent).platforms;
-          let lastError;
-          for (let attempt = 0; attempt < 2; attempt++) {
-            const worker = new Worker('/static/count-timing-worker.js');
-            try {
-              return await new Promise((resolve, reject) => {
-                const timer = setTimeout(() => reject(new Error('counter exceeded 1000 ms')), 1000);
-                worker.onmessage = (event) => {
-                  clearTimeout(timer);
-                  resolve(event.data);
-                };
-                worker.onerror = (event) => {
-                  clearTimeout(timer);
-                  reject(new Error(event.message));
-                };
-                worker.postMessage({ platforms, text });
-              });
-            } catch (error) {
-              lastError = error;
-              if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 50));
-            } finally {
-              worker.terminate();
-            }
+          const worker = new Worker('/static/count-timing-worker.js');
+          try {
+            return await new Promise((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error('counter exceeded 1000 ms')), 1000);
+              worker.onmessage = (event) => {
+                clearTimeout(timer);
+                resolve(event.data);
+              };
+              worker.onerror = (event) => {
+                clearTimeout(timer);
+                reject(new Error(event.message));
+              };
+              worker.postMessage({ platforms, text });
+            });
+          } finally {
+            worker.terminate();
           }
-          throw lastError;
         }, { text });
         assert.equal(measurement.result.count, expected, name);
         assert.ok(measurement.elapsed < limit, `${name} took ${measurement.elapsed.toFixed(1)} ms`);
@@ -230,13 +231,13 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('localization attributes are filled from de.json and title changes use POST /title', async () => {
+  test('localization contracts fill data-rs-t-<attr> and report the title with POST /title', async () => {
     await server.clearRuns();
     const run = server.show(golden, { title: 'Titel melden' });
     const { ctx, page, log } = await open('run=' + run.run_id);
     try {
       assert.equal(await page.getAttribute('#starter-note', 'placeholder'), de.starter_note_placeholder);
-      const want = 'Titel melden · Agent';
+      const want = 'Titel melden · Operations Agent';
       await page.waitForFunction((w) => document.title === w, want, { timeout: 3000 });
       const hello = async () => (await (await fetch(server.url('hello'))).json()).window_title;
       const deadline = Date.now() + 3000;
@@ -278,6 +279,8 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     const { ctx, page } = await open();
     try {
       const before = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--rs-paper').trim());
+      // calm UI: the theme switch is an entry of the header overflow panel
+      await page.click('#rs-more-btn');
       await page.click('#rs-theme');
       assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
       assert.equal(await page.getAttribute('#rs-theme', 'aria-pressed'), 'true');
@@ -286,6 +289,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       await page.reload();
       await ready(page);
       assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
+      await page.click('#rs-more-btn');
       await page.click('#rs-theme');
       assert.equal(await page.getAttribute('html', 'data-theme'), 'light');
       assert.equal(await page.getAttribute('#rs-theme', 'aria-pressed'), 'false');
@@ -311,7 +315,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       assert.deepEqual(await radios(), [['erledigt', 'true', 0], ['spaeter', 'false', -1]]);
       await page.keyboard.press('ArrowLeft');
       assert.equal(await page.isDisabled('#rs-submit'), false);
-      await page.fill('#starter-note', 'Später ansehen 👀');
+      await fillNote(page, 'Später ansehen 👀');
       await page.$eval('#starter-note', (note) => {
         note.setSelectionRange(3, 9, 'backward');
         note.dispatchEvent(new Event('select', { bubbles: true }));
@@ -355,7 +359,8 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       assert.equal(res.status(), 200);
       assert.deepEqual(await res.json(), { ok: true });
       await page.waitForSelector('[data-copy-id="starter-copy"][data-state="copied"]');
-      assert.equal((await page.innerText('[data-copy-id="starter-copy"] .rs-copy__btn')).trim(), de.copied);
+      // calm UI: icon-only copy button; the name stays, feedback is the check icon + toast
+      assert.equal(await page.getAttribute('[data-copy-id="starter-copy"] .rs-copy__btn', 'aria-label'), golden.copy.label);
       assert.equal(await page.getAttribute('#rs-toasts', 'aria-live'), 'polite');
       assert.ok((await page.$$eval('#rs-toasts .rs-toast', (t) => t.map((x) => x.textContent))).includes(de.copied));
       assert.equal(await page.evaluate(() => window.RS.touched), true);
@@ -385,11 +390,11 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
           if (api.run.title === 'Scoped A') api.draft.set({ choice: 'spaeter', note: 'keep A' });
         });
       });
-      await page.click(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await ready(page);
-      await page.click(`.rs-rail__run[data-run-id="${a.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${a.run_id}"]`);
       await ready(page);
-      await page.click(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await ready(page);
       const before = await page.evaluate((id) => ({
         touched: window.RS.touched,
@@ -464,7 +469,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     try {
       for (const step of expect.flow) await runStep(page, step);
       await page.waitForSelector('.rs-banner[data-banner="submitted"]');
-      assert.equal(await page.textContent('.rs-banner'), de.sent);
+      assert.equal(await page.textContent('.rs-banner > span:first-child'), de.sent);
       const result = server.result(run.run_id);
       assert.equal(result.status, 'submitted');
       assert.deepEqual(result.data, expect.result);
@@ -520,7 +525,9 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       }
       const order = seen.filter((f) => f.tag !== 'BODY').map((f) => f.id || f.cls.split(' ')[0] || f.tag);
       // the disabled submit button is not a tab stop until a choice is made
-      assert.deepEqual(order.slice(0, 6), ['rs-theme', 'rs-rail__run', 'rs-copy__btn', 'rs-choice', 'starter-note', 'rs-discard']);
+      // calm UI: one run = no strip; theme lives behind the overflow button,
+      // the copy is an icon button and the note opens from a text button
+      assert.deepEqual(order.slice(0, 5), ['rs-more-btn', 'rs-icon-btn', 'rs-choice', 'rs-link', 'rs-discard']);
     } finally { await ctx.close(); }
   });
 
@@ -597,7 +604,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     try {
       await page.click('#rs-discard'); // A untouched, confirmation open
       const b = server.show(golden, { title: 'Neu B', created: isoAt(Date.now()) });
-      await page.waitForSelector(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.waitForSelector(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await page.waitForTimeout(300); // a switch would have started by now
       assert.equal(await activeId(page), a.run_id, 'no automatic switch under the confirmation');
       assert.equal(await page.textContent('#rs-title'), 'Ziel A');
@@ -605,12 +612,12 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       const req = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       assert.deepEqual(JSON.parse((await req).postData()), { run_id: a.run_id });
-      await page.waitForSelector('.rs-banner[data-banner="cancelled"]');
+      // P8d: the discard is a decision, so the pop-up moves on to B
+      await page.waitForFunction((id) => window.RS.activeRun === id
+        && document.documentElement.dataset.rsReady === '1', b.run_id);
       assert.equal(server.result(a.run_id).status, 'cancelled');
       assert.equal(server.result(b.run_id), null, 'B has no result');
-      assert.equal(await activeId(page), a.run_id);
-      // B waits in the rail with its badge
-      assert.equal(await page.textContent(`.rs-rail__run[data-run-id="${b.run_id}"] rs-badge`), de.new);
+      assert.equal(await page.textContent('#rs-title'), 'Neu B');
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
     await server.clearRuns();
@@ -660,7 +667,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     let held;
     try {
       await page.click('rs-action-row button[value="erledigt"]');
-      await page.fill('#starter-note', 'bleibt');
+      await fillNote(page, 'bleibt');
       await page.route('**/cancel', (route) => { held = route; });
       await page.click('#rs-discard');
       const requested = page.waitForRequest((request) => request.url() === ORIGIN + '/cancel');
@@ -669,7 +676,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       assert.equal(await page.isDisabled('rs-action-row button[value="erledigt"]'), true);
       assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
       assert.equal(await page.isEnabled('[data-copy-id="starter-copy"] .rs-copy__btn'), true);
-      assert.equal(await page.isEnabled(`.rs-rail__run[data-run-id="${run.run_id}"]`), true);
+      assert.equal(await page.isEnabled(`.rs-strip__run[data-run-id="${run.run_id}"]`), true);
       await held.abort('connectionfailed');
       await page.waitForFunction((msg) => [...document.querySelectorAll('#rs-toasts .rs-toast')].some((x) => x.textContent === msg), de.discard_failed, { timeout: 3000 });
       assert.equal(await page.isDisabled('#rs-submit'), false, 'An Bot senden usable again');
@@ -701,10 +708,10 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       const requestA = page.waitForRequest((r) => r.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       await requestA;
-      await page.click(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await ready(page);
       await page.click('rs-action-row button[value="erledigt"]');
-      await page.fill('#starter-note', 'B remains pending');
+      await fillNote(page, 'B remains pending');
       const requestB = page.waitForRequest((r) => r.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       await requestB;
@@ -734,7 +741,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       const requestA = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await requestA;
-      await page.click(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await ready(page);
       await page.click('#rs-discard');
       const requestB = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
@@ -788,7 +795,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       assert.equal((await read).status(), 200);
       await page.waitForFunction(() => !document.title.startsWith('●'), null, { timeout: 3000 });
       assert.equal(await serverUnread(), false);
-      assert.equal(await page.title(), 'Lesen scheitert · Agent');
+      assert.equal(await page.title(), 'Lesen scheitert · Operations Agent');
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
@@ -800,9 +807,9 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     const { ctx, page } = await open('run=' + a.run_id);
     try {
       await page.click('rs-action-row button[value="erledigt"]');
-      await page.fill('#starter-note', 'old note');
+      await fillNote(page, 'old note');
       await page.route(`**/api/run/${b.run_id}`, (route) => route.abort('connectionfailed'));
-      await page.click(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await page.waitForFunction((message) => [...document.querySelectorAll('#rs-toasts .rs-toast')]
         .some((item) => item.textContent === message), de.run_load_failed);
 
@@ -810,7 +817,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       assert.equal(await page.textContent('#rs-title'), 'Switch bleibt A');
       assert.equal(await page.getAttribute('html', 'data-rs-ready'), '1');
       await page.click('rs-action-row button[value="spaeter"]');
-      await page.fill('#starter-note', 'new note after failed switch');
+      await fillNote(page, 'new note after failed switch');
       const expected = { choice: 'spaeter', note: 'new note after failed switch' };
       assert.deepEqual(
         await page.evaluate((id) => JSON.parse(localStorage.getItem('rs-draft:' + id)).value, a.run_id),
@@ -821,7 +828,10 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       const submitted = page.waitForRequest((request) => request.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       assert.deepEqual(JSON.parse((await submitted).postData()), { run_id: a.run_id, data: expected });
-      await page.waitForSelector('.rs-banner[data-banner="submitted"]');
+      await page.unroute(`**/api/run/${b.run_id}`);
+      // P8d: once sent, the pop-up advances to B
+      await page.waitForFunction((id) => window.RS.activeRun === id
+        && document.documentElement.dataset.rsReady === '1', b.run_id);
       assert.deepEqual(server.result(a.run_id).data, expected);
       assert.equal(await page.evaluate((id) => localStorage.getItem('rs-draft:' + id), a.run_id), null);
       assert.equal(server.result(b.run_id), null);
@@ -839,7 +849,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       await page.route(`**/api/run/${b.run_id}`, (route) => route.fulfill({
         status: 500, contentType: 'application/json', body: '{"error":"injected"}',
       }));
-      await page.click(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await page.waitForFunction((message) => [...document.querySelectorAll('#rs-toasts .rs-toast')]
         .some((item) => item.textContent === message), de.run_load_failed);
       assert.equal(await activeId(page), a.run_id);
@@ -857,14 +867,14 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     let held;
     try {
       await page.click('rs-action-row button[value="erledigt"]');
-      await page.fill('#starter-note', 'A before request');
+      await fillNote(page, 'A before request');
       await page.route(`**/api/run/${b.run_id}`, (route) => { held = route; });
       const requested = page.waitForRequest((request) => request.url().endsWith('/api/run/' + b.run_id));
-      await page.click(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await requested;
 
       await page.click('rs-action-row button[value="spaeter"]');
-      await page.fill('#starter-note', 'A while B is delayed');
+      await fillNote(page, 'A while B is delayed');
       assert.equal(await activeId(page), a.run_id);
       assert.deepEqual(
         await page.evaluate((id) => JSON.parse(localStorage.getItem('rs-draft:' + id)).value, a.run_id),
@@ -882,13 +892,16 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
 
       const expected = { choice: 'erledigt', note: 'B exact result' };
       await page.click('rs-action-row button[value="erledigt"]');
-      await page.fill('#starter-note', expected.note);
+      await fillNote(page, expected.note);
       const submitted = page.waitForRequest((request) => request.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       assert.deepEqual(JSON.parse((await submitted).postData()), { run_id: b.run_id, data: expected });
-      await page.waitForSelector('.rs-banner[data-banner="submitted"]');
+      // P8d: once sent, the pop-up advances to the open A with its draft
+      await page.waitForFunction((id) => window.RS.activeRun === id
+        && document.documentElement.dataset.rsReady === '1', a.run_id);
       assert.deepEqual(server.result(b.run_id).data, expected);
       assert.equal(server.result(a.run_id), null);
+      assert.equal(await page.inputValue('#starter-note'), 'A while B is delayed');
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
@@ -899,10 +912,10 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     const b = server.show(golden, { title: 'URL B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     try {
-      await page.click(`.rs-rail__run[data-run-id="${b.run_id}"]`);
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await ready(page);
       await page.click('rs-action-row button[value="spaeter"]');
-      await page.fill('#starter-note', 'Entwurf in B');
+      await fillNote(page, 'Entwurf in B');
       assert.equal(new URL(page.url()).searchParams.get('run'), b.run_id);
       await page.reload();
       await ready(page);
@@ -918,7 +931,7 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     const first = await open('run=' + run.run_id);
     try {
       await first.page.click('rs-action-row button[value="spaeter"]');
-      await first.page.fill('#starter-note', 'Gesendete Notiz');
+      await fillNote(first.page, 'Gesendete Notiz');
       await first.page.click('#rs-submit');
       await first.page.waitForSelector('.rs-banner[data-banner="submitted"]');
     } finally { await first.ctx.close(); }
@@ -942,24 +955,88 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     await server.clearRuns();
   });
 
+  async function submitElsewhere(runId, data) {
+    const response = await fetch(server.url('submit'), {
+      method: 'POST',
+      headers: { 'X-RS-CSRF': await server.csrf(), 'Content-Type': 'application/json', Origin: ORIGIN },
+      body: JSON.stringify({ run_id: runId, data }),
+    });
+    return response.status;
+  }
+
+  test('a live report submitted by another client hydrates the sent result read-only', async () => {
+    await server.clearRuns();
+    const run = server.show(golden, { title: 'Anderswo gesendet' });
+    const { ctx, page, log } = await open('run=' + run.run_id);
+    const copies = [];
+    try {
+      await page.route('**/copy', (route) => {
+        copies.push(route.request().postDataJSON());
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      });
+      await page.click('rs-action-row button[value="erledigt"]');
+      await fillNote(page, 'lokaler Entwurf');
+      const sent = { choice: 'spaeter', note: 'vom anderen Client' };
+      assert.equal(await submitElsewhere(run.run_id, sent), 200);
+      await page.waitForSelector('.rs-banner[data-banner="submitted"]');
+      await page.waitForFunction((note) => document.getElementById('starter-note')?.value === note, sent.note, { timeout: 5000 });
+      assert.equal(await page.$eval('rs-action-row', (row) => row.value), 'spaeter');
+      assert.equal(await page.isDisabled('rs-action-row button[value="spaeter"]'), true);
+      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
+      assert.equal(await page.isHidden('#rs-submitbar'), true);
+      assert.equal(await page.evaluate(() => document.activeElement.classList.contains('rs-banner')), true);
+      assert.equal(await page.isEnabled('[data-copy-id="starter-copy"] .rs-copy__btn'), true);
+      await page.click('[data-copy-id="starter-copy"] .rs-copy__btn');
+      assert.deepEqual(copies, [{ run_id: run.run_id, text: expect.copies['starter-copy'] }]);
+      assert.deepEqual(server.result(run.run_id).data, sent, 'stored result unchanged');
+      // this page's own late send is refused and changes nothing
+      assert.equal(await submitElsewhere(run.run_id, { choice: 'erledigt', note: 'x' }), 409);
+      assert.deepEqual(server.result(run.run_id).data, sent);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+    await server.clearRuns();
+  });
+
+  test('a 409 on our own send hydrates the result another client sent first', async () => {
+    await server.clearRuns();
+    const run = server.show(golden, { title: 'Wettlauf' });
+    const { ctx, page } = await open('run=' + run.run_id);
+    let held;
+    try {
+      await page.click('rs-action-row button[value="erledigt"]');
+      await page.route('**/submit', (route) => { held = route; });
+      const requested = page.waitForRequest((r) => r.url() === ORIGIN + '/submit');
+      await page.click('#rs-submit');
+      await requested;
+      const sent = { choice: 'spaeter', note: 'zuerst' };
+      assert.equal(await submitElsewhere(run.run_id, sent), 200);
+      await held.continue();
+      await page.waitForFunction((note) => document.getElementById('starter-note')?.value === note, sent.note, { timeout: 5000 });
+      assert.equal(await page.$eval('rs-action-row', (row) => row.value), 'spaeter');
+      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
+      assert.deepEqual(server.result(run.run_id).data, sent);
+    } finally { await ctx.close(); }
+    await server.clearRuns();
+  });
+
   test('finding 7: shell and kit expose only neutral fictional sample identities', async () => {
     await server.clearRuns();
     const run = server.show(golden, { title: 'Neutrale Beispiele' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
-      assert.match(await page.textContent('#rs-meta'), /Agent/);
+      assert.match(await page.textContent('#rs-meta'), /Operations Agent/);
       const kit = await ctx.newPage();
       await kit.goto(pathToFileURL(path.join(ROOT, 'tools/dev/kit-preview.html')).href);
       const visible = await kit.locator('body').innerText();
       assert.match(visible, /Inbox Agent/);
-      assert.match(visible, /Social Agent/);
+      // P8d: the waiting report is an avatar in the strip, named by bot and title
+      assert.match(await kit.getAttribute('.rs-strip__run:not([aria-current])', 'aria-label'), /^Social Agent · /);
       assert.match(visible, /Northwind/);
-      assert.doesNotMatch(visible, /Office Bot|Social Bot|Sys Admin Bot|Alex Beispiel|Frau Beispiel|Muster|musterbienen/i);
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
-  test('switching rule, neu badge, ● title prefix and Alt+1..3', async () => {
+  test('switching rule, new dot, ● title prefix and Ctrl+1..3', async () => {
     await server.clearRuns();
     const t0 = Date.now() - 30 * 60000;
     const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
@@ -967,43 +1044,46 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
     const { ctx, page, log } = await open();
     try {
       assert.equal(await activeId(page), a.run_id);
-      await page.waitForFunction(() => document.title === 'Bericht A · Agent', null, { timeout: 3000 });
+      await page.waitForFunction(() => document.title === 'Bericht A · Operations Agent', null, { timeout: 3000 });
 
       // A untouched -> B takes over
       const b = server.show(golden, { title: 'Bericht B', created: iso(t0 + 60000) });
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', b.run_id);
       await page.waitForFunction(() => !document.title.startsWith('●'));
-      assert.equal(await page.title(), 'Bericht B · Agent');
+      assert.equal(await page.title(), 'Bericht B · Operations Agent');
 
-      // B touched -> C stays in the rail with "neu", title gets "● "
+      // B touched -> C waits in the strip with its "new" dot, title gets "● "
       await page.click('rs-action-row button[value="erledigt"]');
       const c = server.show(golden, { title: 'Bericht C', created: iso(t0 + 120000) });
-      await page.waitForSelector(`.rs-rail__run[data-run-id="${c.run_id}"] rs-badge`);
+      await page.waitForSelector(`.rs-strip__run[data-run-id="${c.run_id}"] .rs-strip__dot[data-new]`);
       assert.equal(await activeId(page), b.run_id);
-      assert.equal(await page.textContent(`.rs-rail__run[data-run-id="${c.run_id}"] rs-badge`), de.new);
-      assert.equal(await page.title(), '● Bericht B · Agent');
-      const order = await page.$$eval('.rs-rail__run', (x) => x.map((e) => [e.dataset.runId, e.dataset.railIndex]));
-      assert.deepEqual(order, [[c.run_id, '1'], [b.run_id, '2'], [a.run_id, '3']]);
+      assert.equal(
+        await page.getAttribute(`.rs-strip__run[data-run-id="${c.run_id}"]`, 'aria-label'),
+        `Operations Agent ${de.sep} Bericht C ${de.sep} ${de.new}`,
+      );
+      assert.equal(await page.title(), '● Bericht B · Operations Agent');
+      const order = await page.$$eval('.rs-strip__run', (x) => x.map((e) => [e.dataset.runId, e.getAttribute('aria-keyshortcuts')]));
+      assert.deepEqual(order, [[c.run_id, 'Control+1'], [b.run_id, 'Control+2'], [a.run_id, 'Control+3']]);
 
-      // Alt+1 -> C (read: badge and prefix go away)
+      // Ctrl+1 -> C (read: the dot turns to a ring, the prefix goes away)
       const read = page.waitForRequest((r) => r.url() === ORIGIN + '/read');
-      await page.keyboard.press('Alt+1');
+      await page.keyboard.press('Control+1');
       await read;
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', c.run_id);
-      await page.waitForFunction(() => document.title === 'Bericht C · Agent', null, { timeout: 3000 });
-      assert.equal(await page.$(`.rs-rail__run[data-run-id="${c.run_id}"] rs-badge`), null);
-      assert.equal(await page.getAttribute(`.rs-rail__run[data-run-id="${c.run_id}"]`, 'aria-current'), 'true');
+      await page.waitForFunction(() => document.title === 'Bericht C · Operations Agent', null, { timeout: 3000 });
+      assert.equal(await page.$(`.rs-strip__run[data-run-id="${c.run_id}"] .rs-strip__dot[data-new]`), null);
+      assert.equal(await page.getAttribute(`.rs-strip__run[data-run-id="${c.run_id}"]`, 'aria-current'), 'page');
 
-      // Alt+2 -> B with its draft restored
-      await page.keyboard.press('Alt+2');
+      // Ctrl+2 -> B with its draft restored
+      await page.keyboard.press('Control+2');
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', b.run_id);
       assert.equal(await page.getAttribute('rs-action-row button[value="erledigt"]', 'aria-checked'), 'true');
       assert.equal(await page.isDisabled('#rs-submit'), false);
 
-      // Alt+3 -> A
-      await page.keyboard.press('Alt+3');
+      // Ctrl+3 -> A
+      await page.keyboard.press('Control+3');
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', a.run_id);
-      await page.waitForFunction(() => document.title === 'Bericht A · Agent', null, { timeout: 3000 });
+      await page.waitForFunction(() => document.title === 'Bericht A · Operations Agent', null, { timeout: 3000 });
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
     await server.clearRuns();
@@ -1020,7 +1100,8 @@ describe('grokbot-desk page (served, headless browser)', { skip }, () => {
       assert.equal(await page.textContent('.rs-banner[data-banner="expired"]'), de.run_expired_msg);
       assert.equal(await page.isDisabled('#rs-submit'), true);
       assert.equal(await page.isDisabled('#rs-discard'), true);
-      assert.equal(await page.textContent(`.rs-rail__run[data-run-id="${run.run_id}"] rs-badge`), de.run_state_expired);
+      // P8d: a decided report is not in the strip of open reports
+      assert.equal(await page.$(`.rs-strip__run[data-run-id="${run.run_id}"]`), null);
     } finally { await ctx.close(); }
   });
 

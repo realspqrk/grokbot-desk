@@ -2,3 +2,5 @@
 *.png binary
 vendor/** -text
 *.cmd text eol=crlf
+report-shell text eol=lf
+*.sh text eol=lf

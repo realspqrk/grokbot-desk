@@ -10,7 +10,14 @@ from ctypes import wintypes
 CF_UNICODETEXT = 13
 user32 = None
 kernel32 = None
-if sys.platform == "win32":
+
+
+def _initialize():
+    global user32, kernel32
+    if user32 is not None:
+        return
+    if not hasattr(ctypes, "WinDLL"):
+        raise OSError("CF_UNICODETEXT inspection is available only on Windows")
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     user32.OpenClipboard.argtypes = [wintypes.HWND]
@@ -27,8 +34,7 @@ if sys.platform == "win32":
 
 
 def read_text():
-    if user32 is None or kernel32 is None:
-        raise OSError("clipboard is available only on Windows")
+    _initialize()
     if not user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
         return None
     for _ in range(10):

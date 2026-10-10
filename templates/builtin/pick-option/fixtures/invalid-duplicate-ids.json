@@ -1,0 +1,21 @@
+{
+  "question": "Choose a delivery time",
+  "options": [
+    {
+      "id": "slot",
+      "name": "Morning",
+      "summary": "Between 8:00 and 12:00.",
+      "facts": [
+        { "label": "Fee", "value": "Free" }
+      ]
+    },
+    {
+      "id": "slot",
+      "name": "Evening",
+      "summary": "Between 17:00 and 20:00.",
+      "facts": [
+        { "label": "Fee", "value": "€4" }
+      ]
+    }
+  ]
+}

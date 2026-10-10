@@ -1,10 +1,11 @@
 """Repository and writable data-directory paths."""
 import json
 import os
-import sys
 from pathlib import Path
 
 from .jsonutil import loads
+from .platform import default_data_dir
+from .platform_types import DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH
 from .product import PRODUCT_NAME
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,23 +13,12 @@ DEFAULT_PORT = 18742
 
 
 def data_dir():
-    override = os.environ.get("RS_DATA_DIR")
-    if override:
-        return Path(override).resolve()
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / PRODUCT_NAME
-    local = os.environ.get("LOCALAPPDATA")
-    if not local:
-        raise RuntimeError("LOCALAPPDATA is not set")
-    local = Path(local)
-    current = local / PRODUCT_NAME
-    legacy = local / "spqrk-report-shell"
-    return legacy if not current.exists() and legacy.is_dir() else current
+    return default_data_dir(PRODUCT_NAME)
 
 
 def ensure_layout(base=None):
     base = Path(base or data_dir())
-    base.mkdir(parents=True, exist_ok=True)
+    base.mkdir(mode=0o700, parents=True, exist_ok=True)
     for name in ("runs", "results", "log", "media"):
         (base / name).mkdir(exist_ok=True)
     return base
@@ -39,7 +29,7 @@ def default_config(base=None):
     user = Path(os.environ.get("USERPROFILE", Path.home()))
     return {
         "port": DEFAULT_PORT,
-        "window": {"x": 0, "y": 0, "width": 1500, "height": 1000},
+        "window": {"x": 0, "y": 0, "width": DEFAULT_WINDOW_WIDTH, "height": DEFAULT_WINDOW_HEIGHT},
         "media_roots": [
             str(user / "Downloads"),
             str(base / "media"),

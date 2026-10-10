@@ -1,3 +1,4 @@
+import errno
 import http.client
 import json
 import os
@@ -8,14 +9,17 @@ import sys
 import threading
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 import core.server as server_module
 import core.webhook as webhook
+from core import platform_darwin, platform_windows
 from conftest import free_port, install_minimal_template
 from core.actionlog import ActionLog
 from core.cli import command_open
@@ -30,24 +34,8 @@ from core.timeutil import to_vienna
 from core.webhook import deliver, webhook_enabled, validate_webhook_url
 
 
-def _request_timeout():
-    raw = os.environ.get(
-        "RS_TEST_HTTP_TIMEOUT",
-        os.environ.get("RS_CLI_HTTP_TIMEOUT", "2"),
-    )
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        value = 2
-    if not value > 0:
-        value = 2
-    return min(max(value, 1), 60)
-
-
 def request(port, method, path, body=b"", headers=None):
-    connection = http.client.HTTPConnection(
-        "127.0.0.1", port, timeout=_request_timeout()
-    )
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
     connection.request(method, path, body=body, headers=headers or {})
     response = connection.getresponse()
     payload = response.read()
@@ -55,41 +43,12 @@ def request(port, method, path, body=b"", headers=None):
     return response.status, payload
 
 
-def test_request_uses_bounded_ci_http_timeout(monkeypatch):
-    seen = []
-
-    class Response:
-        status = 200
-
-        def read(self):
-            return b"{}"
-
-    class Connection:
-        def __init__(self, host, port, timeout):
-            seen.append((host, port, timeout))
-
-        def request(self, method, path, body, headers):
-            pass
-
-        def getresponse(self):
-            return Response()
-
-        def close(self):
-            pass
-
-    monkeypatch.setenv("RS_CLI_HTTP_TIMEOUT", "15")
-    monkeypatch.setattr(http.client, "HTTPConnection", Connection)
-
-    assert request(18920, "GET", "/hello") == (200, b"{}")
-    assert seen == [("127.0.0.1", 18920, 15.0)]
-
-
 def valid_payload():
     return {
         "schema": "report-shell/payload@1",
         "template": "_starter",
         "version": 1,
-        "bot": "example-dev-bot",
+        "bot": "automation-agent",
         "title": "Safety test",
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "data": {"message": "Hello"},
@@ -97,15 +56,20 @@ def valid_payload():
 
 
 @pytest.mark.parametrize(
-    ("platform", "expected"),
-    [("darwin", True), ("win32", False)],
+    ("allow_reuse", "expected"),
+    [
+        (platform_darwin.ALLOW_REUSE_ADDRESS, True),
+        (platform_windows.ALLOW_REUSE_ADDRESS, False),
+    ],
 )
 def test_server_reuses_addresses_only_on_posix(
-    tmp_path, monkeypatch, platform, expected
+    tmp_path, monkeypatch, allow_reuse, expected
 ):
     root = Path(__file__).resolve().parents[1]
     data_dir = ensure_layout(tmp_path / "data")
-    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(
+        ReportHTTPServer, "allow_reuse_address", allow_reuse
+    )
     server = ReportHTTPServer(
         ("127.0.0.1", 0),
         Handler,
@@ -115,24 +79,68 @@ def test_server_reuses_addresses_only_on_posix(
     )
     try:
         assert server.allow_reuse_address is expected
-        reuse = server.socket.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR)
+        reuse = server.socket.getsockopt(
+            socket.SOL_SOCKET, socket.SO_REUSEADDR
+        )
         assert bool(reuse) is expected
     finally:
         server.server_close()
 
 
-def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
-    lookups = []
+@pytest.mark.parametrize(
+    ("connect_result", "expected"),
+    [
+        (errno.ECONNREFUSED, True),
+        (errno.EHOSTUNREACH, False),
+        (0, False),
+        (OSError(), False),
+    ],
+)
+def test_loopback_probe_requires_connection_refused(
+    monkeypatch, connect_result, expected
+):
+    import conftest
 
-    def unexpected_lookup(host):
-        lookups.append(host)
-        raise AssertionError(f"unexpected hostname lookup for {host}")
+    timeouts = []
 
+    class Probe:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def settimeout(self, timeout):
+            timeouts.append(timeout)
+
+        def connect_ex(self, address):
+            if isinstance(connect_result, OSError):
+                raise connect_result
+            return connect_result
+
+    monkeypatch.setattr(conftest.socket, "socket", lambda: Probe())
+
+    assert conftest._loopback_refuses(18920) is expected
+    assert timeouts == [1]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SO_REUSEADDR probe")
+@pytest.mark.parametrize("host", ["0.0.0.0", "127.0.0.1"])
+def test_free_port_skips_active_listeners(host, monkeypatch):
+    import conftest
+
+    port = free_port()
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind((host, port))
+        listener.listen()
+        monkeypatch.setattr(conftest, "_next_test_port", port)
+        assert free_port() != port
+
+
+def test_concurrent_pushes_retry_generated_run_id_collision(tmp_path):
     root = Path(__file__).resolve().parents[1]
     data_dir = ensure_layout(tmp_path / "data")
-    monkeypatch.setattr(socket, "getfqdn", unexpected_lookup)
-    monkeypatch.setattr(socket, "gethostbyaddr", unexpected_lookup)
-
     server = ReportHTTPServer(
         ("127.0.0.1", free_port()),
         Handler,
@@ -140,13 +148,44 @@ def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
         scan_registry(root / "templates"),
         load_config(data_dir),
     )
-    try:
-        assert server.server_name == "127.0.0.1"
-        assert server.server_port == server.server_address[1]
-        assert lookups == []
-    finally:
-        server.server_close()
+    server.port = server.server_port
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    generated_ids = [
+        "20261009-101800-python-dev-cafe",
+        "20261009-101800-python-dev-cafe",
+        "20261009-101800-python-dev-beef",
+    ]
+    body = json.dumps(valid_payload()).encode("utf-8")
+    headers = {
+        "Host": f"127.0.0.1:{server.port}",
+        "X-RS-Token": server.token,
+        "Content-Type": "application/json",
+    }
 
+    try:
+        with (
+            patch("core.envelope.generate_run_id", side_effect=generated_ids),
+            ThreadPoolExecutor(max_workers=2) as executor,
+        ):
+            responses = list(
+                executor.map(
+                    lambda _: request(server.port, "POST", "/push", body, headers),
+                    range(2),
+                )
+            )
+
+        assert [status for status, _ in responses] == [200, 200]
+        run_ids = {json.loads(response)["run_id"] for _, response in responses}
+        assert run_ids == {
+            "20261009-101800-python-dev-cafe",
+            "20261009-101800-python-dev-beef",
+        }
+    finally:
+        server.stopping.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 def test_host_origin_csrf_and_token_guards(server_process):
     process, env, port = server_process(os.environ)
@@ -212,7 +251,7 @@ def test_bye_immediately_removes_subscriber_from_window_status(tmp_path):
     root = Path(__file__).resolve().parents[1]
     data_dir = ensure_layout(tmp_path / "data")
     server = ReportHTTPServer(
-        ("127.0.0.1", 0),
+        ("127.0.0.1", free_port()),
         Handler,
         data_dir,
         scan_registry(root / "templates"),
@@ -220,8 +259,14 @@ def test_bye_immediately_removes_subscriber_from_window_status(tmp_path):
     )
     server.port = server.server_port
     sid = "0123456789abcdef" * 2
-    subscriber_id, subscriber = server.hub.subscribe(False, sid=sid)
-    server.hub.mark_write(subscriber_id)
+    first_id, first = server.hub.subscribe(
+        False, sid=sid, launch_generation="original-launch"
+    )
+    second_id, second = server.hub.subscribe(
+        False, sid=sid, launch_generation="replacement-launch"
+    )
+    server.hub.mark_write(first_id)
+    server.hub.mark_write(second_id)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     headers = {
@@ -241,8 +286,10 @@ def test_bye_immediately_removes_subscriber_from_window_status(tmp_path):
         )
         assert status == 200
         assert not json.loads(request(server.port, "GET", "/hello")[1])["window_alive"]
-        assert subscriber["closed"].is_set()
-        assert subscriber["queue"].get_nowait() is None
+        assert first["closed"].is_set()
+        assert second["closed"].is_set()
+        assert first["queue"].get_nowait() is None
+        assert second["queue"].get_nowait() is None
     finally:
         server.stopping.set()
         server.shutdown()
@@ -250,7 +297,213 @@ def test_bye_immediately_removes_subscriber_from_window_status(tmp_path):
         thread.join(timeout=2)
 
 
-def test_finding_4_bye_closes_real_sse_socket(tmp_path):
+def test_delayed_old_bye_does_not_cancel_new_pending_launch(
+    tmp_path, monkeypatch
+):
+    from core import cli as cli_module
+    from core.platform_types import LaunchResult, WindowLaunchStatus
+
+    root = Path(__file__).resolve().parents[1]
+    data_dir = ensure_layout(tmp_path / "data")
+    port = free_port()
+    server = ReportHTTPServer(
+        ("127.0.0.1", port),
+        Handler,
+        data_dir,
+        scan_registry(root / "templates"),
+        load_config(data_dir),
+    )
+    server.port = server.server_port
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    launches = []
+    monkeypatch.setattr(
+        cli_module,
+        "launch_window",
+        lambda *args: launches.append(args) or LaunchResult("app"),
+    )
+    url = f"http://127.0.0.1:{server.port}/"
+    old_sid = "0123456789abcdef" * 2
+    headers = {
+        "Host": f"127.0.0.1:{server.port}",
+        "Origin": f"http://127.0.0.1:{server.port}",
+        "X-RS-CSRF": server.csrf,
+        "Content-Type": "application/json",
+    }
+    try:
+        assert (
+            cli_module._launch_window_once(data_dir, url, {})
+            is WindowLaunchStatus.LAUNCHED
+        )
+        assert (data_dir / "browser-launch.pending").is_file()
+
+        status, _ = request(
+            server.port,
+            "POST",
+            "/bye",
+            json.dumps({"sid": old_sid}).encode("ascii"),
+            headers,
+        )
+
+        assert status == 200
+        assert (data_dir / "browser-launch.pending").is_file()
+        assert (
+            cli_module._launch_window_once(data_dir, url, {})
+            is WindowLaunchStatus.PENDING
+        )
+        assert len(launches) == 1
+    finally:
+        server.stopping.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_delayed_old_page_finalizer_cannot_clear_new_launch_generation(
+    tmp_path, monkeypatch
+):
+    from core import cli as cli_module
+    from core.launch_coordination import (
+        clear_launch_pending_coordinated,
+        pending_launch_generation,
+    )
+    from core.platform_types import LaunchResult, WindowLaunchStatus
+
+    data_dir = ensure_layout(tmp_path / "data")
+    launches = []
+    monkeypatch.setattr(
+        cli_module,
+        "_hello",
+        lambda port: {"window_alive": False},
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "launch_window",
+        lambda *args: launches.append(args) or LaunchResult("app"),
+    )
+    url = "http://127.0.0.1:18921/"
+
+    assert (
+        cli_module._launch_window_once(data_dir, url, {})
+        is WindowLaunchStatus.LAUNCHED
+    )
+    old_generation = pending_launch_generation(data_dir)
+    assert old_generation is not None
+    assert clear_launch_pending_coordinated(data_dir, old_generation)
+
+    assert (
+        cli_module._launch_window_once(data_dir, url, {})
+        is WindowLaunchStatus.LAUNCHED
+    )
+    new_generation = pending_launch_generation(data_dir)
+    assert new_generation is not None
+    assert new_generation != old_generation
+
+    server_module._clear_browser_launch_pending(
+        data_dir, old_generation
+    )
+
+    assert pending_launch_generation(data_dir) == new_generation
+    assert (
+        cli_module._launch_window_once(data_dir, url, {})
+        is WindowLaunchStatus.PENDING
+    )
+    assert len(launches) == 2
+
+
+def test_reconnecting_old_page_keeps_its_original_launch_generation():
+    hub = server_module.SSEHub()
+    sid = "0123456789abcdef" * 2
+
+    old_id, old_page = hub.subscribe(
+        False, sid=sid, launch_generation="old-launch"
+    )
+    hub.remove(old_id)
+    _, reconnected_page = hub.subscribe(
+        False, sid=sid, launch_generation="new-launch"
+    )
+
+    assert old_page["launch_generation"] == "old-launch"
+    assert reconnected_page["launch_generation"] == "old-launch"
+
+
+def test_real_reconnect_handler_preserves_replacement_launch_marker(
+    tmp_path, monkeypatch
+):
+    from core import cli as cli_module
+    from core.launch_coordination import (
+        clear_launch_pending_coordinated,
+        pending_launch_generation,
+    )
+    from core.platform_types import LaunchResult, WindowLaunchStatus
+
+    data_dir = ensure_layout(tmp_path / "data")
+    launches = []
+    monkeypatch.setattr(
+        cli_module, "_hello", lambda port: {"window_alive": False}
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "launch_window",
+        lambda *args: launches.append(args) or LaunchResult("app"),
+    )
+    url = "http://127.0.0.1:18921/"
+    sid = "0123456789abcdef" * 2
+
+    assert (
+        cli_module._launch_window_once(data_dir, url, {})
+        is WindowLaunchStatus.LAUNCHED
+    )
+    old_generation = pending_launch_generation(data_dir)
+    hub = server_module.SSEHub()
+    old_id, _ = hub.subscribe(
+        False, sid=sid, launch_generation=old_generation
+    )
+    hub.remove(old_id)
+    assert clear_launch_pending_coordinated(data_dir, old_generation)
+    assert (
+        cli_module._launch_window_once(data_dir, url, {})
+        is WindowLaunchStatus.LAUNCHED
+    )
+    replacement_generation = pending_launch_generation(data_dir)
+    assert replacement_generation != old_generation
+
+    stopping = threading.Event()
+    stopping.set()
+    handler = object.__new__(Handler)
+    handler.server = SimpleNamespace(
+        data_dir=data_dir,
+        hub=hub,
+        runs=SimpleNamespace(summaries=lambda bots: []),
+        bots={},
+        stopping=stopping,
+    )
+    handler.wfile = SimpleNamespace(write=lambda body: None, flush=lambda: None)
+    handler.connection = None
+    handler.send_response = lambda status: None
+    handler.send_header = lambda name, value: None
+    handler.end_headers = lambda: None
+
+    Handler._events(handler, False, sid)
+
+    assert pending_launch_generation(data_dir) == replacement_generation
+    assert (
+        cli_module._launch_window_once(data_dir, url, {})
+        is WindowLaunchStatus.PENDING
+    )
+    assert (
+        cli_module._launch_window_once(data_dir, url, {})
+        is WindowLaunchStatus.PENDING
+    )
+    assert len(launches) == 2
+
+
+def test_page_connect_and_bye_clear_pending_so_close_reopens(
+    tmp_path, monkeypatch
+):
+    from core import cli as cli_module
+    from core.platform_types import LaunchResult, WindowLaunchStatus
+
     root = Path(__file__).resolve().parents[1]
     data_dir = ensure_layout(tmp_path / "data")
     server = ReportHTTPServer(
@@ -263,6 +516,18 @@ def test_finding_4_bye_closes_real_sse_socket(tmp_path):
     server.port = server.server_port
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    launches = []
+    monkeypatch.setattr(
+        cli_module,
+        "launch_window",
+        lambda *args: launches.append(args) or LaunchResult("app"),
+    )
+    assert (
+        cli_module._launch_window_once(
+            data_dir, f"http://127.0.0.1:{server.port}/", {}
+        )
+        is WindowLaunchStatus.LAUNCHED
+    )
     sid = "0123456789abcdef" * 2
     stream = socket.create_connection(("127.0.0.1", server.port), timeout=2)
     stream.sendall(
@@ -276,6 +541,9 @@ def test_finding_4_bye_closes_real_sse_socket(tmp_path):
     try:
         while b"event: runs" not in received or not received.endswith(b"\n\n"):
             received += stream.recv(4096)
+        assert "browser_launch_pending_until" not in json.loads(
+            (data_dir / "state.json").read_text(encoding="utf-8")
+        )
         status, _ = request(
             server.port,
             "POST",
@@ -289,6 +557,16 @@ def test_finding_4_bye_closes_real_sse_socket(tmp_path):
             },
         )
         assert status == 200
+        assert "browser_launch_pending_until" not in json.loads(
+            (data_dir / "state.json").read_text(encoding="utf-8")
+        )
+        assert (
+            cli_module._launch_window_once(
+                data_dir, f"http://127.0.0.1:{server.port}/", {}
+            )
+            is WindowLaunchStatus.LAUNCHED
+        )
+        assert len(launches) == 2
         stream.settimeout(1)
         try:
             trailing = stream.recv(1)
@@ -429,14 +707,6 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
             received += stream.recv(4096)
         return stream
 
-    def wait_for_no_window():
-        deadline = time.monotonic() + 1
-        while time.monotonic() < deadline:
-            if server.hub.probe_window() is False:
-                return
-            time.sleep(.01)
-        assert server.hub.probe_window() is False
-
     streams = []
     try:
         live = connect_sse("1" * 32)
@@ -452,7 +722,7 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
         live.shutdown(socket.SHUT_RDWR)
         live.close()
         streams.remove(live)
-        wait_for_no_window()
+        assert server.hub.probe_window() is False
 
         test_peer = connect_sse("2" * 32, test=True)
         streams.append(test_peer)
@@ -469,7 +739,6 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
         dead.shutdown(socket.SHUT_RDWR)
         dead.close()
         streams.remove(dead)
-        wait_for_no_window()
         with (
             patch("core.cli.launch_window", return_value=1234) as launch,
             patch("core.cli.focus_window") as focus,
@@ -632,7 +901,9 @@ def test_stale_browser_pid_notification_uses_title_reported_by_page(tmp_path):
             json.dumps({"title": displayed_title}).encode("utf-8"),
             action_headers,
         )[0] == 200
-        with patch("core.server.flash_window", return_value=True) as flash:
+        with patch(
+            "core.server.request_attention", return_value=True
+        ) as flash:
             status, _ = request(
                 server.port,
                 "POST",
@@ -784,7 +1055,7 @@ def test_finding_2_media_is_revalidated_for_get_reveal_and_reload(tmp_path):
             "X-RS-CSRF": server.csrf,
             "Content-Type": "application/json",
         }
-        with patch("core.server.subprocess.Popen") as popen:
+        with patch("core.server.reveal_file") as popen:
             status, _ = request(
                 server.port,
                 "POST",
@@ -1244,7 +1515,7 @@ def test_finding_2_surrogate_routes_reject_before_state_change_and_server_surviv
     fixture = (
         Path(__file__).resolve().parents[1]
         / "templates"
-        / "global"
+            / "builtin"
         / "_starter"
         / "fixtures"
         / "golden.json"
@@ -1418,13 +1689,9 @@ def test_finding_3_unloadable_run_record_logs_error(tmp_path, content):
 
 def test_webhook_requires_config_env_and_allowlist(monkeypatch):
     config = {"webhook": {"enabled": True, "allow_prefixes": ["https://hooks.example/allowed/"]}}
-    monkeypatch.delenv("GROKBOT_DESK_WEBHOOK_KEY", raising=False)
     monkeypatch.delenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", raising=False)
     assert not webhook_enabled(config)
     monkeypatch.setenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", "secret")
-    assert webhook_enabled(config)
-    monkeypatch.delenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY")
-    monkeypatch.setenv("GROKBOT_DESK_WEBHOOK_KEY", "new-secret")
     assert webhook_enabled(config)
     validate_webhook_url("https://hooks.example/allowed/42", config)
     with pytest.raises(ValueError):
@@ -1467,10 +1734,8 @@ def test_webhook_redirect_rejects_disallowed_destination_before_forwarding_key()
 
 def test_webhook_non_success_response_logs_failure(monkeypatch, tmp_path):
     config = {"webhook": {"enabled": True, "allow_prefixes": ["https://hooks.example/"]}}
-    monkeypatch.setenv("GROKBOT_DESK_WEBHOOK_KEY", "secret")
-    monkeypatch.delenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", raising=False)
+    monkeypatch.setenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", "secret")
     events = []
-    requests = []
     action_log = type("Log", (), {"write": lambda self, run_id, event, detail: events.append(event)})()
     response = type(
         "Response",
@@ -1481,29 +1746,47 @@ def test_webhook_non_success_response_logs_failure(monkeypatch, tmp_path):
             "__exit__": lambda self, *args: None,
         },
     )()
+    requests = []
+
+    def open_request(request, **_kwargs):
+        requests.append(request)
+        return response
+
     assert not deliver(
         "https://hooks.example/42",
         {"run_id": "r"},
         config,
         "r",
         action_log,
-        opener=lambda request, **kwargs: requests.append(request) or response,
+        opener=open_request,
         sleeper=lambda seconds: None,
     )
     assert events == ["webhook_fail"]
     assert requests[0].get_header("User-agent") == "grokbot-desk/1"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SO_REUSEADDR probe")
-@pytest.mark.parametrize("host", ["0.0.0.0", "127.0.0.1"])
-def test_free_port_skips_active_listeners(host, monkeypatch):
-    import conftest
+def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
+    lookups = []
 
-    port = free_port()
-    with socket.socket() as listener:
-        # Like the POSIX server: the candidate may still be in TIME_WAIT.
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listener.bind((host, port))
-        listener.listen()
-        monkeypatch.setattr(conftest, "_next_test_port", port)
-        assert free_port() != port
+    def unexpected_lookup(host):
+        lookups.append(host)
+        raise AssertionError(f"unexpected hostname lookup for {host}")
+
+    root = Path(__file__).resolve().parents[1]
+    data_dir = ensure_layout(tmp_path / "data")
+    monkeypatch.setattr(socket, "getfqdn", unexpected_lookup)
+    monkeypatch.setattr(socket, "gethostbyaddr", unexpected_lookup)
+
+    server = ReportHTTPServer(
+        ("127.0.0.1", free_port()),
+        Handler,
+        data_dir,
+        scan_registry(root / "templates"),
+        load_config(data_dir),
+    )
+    try:
+        assert server.server_name == "127.0.0.1"
+        assert server.server_port == server.server_address[1]
+        assert lookups == []
+    finally:
+        server.server_close()

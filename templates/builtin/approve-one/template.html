@@ -1,0 +1,27 @@
+<div class="ao" data-rs-item>
+  <div class="ao__lead">
+    <p class="ao__summary" data-ao="summary"></p>
+    <dl class="ao__facts" data-ao="facts"></dl>
+  </div>
+  <div class="ao__copies" data-ao="copies"></div>
+  <div class="ao__decide">
+    <rs-action-row data-item="decision" data-ao="choice"></rs-action-row>
+    <button type="button" class="rs-link rs-on-hover" data-ao="note-open" data-rs-icon="plus"><span data-rs-t="add_note"></span></button>
+  </div>
+  <div class="ao__comment" data-ao="comment-box" hidden>
+    <label class="rs-label" for="ao-comment"><span data-ao="label-note" data-rs-t="note"></span><span data-ao="label-changes" data-rs-t="request_changes_label" hidden></span></label>
+    <textarea class="rs-input" id="ao-comment" maxlength="2000" rows="3"></textarea>
+  </div>
+  <section class="ao__section" data-ao="points-box" aria-labelledby="ao-points-h">
+    <h2 class="rs-section-title" id="ao-points-h" data-ao="points-title"><span data-rs-t="section_details"></span></h2>
+    <ul class="ao__points" data-ao="points"></ul>
+  </section>
+  <section class="ao__section" data-ao="checks-box" aria-labelledby="ao-checks-h">
+    <h2 class="rs-section-title" id="ao-checks-h"><span data-rs-t="section_checks"></span></h2>
+    <ul class="ao__checks" data-ao="checks"></ul>
+  </section>
+  <details class="rs-disclosure" data-ao="reference-box">
+    <summary><span data-ao="reference-title"></span></summary>
+    <div class="rs-disclosure__body"><rs-copy data-copy-id="reference" data-ao="reference" block caption></rs-copy></div>
+  </details>
+</div>

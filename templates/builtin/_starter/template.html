@@ -1,0 +1,15 @@
+<div class="starter" data-rs-item>
+  <p class="starter__message" data-starter="message"></p>
+  <rs-copy class="starter__copy" data-copy-id="starter-copy" mono></rs-copy>
+  <div class="starter__decide">
+    <rs-action-row data-item="starter" data-starter="choice">
+      <button value="erledigt"><span data-rs-t="choice_erledigt"></span></button>
+      <button value="spaeter"><span data-rs-t="choice_spaeter"></span></button>
+    </rs-action-row>
+    <button type="button" class="rs-link rs-on-hover" data-starter="note-open" data-rs-icon="plus"><span data-rs-t="add_note"></span></button>
+  </div>
+  <div class="starter__note" data-starter="note-box" hidden>
+    <label class="rs-label" for="starter-note"><span data-rs-t="note"></span></label>
+    <textarea class="rs-input" id="starter-note" maxlength="500" rows="3" data-rs-t-placeholder="starter_note_placeholder"></textarea>
+  </div>
+</div>

@@ -1,0 +1,154 @@
+{
+  "copies": {
+    "x-text": "Our autumn menu starts Monday: pumpkin sourdough, apple crumb cake and a soup of the week. The first loaves come out of the oven at 7, so come early if you want a warm one. Thank you for all your suggestions!\n\n#AutumnMenu #Sourdough #LocalBakery",
+    "x-hashtags": "#AutumnMenu #Sourdough #LocalBakery",
+    "x-comment": "Opening hours and the full menu: lindenstreet.example/menu",
+    "linkedin-text": "Our autumn menu starts Monday: pumpkin sourdough, apple crumb cake and a soup of the week. The first loaves come out of the oven at 7, so come early if you want a warm one. Thank you for all your suggestions!\n\n#AutumnMenu #Sourdough #LocalBakery",
+    "linkedin-hashtags": "#AutumnMenu #Sourdough #LocalBakery",
+    "linkedin-comment": "Opening hours and the full menu: lindenstreet.example/menu",
+    "instagram-text": "Our autumn menu starts Monday: pumpkin sourdough, apple crumb cake and a soup of the week. The first loaves come out of the oven at 7, so come early if you want a warm one. Thank you for all your suggestions!\n\n#AutumnMenu #Sourdough #LocalBakery",
+    "instagram-hashtags": "#AutumnMenu #Sourdough #LocalBakery",
+    "instagram-comment": "Opening hours and the full menu: lindenstreet.example/menu",
+    "facebook-text": "Our autumn menu starts Monday: pumpkin sourdough, apple crumb cake and a soup of the week. The first loaves come out of the oven at 7, so come early if you want a warm one. Thank you for all your suggestions!\n\n#AutumnMenu #Sourdough #LocalBakery",
+    "facebook-hashtags": "#AutumnMenu #Sourdough #LocalBakery",
+    "facebook-comment": "Opening hours and the full menu: lindenstreet.example/menu"
+  },
+  "counters": {
+    "x": {
+      "count": 245,
+      "limit": 280,
+      "over": false
+    },
+    "linkedin": {
+      "count": 245,
+      "limit": 3000,
+      "over": false
+    },
+    "linkedin-comment": {
+      "count": 58,
+      "limit": 1250,
+      "over": false
+    },
+    "instagram": {
+      "count": 245,
+      "limit": 2200,
+      "over": false
+    },
+    "instagram-hashtags": {
+      "count": 3,
+      "limit": 30,
+      "over": false
+    },
+    "facebook": {
+      "count": 245,
+      "limit": 63206,
+      "over": false
+    }
+  },
+  "flow": [
+    {
+      "click": "#approve-x"
+    },
+    {
+      "click": "#tab-linkedin"
+    },
+    {
+      "click": "#approve-linkedin"
+    },
+    {
+      "click": "#tab-instagram"
+    },
+    {
+      "click": "#approve-instagram"
+    },
+    {
+      "click": "#tab-facebook"
+    },
+    {
+      "click": "#approve-facebook"
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "keyboard": [
+    {
+      "repeat": 2,
+      "press": "Tab"
+    },
+    {
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "repeat": 3,
+      "press": "Tab"
+    },
+    {
+      "repeat": 4,
+      "press": "Shift+Tab"
+    },
+    {
+      "press": "ArrowRight"
+    },
+    {
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "repeat": 3,
+      "press": "Tab"
+    },
+    {
+      "repeat": 4,
+      "press": "Shift+Tab"
+    },
+    {
+      "press": "ArrowRight"
+    },
+    {
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "repeat": 3,
+      "press": "Tab"
+    },
+    {
+      "repeat": 4,
+      "press": "Shift+Tab"
+    },
+    {
+      "press": "ArrowRight"
+    },
+    {
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "repeat": 6,
+      "press": "Tab"
+    },
+    {
+      "press": "Enter"
+    }
+  ],
+  "result": {
+    "decision": "approve",
+    "platforms": [
+      "x",
+      "linkedin",
+      "instagram",
+      "facebook"
+    ],
+    "comment": ""
+  }
+}

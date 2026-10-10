@@ -1,0 +1,25 @@
+{
+  "summary": "Release v2.4.0 of the web shop passed staging. Deploy it to production tonight?",
+  "approve_label": "Approve deploy",
+  "allow_changes": true,
+  "facts": [
+    {"label": "Version", "value": "v2.3.7 → v2.4.0", "mono": true},
+    {"label": "Changes", "value": "9 commits, 12 files, +412 −87"},
+    {"label": "Window", "value": "Today 18:00 to 18:20, low traffic"},
+    {"label": "Requested by", "value": "Web team"}
+  ],
+  "points_title": "What changes",
+  "points": [
+    "New checkout flow with saved addresses",
+    "Faster search: results cached for 5 minutes",
+    "Fix: invoices showed the wrong currency for some EU customers",
+    "Database migration adds 2 columns (backwards compatible)"
+  ],
+  "checks": [
+    {"label": "Unit and integration tests", "detail": "214 passed in 3m 12s", "state": "ok"},
+    {"label": "Staging smoke test", "detail": "All 18 user flows OK", "state": "ok"},
+    {"label": "Security scan", "detail": "0 critical, 0 high", "state": "ok"},
+    {"label": "Bundle size", "detail": "+18 KB (limit +25 KB)", "state": "warn"}
+  ],
+  "reference": {"title": "Rollback", "label": "Copy rollback command", "text": "deploy rollback --to v2.3.7", "mono": true}
+}

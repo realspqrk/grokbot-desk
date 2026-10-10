@@ -1,0 +1,28 @@
+{
+  "author": {
+    "name": "Linden Street Bakery",
+    "handle": "lindenstreetbakery",
+    "headline": "Neighbourhood bakery · Sourdough, cakes and coffee since 1998",
+    "avatar": "%RS_TEMPLATE%\\fixtures\\media\\avatar.jpg"
+  },
+  "text": "The shop front got a fresh coat of paint this week, and the new green door is finally in. We are open as usual: Monday to Saturday from 7 to 18, Sunday from 8 to 12. Come by for a coffee and tell us what you think of the new look. See you soon!",
+  "hashtags": [
+    "ShopFront",
+    "LindenStreet"
+  ],
+  "image": {
+    "path": "%RS_TEMPLATE%\\fixtures\\media\\shopfront.jpg",
+    "alt": "The bakery shop front with a green and white striped awning, a window full of loaves and a green door",
+    "ratio": "16:9"
+  },
+  "platforms": [
+    "x",
+    "linkedin"
+  ],
+  "variants": {
+    "x": {
+      "text": "Fresh paint and a new green door: the shopfront's done. Open Monday to Saturday 7 to 18, Sunday 8 to 12. Come by for a coffee and tell us what you think. We've baked an extra tray of cinnamon rolls for the occasion, first come, first served. See you soon!"
+    }
+  },
+  "notes": "Two channels only. The shorter X version is one character over the limit, so X stays blocked until it is trimmed."
+}

@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": ["items", "note"],
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "x-rs-unique-key": "id",
+      "description": "One entry per payload item, in payload order; every id is different.",
+      "items": {
+        "type": "object",
+        "required": ["id", "choice", "note"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$", "description": "The item's id."},
+          "choice": {"enum": ["approve", "reject", "defer"], "description": "The option the person picked (always one of that item's choices)."},
+          "note": {"type": "string", "maxLength": 500, "description": "Note on this item, may be empty."}
+        }
+      }
+    },
+    "note": {"type": "string", "maxLength": 2000, "description": "Overall note to the agent, may be empty."}
+  }
+}

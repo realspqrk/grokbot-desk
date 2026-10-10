@@ -1,11 +1,20 @@
 """Assemble the shell page and inline registered template assets."""
 import json
+import os
 from pathlib import Path
 
+from .identity import SHIPPED_REGISTRY, display_names, load_registry, shape_set
 from .jsonutil import dumps, loads
 from .product import DISPLAY_NAME
 
 CORE = Path(__file__).resolve().parent
+LANGS = ("de", "en")
+
+
+def string_table():
+    """German by default; RS_LANG=en selects the English table (screenshots, demos)."""
+    lang = os.environ.get("RS_LANG", "de")
+    return CORE / "i18n" / f"{lang if lang in LANGS else 'de'}.json"
 
 
 def _json_script(value):
@@ -19,18 +28,21 @@ def _json_script(value):
 
 
 def build_page(registry, csrf_token, port):
-    strings = loads((CORE / "i18n" / "de.json").read_text(encoding="utf-8"))
+    table = string_table()
+    strings = loads(table.read_text(encoding="utf-8"))
     strings["app_name"] = DISPLAY_NAME
     strings["window_title_empty"] = f"{DISPLAY_NAME} · {strings['no_runs']}"
-    bots = loads((CORE / "bots.json").read_text(encoding="utf-8"))
+    bots = display_names(load_registry(SHIPPED_REGISTRY, "shipped")[0])
     platforms_path = CORE / "static" / "platforms.json"
     platforms = loads(platforms_path.read_text(encoding="utf-8")) if platforms_path.exists() else {}
     boot = {
         "csrf": csrf_token,
         "port": port,
+        "lang": table.stem,
         "strings": strings,
         "platforms": platforms,
         "bots": bots,
+        "avatar_shapes": shape_set(),
         "templates": {
             item.id: {
                 "version": item.version,
@@ -43,16 +55,15 @@ def build_page(registry, csrf_token, port):
     }
     fragments = []
     for template in registry.values():
-        html = (template.path / "template.html").read_text(encoding="utf-8")
-        css_path = template.path / "template.css"
-        js_path = template.path / "template.js"
+        html = template.read_text("template.html")
+        css = template.read_optional_text("template.css")
+        js = template.read_optional_text("template.js")
         fragments.append(f'<template id="rs-tpl-{template.id}">{html}</template>')
-        if css_path.exists():
+        if css is not None:
             fragments.append(
-                f'<style data-rs-tpl="{template.id}">{css_path.read_text(encoding="utf-8")}</style>'
+                f'<style data-rs-tpl="{template.id}">{css}</style>'
             )
-        if js_path.exists():
-            js = js_path.read_text(encoding="utf-8")
+        if js is not None:
             fragments.append(
                 f'<script data-rs-tpl="{template.id}">RS._define("{template.id}", '
                 f"function (RS, root) {{\n{js}\n}});</script>"

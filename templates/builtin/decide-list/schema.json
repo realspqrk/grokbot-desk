@@ -1,0 +1,62 @@
+{
+  "type": "object",
+  "required": ["items"],
+  "additionalProperties": false,
+  "properties": {
+    "intro": {"type": "string", "minLength": 1, "maxLength": 300, "description": "Optional one or two sentences above the items (plain text)."},
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "x-rs-unique-key": "id",
+      "description": "The items to decide, at most 5 per screen. Shown one at a time in this order; every id is different.",
+      "items": {
+        "type": "object",
+        "required": ["id", "title"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$", "description": "Stable id, unique within the payload (a repeated id is rejected); echoed in the result."},
+          "kind": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Optional short category shown above the title, e.g. \"Expense\"."},
+          "source": {"type": "string", "minLength": 1, "maxLength": 60, "description": "Optional requester, sender or counterparty; also names the item in the status line."},
+          "title": {"type": "string", "minLength": 1, "maxLength": 140, "description": "One-line summary of what is to be decided."},
+          "detail": {"type": "string", "minLength": 1, "maxLength": 600, "description": "Optional short detail (a snippet, never a full document)."},
+          "due": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$", "description": "Optional due date YYYY-MM-DD."},
+          "copy": {
+            "type": "array",
+            "maxItems": 4,
+            "description": "Values the person would otherwise retype (reference, amount, reply draft). Each is shown in full next to its button.",
+            "items": {
+              "type": "object",
+              "required": ["label", "text"],
+              "additionalProperties": false,
+              "properties": {
+                "label": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Button label, e.g. \"Copy reference\"."},
+                "text": {"type": "string", "minLength": 1, "maxLength": 5000, "description": "Exact string that lands on the clipboard."}
+              }
+            }
+          },
+          "choices": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "default": ["approve", "reject", "defer"],
+            "description": "Choice buttons for this item, in this order. No choice is preselected.",
+            "items": {"enum": ["approve", "reject", "defer"]}
+          }
+        }
+      }
+    },
+    "done": {
+      "type": "array",
+      "maxItems": 12,
+      "description": "What the agent already handled without a decision; shown under one closed disclosure.",
+      "items": {
+        "type": "object",
+        "required": ["text"],
+        "additionalProperties": false,
+        "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 140}}
+      }
+    }
+  }
+}

@@ -12,6 +12,7 @@ import {
   auditCopyFocus,
   calmEvaluator,
   focusedControlFacts,
+  isSocialPreview,
   pngBackgroundRatio,
   settleShortAnimations,
 } from '../tools/calm.mjs';
@@ -26,6 +27,7 @@ import {
   startServer,
   validateServerPort,
 } from '../tools/dev/rs-server.mjs';
+import { resolvedTemplates } from '../tools/template-registry.mjs';
 import { calmPage } from './fixtures/calm/pages.mjs';
 
 const source = fs.readFileSync(path.join(ROOT, 'tools', 'e2e.mjs'), 'utf8');
@@ -50,16 +52,20 @@ function sandbox(overrides = {}) {
     existsSync: fs.existsSync,
     readFileSync: fs.readFileSync,
     readdirSync: fs.readdirSync,
+    resolvedTemplates,
     performance,
     console,
     process,
     setTimeout,
     clearTimeout,
+    boundedMilliseconds: (name, fallback) => fallback,
     fetch,
     spawnSync,
+    browserChannel,
     CALM_THRESHOLDS,
     focusedControlFacts,
     settleShortAnimations,
+    isSocialPreview,
     isSameOriginPath,
     sleep: async () => {},
     runNetwork: { requests: [], responses: [], errors: [] },
@@ -71,7 +77,6 @@ function sandbox(overrides = {}) {
 }
 
 function stopServerSandbox(overrides = {}) {
-  const taskkills = [];
   const removed = [];
   let now = 0;
   const value = {
@@ -79,59 +84,26 @@ function stopServerSandbox(overrides = {}) {
     Date: { now: () => { now += 5000; return now; } },
     fetch: async () => { throw new Error('server already unavailable'); },
     path,
-    process: { platform: 'win32' },
     readFileSync: () => { throw new Error('state already unavailable'); },
     rmSync: (target) => { removed.push(target); },
     sleep: async () => {},
-    spawnSync: (command, args) => {
-      taskkills.push([command, [...args]]);
-      return { status: 0 };
-    },
     ...overrides,
   };
   vm.createContext(value);
-  const implementation = serverSource
-    .slice(serverSource.indexOf('export async function stopServer('))
-    .replace('export async function stopServer(', 'async function stopServer(');
+  const implementation = [
+    serverSource.slice(
+      serverSource.indexOf('function processHasExited('),
+      serverSource.indexOf('async function hello('),
+    ).replace(
+      'export async function awaitProcessExit(',
+      'async function awaitProcessExit(',
+    ),
+    serverSource.slice(serverSource.indexOf('export async function stopServer('))
+      .replace('export async function stopServer(', 'async function stopServer('),
+  ].join('\n');
   vm.runInContext(implementation, value);
-  return { stopServer: value.stopServer, taskkills, removed };
+  return { stopServer: value.stopServer, removed };
 }
-
-async function browserDriver(t) {
-  const chromium = await loadChromium();
-  if (!chromium) t.skip('playwright-core not found (set RS_PLAYWRIGHT_CORE)');
-  return chromium;
-}
-
-test('stopServer never taskkills a child that exited by signal', async () => {
-  const { stopServer, taskkills } = stopServerSandbox();
-  const proc = {
-    exitCode: null,
-    signalCode: 'SIGTERM',
-    pid: 765432,
-    kill: () => false,
-  };
-
-  await stopServer({ dataDir: 'already-removed', port: 18920, proc });
-
-  assert.deepEqual(taskkills, []);
-});
-
-test('repeated stopServer cleanup never taskkills an exited child', async () => {
-  const { stopServer, taskkills } = stopServerSandbox();
-  const proc = {
-    exitCode: null,
-    signalCode: 'SIGTERM',
-    pid: 765432,
-    kill: () => false,
-  };
-  const server = { dataDir: 'already-removed', port: 18920, proc };
-
-  await stopServer(server);
-  await stopServer(server);
-
-  assert.deepEqual(taskkills, []);
-});
 
 test('resolved interpreter spawn retains python itself instead of the py launcher', () => {
   const resolveCalls = [];
@@ -178,14 +150,14 @@ test('server startup diagnostics use a bounded file-backed stderr tail', () => {
   try {
     fs.writeFileSync(
       stderrPath,
-      `${'discarded\n'.repeat(2000)}darwin startup failure\n`,
+      `${'discarded\n'.repeat(2000)}synthetic startup failure\n`,
       'utf8',
     );
 
     const tail = serverStderrTail(stderrPath, 256);
 
     assert.ok(Buffer.byteLength(tail, 'utf8') <= 256);
-    assert.match(tail, /darwin startup failure\n$/u);
+    assert.match(tail, /synthetic startup failure\n$/u);
     assert.match(serverSource, /serverStderrTail\(stderrPath\)/u);
     assert.match(serverSource, /server stderr tail:/u);
   } finally {
@@ -200,7 +172,7 @@ test('stopServer authenticates with isolated state and accepts graceful exit', a
     signalCode: null,
     kill: () => { throw new Error('graceful stop must not signal'); },
   };
-  const { stopServer, taskkills, removed } = stopServerSandbox({
+  const { stopServer, removed } = stopServerSandbox({
     readFileSync: () => JSON.stringify({ token: 'isolated-stop-token' }),
     fetch: async (url, options) => {
       request = { url, options };
@@ -213,7 +185,6 @@ test('stopServer authenticates with isolated state and accepts graceful exit', a
 
   assert.equal(request.url, 'http://127.0.0.1:18920/stop');
   assert.equal(request.options.headers['X-RS-Token'], 'isolated-stop-token');
-  assert.deepEqual(taskkills, []);
   assert.deepEqual(removed, ['isolated-data']);
 });
 
@@ -248,12 +219,11 @@ test('tree ownership model never widens retained-child cleanup to numeric descen
       return true;
     },
   };
-  const { stopServer, taskkills } = stopServerSandbox();
+  const { stopServer } = stopServerSandbox();
 
   await stopServer({ dataDir: 'already-removed', port: 18920, proc });
 
   assert.deepEqual(retainedSignals, [undefined]);
-  assert.deepEqual(taskkills, []);
 });
 
 test('stopServer fails loudly and keeps temp state when retained child refuses to exit', async () => {
@@ -267,7 +237,7 @@ test('stopServer fails loudly and keeps temp state when retained child refuses t
       return true;
     },
   };
-  const { stopServer, taskkills, removed } = stopServerSandbox();
+  const { stopServer, removed } = stopServerSandbox();
 
   await assert.rejects(
     stopServer({ dataDir: 'keep-for-diagnosis', port: 18920, proc }),
@@ -275,24 +245,18 @@ test('stopServer fails loudly and keeps temp state when retained child refuses t
   );
 
   assert.equal(retainedKills, 1);
-  assert.deepEqual(taskkills, []);
   assert.deepEqual(removed, []);
 });
 
-test('publish portability: browser channel is configurable with platform defaults', () => {
-  assert.equal(browserChannel('win32', {}), 'msedge');
-  assert.equal(browserChannel('darwin', {}), 'chrome');
-  assert.equal(
-    browserChannel('win32', { RS_BROWSER_CHANNEL: 'chrome' }),
-    'chrome',
-  );
+test('configured isolated ports outside the default allocation range are accepted', () => {
+  assert.equal(validateServerPort(18930), 18930);
 });
 
-test('publish portability: browser tests use the configured channel', () => {
-  for (const file of ['review_findings.test.mjs', 'calm.test.mjs']) {
-    const testSource = fs.readFileSync(path.join(ROOT, 'tests_js', file), 'utf8');
-    assert.doesNotMatch(testSource, /chromium\.launch\(\{ channel: 'msedge'/u, file);
-  }
+test('the production default port is refused before any server bind', () => {
+  assert.throws(
+    () => validateServerPort(18742),
+    /refusing the product default port 18742/u,
+  );
 });
 
 test('browser launch and page navigation use explicit bounded timeouts', async () => {
@@ -300,8 +264,6 @@ test('browser launch and page navigation use explicit bounded timeouts', async (
   let gotoOptions;
   const page = {
     goto: async (url, options) => { gotoOptions = options; },
-    newContext: undefined,
-    newPage: undefined,
     on: () => {},
     route: async () => {},
     waitForFunction: async () => {},
@@ -318,7 +280,6 @@ test('browser launch and page navigation use explicit bounded timeouts', async (
     stop: async () => {},
   };
   const scope = sandbox({
-    browserChannel: () => 'chrome',
     loadChromium: async () => ({
       launch: async (options) => {
         launchOptions = options;
@@ -330,7 +291,7 @@ test('browser launch and page navigation use explicit bounded timeouts', async (
     startServer: async () => server,
   });
 
-  await scope.withHarness(async ({ browser: launched }) => {
+  await scope.withSession(async ({ browser: launched }) => {
     await scope.openPage(launched, server, 'run-id');
   });
 
@@ -338,27 +299,17 @@ test('browser launch and page navigation use explicit bounded timeouts', async (
   assert.equal(gotoOptions.timeout, 30000);
 });
 
-test('configured isolated ports outside the default allocation range are accepted', () => {
-  assert.equal(validateServerPort(18945), 18945);
-});
-
-test('the production default port is refused before any server bind', () => {
-  assert.throws(
-    () => validateServerPort(18742),
-    /refusing the production default port 18742/u,
-  );
-});
-
 test('round 3 finding 1: the real production keyboard runner imports its focus evaluator', () => {
   const result = spawnSync(
     process.execPath,
-    [path.join(ROOT, 'tools', 'e2e.mjs'), 'keyboard', '_starter'],
+    [path.join(ROOT, 'tools', 'e2e.mjs'), 'keyboard', 'decide-list'],
     {
       cwd: ROOT,
       env: {
         ...process.env,
         RS_PLAYWRIGHT_CORE: process.env.RS_PLAYWRIGHT_CORE,
-        RS_TOOL_PORT: String(REVIEW_PORT),
+        RS_E2E_RESULT_TIMEOUT_MS: '30000',
+        RS_TOOL_PORT: String(BASE_PORT + 8),
       },
       encoding: 'utf8',
       timeout: 120000,
@@ -374,10 +325,12 @@ test('keyboard flow waits for the rendered rail before replaying Tab steps', asy
   const events = [];
   const scope = sandbox();
   let sequence = 0;
-  scope.withHarness = async (callback) => callback({
+  scope.withSession = async (callback) => callback({
     server: {
       result: (runId) => (
-        runId === 'run-2' ? { data: { choice: 'erledigt', note: 'Passt so' } } : null
+        runId === 'run-2'
+          ? { data: { choice: 'erledigt', note: 'Passt so' } }
+          : null
       ),
     },
     browser: {},
@@ -480,8 +433,8 @@ test('finding 3: every page fulfils copy by default and C5 can explicitly opt ou
 
 test('round 5 finding 1: safe copy interception catches bare and query URLs before the server', async (t) => {
   const port = REVIEW_PORT;
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const server = await startServer({ port, mediaRoots: [ROOT], env: FIXTURE_CLOCK_ENV });
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(async () => {
@@ -506,8 +459,8 @@ test('round 5 finding 1: safe copy interception catches bare and query URLs befo
       return context;
     },
   };
-  const scope = sandbox({ PORT: port, requestedTemplate: '_starter' });
-  const testCase = scope.fixtureCases('_starter', { goldenOnly: true })[0];
+  const scope = sandbox({ PORT: port, requestedTemplate: 'decide-list' });
+  const testCase = scope.fixtureCases('decide-list', { goldenOnly: true })[0];
   const run = await scope.show(server, testCase);
   const opened = await scope.openPage(guardedBrowser, server, run.run_id, {
     copyHandler: (body) => ordinary.push(body),
@@ -555,7 +508,7 @@ test('finding 6: zero templates and a missing golden expect contract fail', () =
       path.join(ROOT, 'tools', 'measurement.json'),
       path.join(scratch, 'tools', 'measurement.json'),
     );
-    const scope = sandbox({ ROOT: scratch });
+    const scope = sandbox({ ROOT: scratch, resolvedTemplates: () => [] });
     assert.throws(() => scope.fixtureCases('--all'), /no registered templates/i);
 
     const fixtureDir = path.join(scratch, 'templates', 'global', 'missing', 'fixtures');
@@ -565,6 +518,15 @@ test('finding 6: zero templates and a missing golden expect contract fail', () =
       JSON.stringify({ id: 'missing', namespace: 'global', version: 1, title_de: 'Fehlt' }),
     );
     fs.writeFileSync(path.join(fixtureDir, 'golden.json'), '{}');
+    scope.resolvedTemplates = () => [{
+      dir: path.join(scratch, 'templates', 'global', 'missing'),
+      manifest: {
+        id: 'missing',
+        namespace: 'global',
+        version: 1,
+        title_de: 'Fehlt',
+      },
+    }];
     assert.throws(() => scope.fixtureCases('--all'), /fixtures[/\\]expect[/\\]golden\.json/);
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
@@ -573,7 +535,7 @@ test('finding 6: zero templates and a missing golden expect contract fail', () =
 
 test('finding 7: empty and one-letter payloads do not admit unrelated English text', async () => {
   const scope = sandbox();
-  scope.withHarness = async (callback) => callback({ server: {}, browser: {} });
+  scope.withSession = async (callback) => callback({ server: {}, browser: {} });
   scope.textMatchers = () => ({ regexes: [], bots: [] });
   scope.cancelOpen = async () => {};
   scope.show = () => ({ run_id: 'strings' });
@@ -605,7 +567,7 @@ test('finding 8: C14 exercises dark pages and proves CSP on a real copy response
     data: {},
     expect: { copies: {}, flow: [{ press: 'Enter' }], keyboard: [{ press: 'Enter' }], result: {} },
   };
-  scope.withHarness = async (callback) => callback({
+  scope.withSession = async (callback) => callback({
     server: {
       url: (suffix) => `http://127.0.0.1:${REVIEW_PORT}/${suffix}`,
       csrf: async () => 'csrf',
@@ -642,8 +604,8 @@ test('finding 8: C14 exercises dark pages and proves CSP on a real copy response
 });
 
 test('finding 9: duplicate controls retain unique tab identities and outlines', async (t) => {
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
@@ -660,8 +622,8 @@ test('finding 9: duplicate controls retain unique tab identities and outlines', 
 });
 
 test('finding 9: a native radio group requires one tab stop', async (t) => {
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
@@ -678,8 +640,8 @@ test('finding 9: a native radio group requires one tab stop', async (t) => {
 });
 
 test('finding 9: a roving radiogroup must support arrow-key navigation', async (t) => {
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
@@ -731,7 +693,7 @@ test('finding 10: keyboard fixture rejects mouse-only steps', async () => {
     data: {},
     expect: { keyboard: [{ click: '#submit' }], result: {} },
   };
-  scope.withHarness = async (callback) => callback({
+  scope.withSession = async (callback) => callback({
     server: { result: () => ({ data: {} }) },
     browser: {},
   });
@@ -773,7 +735,7 @@ test('finding 13: submit timing starts at browser event dispatch, after action p
       keyboard: { press: async () => { dispatchEpoch = Date.now(); } },
     };
     const scope = sandbox();
-    scope.withHarness = async (callback) => callback({
+    scope.withSession = async (callback) => callback({
       server: { dataDir: scratch },
       browser: {},
     });
@@ -799,28 +761,28 @@ test('finding 13: submit timing starts at browser event dispatch, after action p
 test('finding 15: browser launch failure still stops the isolated server', async () => {
   let stopped = 0;
   const scope = {
+    browserChannel,
     boundedMilliseconds: (name, fallback) => fallback,
     loadChromium: async () => ({ launch: async () => { throw new Error('Edge launch failed'); } }),
     startServer: async () => ({ stop: async () => { stopped += 1; } }),
-    browserChannel: () => 'msedge',
     PORT: REVIEW_PORT,
     ROOT,
     TIME_BASELINE: { default: { clockAnchor: FIXTURE_CLOCK_ENV.RS_CLOCK_ANCHOR } },
   };
   vm.createContext(scope);
   vm.runInContext(
-    source.slice(source.indexOf('async function withHarness('), source.indexOf('async function openPage(')),
+    source.slice(source.indexOf('async function withSession('), source.indexOf('async function openPage(')),
     scope,
   );
 
-  await assert.rejects(scope.withHarness(async () => {}), /Edge launch failed/);
+  await assert.rejects(scope.withSession(async () => {}), /Edge launch failed/);
   assert.equal(stopped, 1);
 });
 
 test('fixture clock anchor keeps baseline open and open assertion rejects an expired baseline', async (t) => {
   const tools = await import('../tools/dev/rs-server.mjs');
   const golden = JSON.parse(fs.readFileSync(
-    path.join(ROOT, 'templates/global/_starter/fixtures/golden.json'),
+    path.join(ROOT, 'templates/builtin/_starter/fixtures/golden.json'),
     'utf8',
   ));
   const created = '2026-10-08T10:39:00Z';
@@ -894,8 +856,8 @@ test('round 3 finding 2: every runner fixture is asserted open after registratio
 });
 
 test('round 2 finding 1: expect awaits a 150 ms route and detects mismatching bodies', async (t) => {
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const scope = sandbox();
@@ -905,7 +867,7 @@ test('round 2 finding 1: expect awaits a 150 ms route and detects mismatching bo
     data: {},
     expect: { copies: { first: 'expected text' }, counters: {} },
   };
-  scope.withHarness = async (callback) => callback({ server: {}, browser });
+  scope.withSession = async (callback) => callback({ server: {}, browser });
   scope.fixtureCases = () => [testCase];
   scope.cancelOpen = async () => {};
   scope.show = () => ({ run_id: 'expect' });
@@ -963,7 +925,7 @@ test('round 2 finding 2: network accepts copy-only edge expects and rejects malf
     data: {},
     expect: { copies: {} },
   };
-  scope.withHarness = async (callback) => callback({
+  scope.withSession = async (callback) => callback({
     server: {
       url: (suffix) => `http://127.0.0.1:${REVIEW_PORT}/${suffix}`,
       csrf: async () => 'csrf',
@@ -999,7 +961,7 @@ test('round 2 finding 2: network accepts copy-only edge expects and rejects malf
 
 test('round 2 finding 6: strings admits each exact fixture envelope title', async () => {
   const scope = sandbox();
-  scope.withHarness = async (callback) => callback({ server: {}, browser: {} });
+  scope.withSession = async (callback) => callback({ server: {}, browser: {} });
   scope.textMatchers = () => ({ regexes: [], bots: [] });
   scope.cancelOpen = async () => {};
   scope.show = () => ({ run_id: 'strings' });
@@ -1010,10 +972,10 @@ test('round 2 finding 6: strings admits each exact fixture envelope title', asyn
   const cases = [
     {
       manifest: {
-        id: '_starter',
+        id: 'decide-list',
         namespace: 'global',
         version: 1,
-        title_de: 'Mail-Vorsortierung',
+        title_de: 'List decisions',
       },
       fixture: 'golden',
       data: {},
@@ -1039,8 +1001,8 @@ test('round 2 finding 6: strings admits each exact fixture envelope title', asyn
 });
 
 test('round 3 finding 1: every arrow-focused native radio has a visible outline and wrap is covered', async (t) => {
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
@@ -1057,21 +1019,21 @@ test('round 3 finding 1: every arrow-focused native radio has a visible outline 
   );
 });
 
-test('round 3 finding 1: starter choice arrows are audited beyond the Tab-entry button', async (t) => {
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+test('decide-list choice arrows are audited beyond the Tab-entry button', async (t) => {
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const server = await startServer({ port: REVIEW_PORT });
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(async () => {
     try { await browser.close(); } finally { await server.stop(); }
   });
   const fixture = JSON.parse(fs.readFileSync(
-    path.join(ROOT, 'templates', 'global', '_starter', 'fixtures', 'golden.json'),
+    path.join(ROOT, 'templates', 'builtin', 'decide-list', 'fixtures', 'golden.json'),
     'utf8',
   ));
   const run = server.show(fixture, {
-    template: '_starter',
-    bot: 'agent',
+    template: 'decide-list',
+    bot: 'example-inbox-bot',
     title: 'Outline-Prüfung',
   });
   const context = await browser.newContext();
@@ -1095,8 +1057,8 @@ test('round 3 finding 1: starter choice arrows are audited beyond the Tab-entry 
 });
 
 test('round 3 finding 1: keyboard flow actions check newly focused controls', async (t) => {
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const context = await browser.newContext();
@@ -1109,7 +1071,7 @@ test('round 3 finding 1: keyboard flow actions check newly focused controls', as
   );
   await page.focus('#r1');
   const scope = sandbox();
-  scope.withHarness = async (callback) => callback({
+  scope.withSession = async (callback) => callback({
     server: { result: () => ({ data: {} }) },
     browser,
   });
@@ -1133,7 +1095,7 @@ test('round 3 finding 1: keyboard flow actions check newly focused controls', as
 
 test('round 3 finding 2: strings accepts only the fixture exact rendered date', async () => {
   const scope = sandbox();
-  scope.withHarness = async (callback) => callback({ server: {}, browser: {} });
+  scope.withSession = async (callback) => callback({ server: {}, browser: {} });
   scope.textMatchers = () => ({ regexes: [], bots: [] });
   scope.cancelOpen = async () => {};
   scope.show = () => ({ run_id: 'strings-time' });
@@ -1207,8 +1169,8 @@ test('round 3 finding 2: C15 measures rendered and persisted time conversion aro
 
 test('round 4 finding 3: strings audits visible aria-hidden text but ignores visually hidden text', async (t) => {
   const port = REVIEW_PORT;
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const server = await startServer({ port, env: FIXTURE_CLOCK_ENV });
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(async () => {
@@ -1216,8 +1178,8 @@ test('round 4 finding 3: strings audits visible aria-hidden text but ignores vis
   });
 
   async function audit(style) {
-    const scope = sandbox({ PORT: port, requestedTemplate: '_starter' });
-    scope.withHarness = async (callback) => callback({ server, browser });
+    const scope = sandbox({ PORT: port, requestedTemplate: 'decide-list' });
+    scope.withSession = async (callback) => callback({ server, browser });
     const openPage = scope.openPage;
     scope.openPage = async (...args) => {
       const opened = await openPage(...args);
@@ -1244,8 +1206,8 @@ test('round 4 finding 3: strings audits visible aria-hidden text but ignores vis
 
 test('round 5 finding 2: strings uses text geometry for display contents and excludes display none', async (t) => {
   const port = REVIEW_PORT;
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const server = await startServer({ port, env: FIXTURE_CLOCK_ENV });
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(async () => {
@@ -1253,10 +1215,10 @@ test('round 5 finding 2: strings uses text geometry for display contents and exc
   });
 
   async function audit({ nodeStyle = '', hostStyle = '' }) {
-    const scope = sandbox({ PORT: port, requestedTemplate: '_starter' });
-    const cases = scope.fixtureCases('_starter', { goldenOnly: true });
+    const scope = sandbox({ PORT: port, requestedTemplate: 'decide-list' });
+    const cases = scope.fixtureCases('decide-list', { goldenOnly: true });
     scope.fixtureCases = () => cases;
-    scope.withHarness = async (callback) => callback({ server, browser });
+    scope.withSession = async (callback) => callback({ server, browser });
     const openPage = scope.openPage;
     let geometry;
     scope.openPage = async (...args) => {
@@ -1335,18 +1297,18 @@ test('round 5 finding 2: strings uses text geometry for display contents and exc
 
 test('round 4 finding 4: date-shaped payload text is not mistaken for envelope metadata', async (t) => {
   const port = REVIEW_PORT;
-  const chromium = await browserDriver(t);
-  if (!chromium) return;
+  const chromium = await loadChromium();
+  assert.ok(chromium, 'playwright-core is required');
   const server = await startServer({ port, env: FIXTURE_CLOCK_ENV });
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(async () => {
     try { await browser.close(); } finally { await server.stop(); }
   });
-  const scope = sandbox({ PORT: port, requestedTemplate: '_starter' });
-  const cases = scope.fixtureCases('_starter', { goldenOnly: true });
-  cases[0].data.message = 'Mo 01.01.1900 · 00:00';
+  const scope = sandbox({ PORT: port, requestedTemplate: 'decide-list' });
+  const cases = scope.fixtureCases('decide-list', { goldenOnly: true });
+  cases[0].data.items[0].title = 'Mo 01.01.1900 · 00:00';
   scope.fixtureCases = () => cases;
-  scope.withHarness = async (callback) => callback({ server, browser });
+  scope.withSession = async (callback) => callback({ server, browser });
 
   const result = await scope.stringsMode();
 
@@ -1371,7 +1333,7 @@ test('round 4 finding 5: time rejects missing and empty decided timestamps', asy
       data: {},
       expect: { result: {} },
     };
-    scope.withHarness = async (callback) => callback({
+    scope.withSession = async (callback) => callback({
       server: {
         csrf: async () => 'csrf',
         url: (suffix) => `http://127.0.0.1:${REVIEW_PORT}/${suffix}`,
@@ -1431,7 +1393,7 @@ test('round 4 finding 6: C10 stop time includes per-case schema and equality val
       keyboard: { press: async () => { page.dispatched = Date.now(); } },
     };
     const scope = sandbox();
-    scope.withHarness = async (callback) => callback({
+    scope.withSession = async (callback) => callback({
       server: { dataDir: scratch },
       browser: {},
     });
@@ -1533,17 +1495,44 @@ test('round 3 finding 4: generic envelopes are neutral while real templates keep
   }).bot, 'acme-report-bot');
 });
 
-test('round 3 finding 4: counter runner uses at least 30 synthetic test-owned cases', () => {
-  const result = spawnSync(
-    process.execPath,
-    [path.join(ROOT, 'tools', 'counter_test.mjs')],
-    { cwd: ROOT, encoding: 'utf8', windowsHide: true },
-  );
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  const body = JSON.parse(result.stdout.trim());
-  assert.equal(body.ok, true);
-  assert.ok(body.total >= 30);
-  assert.equal(body.fixture_source, 'synthetic test-owned strings');
+test('counter cases use the resolved user template id', () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-counter-registry-'));
+  try {
+    const template = path.join(scratch, 'templates', 'preview-post');
+    fs.cpSync(
+      path.join(ROOT, 'templates', 'builtin', 'preview-post'),
+      template,
+      { recursive: true },
+    );
+    fs.writeFileSync(
+      path.join(template, 'fixtures', 'expect', 'counter-cases.json'),
+      JSON.stringify(Array.from({ length: 30 }, (_, index) => ({
+        name: `case-${index + 1}`,
+        platform: 'linkedin',
+        text: 'abc',
+        count: 3,
+        over: false,
+      }))),
+    );
+
+    const result = spawnSync(
+      'node',
+      [path.join(ROOT, 'tools', 'counter_test.mjs')],
+      {
+        cwd: ROOT,
+        env: { ...process.env, RS_DATA_DIR: scratch },
+        encoding: 'utf8',
+        windowsHide: true,
+      },
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const body = JSON.parse(result.stdout.trim());
+    assert.equal(body.ok, true);
+    assert.equal(body.total, 30);
+    assert.match(body.template_dir, /templates[\\/]preview-post$/);
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
 });
 
 test('fixture media paths resolve against the registered template directory', () => {
@@ -1790,7 +1779,7 @@ test('round 5 finding 1: calmScene catches copies created by native details togg
         const facts = await scope.calmScene(
           {},
           {},
-          { fixture: 'golden', manifest: { id: 'synthetic-calm-template' } },
+          { fixture: 'golden', manifest: { id: 'decide-list' } },
           { openRuns: 1, theme: 'light', viewport },
         );
         rows.push({
@@ -1903,13 +1892,13 @@ test('introduced finding 1: template timers cannot defeat any animation settle d
       vm.runInContext(
         source.slice(
           source.indexOf('async function calmRestingFacts('),
-          source.indexOf('async function calmMode('),
+          source.indexOf('const IDENTITY_FOREIGN = ['),
         ),
         scope,
       );
       await assertAnimationSettleFailsWithinCap(() => scope.calmRestingFacts(
         page,
-        { manifest: { id: 'synthetic-calm-template' } },
+        { manifest: { id: 'decide-list' } },
         1,
         [],
         true,
@@ -1989,6 +1978,7 @@ async function runCalmFadeScene(browser, playbackRate = 1) {
       CALM_THRESHOLDS,
       auditCopyFocus,
       auditPlatformSwitching: async () => null,
+      isSocialPreview,
       calmEvaluator,
       closeAuditContext: async (contextToClose) => contextToClose.close(),
       pngBackgroundRatio,
@@ -2027,7 +2017,7 @@ async function runCalmFadeScene(browser, playbackRate = 1) {
     return await scope.calmScene(
       {},
       {},
-      { fixture: 'edge-max', manifest: { id: 'synthetic-calm-template' } },
+      { fixture: 'edge-max', manifest: { id: 'decide-list' } },
       {
         openRuns: 1,
         theme: 'light',
@@ -2244,6 +2234,7 @@ test('round 2 finding 8: calm captures the initial resting viewport before inter
       return { pass: true, controls: [] };
     },
     auditPlatformSwitching: async () => null,
+    isSocialPreview,
     pngBackgroundRatio: () => 0.75,
   };
   vm.createContext(scope);
@@ -2258,7 +2249,7 @@ test('round 2 finding 8: calm captures the initial resting viewport before inter
   const result = await scope.calmScene(
     {},
     {},
-    { fixture: 'golden', manifest: { id: 'synthetic-calm-template' } },
+    { fixture: 'golden', manifest: { id: 'decide-list' } },
     {
       openRuns: 1,
       theme: 'light',

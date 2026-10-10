@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from core.product import RUNNER_ID
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -81,7 +83,19 @@ def install_minimal_template(repo_root, template_id="_starter"):
 
 TEST_PORT_FIRST = 18920
 TEST_PORT_LAST = 18939
-_next_test_port = TEST_PORT_FIRST
+_next_test_port = None
+
+
+def _loopback_refuses(port):
+    with socket.socket() as probe:
+        probe.settimeout(1)
+        try:
+            return (
+                probe.connect_ex(("127.0.0.1", port))
+                == errno.ECONNREFUSED
+            )
+        except OSError:
+            return False
 
 
 def _loopback_refuses(port):
@@ -95,42 +109,50 @@ def _loopback_refuses(port):
 
 def free_port():
     global _next_test_port
-    count = TEST_PORT_LAST - TEST_PORT_FIRST + 1
-    for offset in range(count):
-        port = TEST_PORT_FIRST + (
-            _next_test_port - TEST_PORT_FIRST + offset
-        ) % count
-        if sys.platform != "win32" and not _loopback_refuses(port):
-            # With SO_REUSEADDR a 127.0.0.1 bind can coexist with another
-            # wildcard listener on macOS/BSD, so only a refused loopback
-            # connect counts as free; anything uncertain is skipped.
+    low = os.environ.get("RS_TEST_PORT_MIN")
+    high = os.environ.get("RS_TEST_PORT_MAX")
+    if (low is None) != (high is None):
+        raise RuntimeError(
+            "RS_TEST_PORT_MIN and RS_TEST_PORT_MAX must be set together"
+        )
+    first = int(low) if low is not None else TEST_PORT_FIRST
+    last = int(high) if high is not None else TEST_PORT_LAST
+    if not 1 <= first <= last <= 65535:
+        raise RuntimeError("invalid test port range")
+    if _next_test_port is None or not first <= _next_test_port <= last:
+        _next_test_port = first
+    for _ in range(last - first + 1):
+        port = _next_test_port
+        _next_test_port = first if port == last else port + 1
+        if sys.platform == "win32":
+            with socket.socket() as probe:
+                probe.settimeout(.05)
+                if probe.connect_ex(("127.0.0.1", port)) == 0:
+                    continue
+        elif not _loopback_refuses(port):
             continue
         with socket.socket() as sock:
-            # Mirror ReportHTTPServer: POSIX servers bind with SO_REUSEADDR,
-            # so ports left in TIME_WAIT by earlier tests are usable there.
             if sys.platform != "win32":
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.setsockopt(
+                    socket.SOL_SOCKET,
+                    socket.SO_REUSEADDR,
+                    1,
+                )
             try:
                 sock.bind(("127.0.0.1", port))
             except OSError:
                 continue
-            _next_test_port = (
-                TEST_PORT_FIRST
-                + (port - TEST_PORT_FIRST + 1) % count
-            )
-            return port
-    raise RuntimeError(
-        f"no free test port in {TEST_PORT_FIRST}-{TEST_PORT_LAST}"
-    )
+        return port
+    raise RuntimeError(f"no free test port in {first}-{last}")
 
 
-def _hello(port, timeout=1):
+def _hello(port):
     try:
         with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/hello", timeout=timeout
+            f"http://127.0.0.1:{port}/hello", timeout=.2
         ) as response:
             value = json.loads(response.read())
-        if value.get("runner") == "grokbot-desk/1":
+        if value.get("runner") == RUNNER_ID:
             return value
     except Exception:
         pass
@@ -139,7 +161,9 @@ def _hello(port, timeout=1):
 
 def _startup_timeout_seconds(env, default=3):
     try:
-        milliseconds = float(env.get("RS_SERVER_START_TIMEOUT_MS", default * 1000))
+        milliseconds = float(
+            env.get("RS_SERVER_START_TIMEOUT_MS", default * 1000)
+        )
     except (TypeError, ValueError):
         milliseconds = default * 1000
     if not milliseconds > 0:
@@ -153,7 +177,9 @@ def _stderr_tail(path, limit=8192):
             stream.seek(0, os.SEEK_END)
             size = stream.tell()
             stream.seek(max(0, size - limit))
-            return stream.read(limit).decode("utf-8", errors="replace")
+            return stream.read(limit).decode(
+                "utf-8", errors="replace"
+            )
     except OSError:
         return ""
 

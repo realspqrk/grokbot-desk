@@ -208,7 +208,7 @@ def test_round_4_finding_6_c10_requires_validation_inside_each_timed_case(
         (
             measure_result.ROOT
             / "templates"
-            / "global"
+                / "builtin"
             / "_starter"
             / "fixtures"
             / "expect"

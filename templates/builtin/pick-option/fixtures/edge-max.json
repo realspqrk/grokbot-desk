@@ -1,0 +1,131 @@
+{
+  "question": "Which laptop should we order for the new hire in the support team, who starts on the first Monday of next month?",
+  "context": "All four are on the approved list and can be delivered before the start date. Prices include tax and the docking cable; the budget for this role is €1,400.",
+  "options": [
+    {
+      "id": "standard-14",
+      "name": "Standard 14-inch",
+      "summary": "The model most of the team already uses. Same charger and dock as everyone else, so spare parts are easy, and setup takes about an hour with the usual image.",
+      "facts": [
+        {
+          "label": "Price",
+          "value": "€1,149"
+        },
+        {
+          "label": "Weight",
+          "value": "1.4 kg"
+        },
+        {
+          "label": "Battery",
+          "value": "about 10 hours"
+        },
+        {
+          "label": "Memory and storage",
+          "value": "16 GB, 512 GB"
+        },
+        {
+          "label": "Delivery",
+          "value": "3 working days"
+        },
+        {
+          "label": "Warranty",
+          "value": "3 years, on site"
+        }
+      ]
+    },
+    {
+      "id": "light-13",
+      "name": "Light 13-inch with the longer battery option",
+      "summary": "Noticeably lighter and quieter, good for someone who moves between desks and rooms a lot. The smaller screen is fine with the dock, a little tight without it.",
+      "facts": [
+        {
+          "label": "Price",
+          "value": "€1,329"
+        },
+        {
+          "label": "Weight",
+          "value": "1.1 kg"
+        },
+        {
+          "label": "Battery",
+          "value": "about 14 hours"
+        },
+        {
+          "label": "Memory and storage",
+          "value": "16 GB, 512 GB"
+        },
+        {
+          "label": "Delivery",
+          "value": "5 working days"
+        },
+        {
+          "label": "Warranty",
+          "value": "3 years, send in"
+        }
+      ]
+    },
+    {
+      "id": "performance-16",
+      "name": "Performance 16-inch",
+      "summary": "More memory and a large screen, more than this role needs today. Heavier, louder under load, and above the budget for the role by a small amount.",
+      "facts": [
+        {
+          "label": "Price",
+          "value": "€1,590"
+        },
+        {
+          "label": "Weight",
+          "value": "2.1 kg"
+        },
+        {
+          "label": "Battery",
+          "value": "about 8 hours"
+        },
+        {
+          "label": "Memory and storage",
+          "value": "32 GB, 1 TB"
+        },
+        {
+          "label": "Delivery",
+          "value": "2 working days"
+        },
+        {
+          "label": "Warranty",
+          "value": "3 years, on site, next business day"
+        }
+      ]
+    },
+    {
+      "id": "refurbished-14",
+      "name": "Refurbished 14-inch",
+      "summary": "Last year's standard model, checked and with a new battery. The cheapest choice by far, with a shorter warranty and a small scratch on the lid.",
+      "facts": [
+        {
+          "label": "Price",
+          "value": "€749"
+        },
+        {
+          "label": "Weight",
+          "value": "1.4 kg"
+        },
+        {
+          "label": "Battery",
+          "value": "about 9 hours (new cell)"
+        },
+        {
+          "label": "Memory and storage",
+          "value": "16 GB, 256 GB"
+        },
+        {
+          "label": "Delivery",
+          "value": "Next working day"
+        },
+        {
+          "label": "Warranty",
+          "value": "1 year, send in"
+        }
+      ]
+    }
+  ],
+  "suggested": "standard-14"
+}

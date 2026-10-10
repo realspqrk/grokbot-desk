@@ -1,0 +1,10 @@
+{
+  "doc": "![Gate](Gate Photo)",
+  "images": [
+    {
+      "key": "Gate Photo",
+      "path": "C:\\media\\gate.png",
+      "alt": "Gate"
+    }
+  ]
+}

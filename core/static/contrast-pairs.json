@@ -1,73 +1,346 @@
 {
   "version": 1,
   "notes": "Foreground/background token pairs actually used for text (min 4.5), large text (min 3.0) and non-text UI such as the focus ring and input borders (min 3.0, WCAG 1.4.11). Every pair is checked in both themes (light = :root, dark = the html[data-theme=\"dark\"] block). WCAG 2.x relative luminance; colours are opaque hex.",
-  "themes": ["light", "dark"],
+  "themes": [
+    "light",
+    "dark"
+  ],
   "pairs": [
-    { "fg": "--rs-ink", "bg": "--rs-paper", "min": 4.5, "use": "body text on the page" },
-    { "fg": "--rs-ink", "bg": "--rs-card", "min": 4.5, "use": "card text" },
-    { "fg": "--rs-ink", "bg": "--rs-chip", "min": 4.5, "use": "chips, secondary button, rail key" },
-    { "fg": "--rs-ink", "bg": "--rs-warn-bg", "min": 4.5, "use": "text inside a warn card" },
-    { "fg": "--rs-ink", "bg": "--rs-accent-bg", "min": 4.5, "use": "active run in the rail" },
-    { "fg": "--rs-muted", "bg": "--rs-paper", "min": 4.5, "use": "meta text on the page" },
-    { "fg": "--rs-muted", "bg": "--rs-card", "min": 4.5, "use": "meta text in cards" },
-    { "fg": "--rs-muted", "bg": "--rs-chip", "min": 4.5, "use": "neutral badge meta" },
-    { "fg": "--rs-muted", "bg": "--rs-warn-bg", "min": 4.5, "use": "meta text inside a warn card" },
-    { "fg": "--rs-muted", "bg": "--rs-accent-bg", "min": 4.5, "use": "meta of the active run" },
-    { "fg": "--rs-warn", "bg": "--rs-warn-bg", "min": 4.5, "use": "warn badge, warn heading" },
-    { "fg": "--rs-warn", "bg": "--rs-card", "min": 4.5, "use": "warn text in cards" },
-    { "fg": "--rs-warn", "bg": "--rs-paper", "min": 4.5, "use": "warn section heading" },
-    { "fg": "--rs-ok", "bg": "--rs-ok-bg", "min": 4.5, "use": "ok badge, copied state" },
-    { "fg": "--rs-ok", "bg": "--rs-card", "min": 4.5, "use": "ok text in cards" },
-    { "fg": "--rs-ok", "bg": "--rs-paper", "min": 4.5, "use": "submit bar status (sent)" },
-    { "fg": "--rs-danger", "bg": "--rs-danger-bg", "min": 4.5, "use": "danger badge, clipboard busy" },
-    { "fg": "--rs-danger", "bg": "--rs-card", "min": 4.5, "use": "over-limit counter in cards" },
-    { "fg": "--rs-danger", "bg": "--rs-paper", "min": 4.5, "use": "over-limit counter on the page" },
-    { "fg": "--rs-on-accent", "bg": "--rs-accent", "min": 4.5, "use": "primary button, selected choice" },
-    { "fg": "--rs-on-accent", "bg": "--rs-accent-hover", "min": 4.5, "use": "primary button hover" },
-    { "fg": "--rs-accent", "bg": "--rs-paper", "min": 4.5, "use": "accent text on the page" },
-    { "fg": "--rs-accent", "bg": "--rs-card", "min": 4.5, "use": "accent text in cards" },
-    { "fg": "--rs-accent", "bg": "--rs-accent-bg", "min": 4.5, "use": "accent text in the active rail item" },
-    { "fg": "--rs-on-danger", "bg": "--rs-danger", "min": 4.5, "use": "confirm (destructive) button" },
-    { "fg": "--rs-paper", "bg": "--rs-ink", "min": 4.5, "use": "toast (inverted)" },
-    { "fg": "--rs-on-disabled", "bg": "--rs-disabled", "min": 4.5, "use": "disabled button label (kept readable)" },
-    { "fg": "--rs-ink", "bg": "--rs-danger-bg", "min": 4.5, "use": "text in a danger badge area" },
-    { "fg": "--rs-ink", "bg": "--rs-ok-bg", "min": 4.5, "use": "text in an ok area" },
-
-    { "fg": "--rs-focus", "bg": "--rs-paper", "min": 3.0, "use": "focus ring on the page" },
-    { "fg": "--rs-focus", "bg": "--rs-card", "min": 3.0, "use": "focus ring in cards" },
-    { "fg": "--rs-focus", "bg": "--rs-chip", "min": 3.0, "use": "focus ring next to chips" },
-    { "fg": "--rs-focus", "bg": "--rs-warn-bg", "min": 3.0, "use": "focus ring in warn cards" },
-    { "fg": "--rs-focus", "bg": "--rs-accent-bg", "min": 3.0, "use": "focus ring in the active rail item" },
-    { "fg": "--rs-focus", "bg": "--rs-x-bg", "min": 3.0, "use": "focus ring inside the X frame" },
-    { "fg": "--rs-focus", "bg": "--rs-li-bg", "min": 3.0, "use": "focus ring inside the LinkedIn frame" },
-    { "fg": "--rs-focus", "bg": "--rs-ig-bg", "min": 3.0, "use": "focus ring inside the Instagram frame" },
-    { "fg": "--rs-focus", "bg": "--rs-fb-bg", "min": 3.0, "use": "focus ring inside the Facebook frame" },
-    { "fg": "--rs-line-strong", "bg": "--rs-card", "min": 3.0, "use": "input and checkbox borders" },
-    { "fg": "--rs-line-strong", "bg": "--rs-paper", "min": 3.0, "use": "input borders on the page" },
-    { "fg": "--rs-accent", "bg": "--rs-chip", "min": 3.0, "use": "selected-choice indicator dot" },
-
-    { "fg": "--rs-x-text", "bg": "--rs-x-bg", "min": 4.5, "use": "X post text" },
-    { "fg": "--rs-x-muted", "bg": "--rs-x-bg", "min": 4.5, "use": "X handle, time, after-fold text" },
-    { "fg": "--rs-x-link", "bg": "--rs-x-bg", "min": 4.5, "use": "X hashtags and links" },
-    { "fg": "--rs-x-text", "bg": "--rs-x-avatar-bg", "min": 4.5, "use": "X avatar initials" },
-    { "fg": "--rs-li-text", "bg": "--rs-li-bg", "min": 4.5, "use": "LinkedIn post text" },
-    { "fg": "--rs-li-muted", "bg": "--rs-li-bg", "min": 4.5, "use": "LinkedIn headline, time, after-fold text" },
-    { "fg": "--rs-li-link", "bg": "--rs-li-bg", "min": 4.5, "use": "LinkedIn hashtags and links" },
-    { "fg": "--rs-li-text", "bg": "--rs-li-avatar-bg", "min": 4.5, "use": "LinkedIn avatar initials" },
-    { "fg": "--rs-li-on-brand", "bg": "--rs-li-brand", "min": 3.0, "use": "LinkedIn logo glyph (non-text)" },
-    { "fg": "--rs-ig-text", "bg": "--rs-ig-bg", "min": 4.5, "use": "Instagram caption" },
-    { "fg": "--rs-ig-muted", "bg": "--rs-ig-bg", "min": 4.5, "use": "Instagram meta, after-fold text" },
-    { "fg": "--rs-ig-link", "bg": "--rs-ig-bg", "min": 4.5, "use": "Instagram hashtags" },
-    { "fg": "--rs-ig-muted", "bg": "--rs-ig-placeholder", "min": 4.5, "use": "Instagram missing-image placeholder text" },
-    { "fg": "--rs-ig-text", "bg": "--rs-ig-avatar-bg", "min": 4.5, "use": "Instagram avatar initials" },
-    { "fg": "--rs-fb-text", "bg": "--rs-fb-bg", "min": 4.5, "use": "Facebook post text" },
-    { "fg": "--rs-fb-muted", "bg": "--rs-fb-bg", "min": 4.5, "use": "Facebook time, action labels" },
-    { "fg": "--rs-fb-link", "bg": "--rs-fb-bg", "min": 4.5, "use": "Facebook hashtags and links" },
-    { "fg": "--rs-fb-text", "bg": "--rs-fb-card", "min": 4.5, "use": "Facebook link card title" },
-    { "fg": "--rs-fb-muted", "bg": "--rs-fb-card", "min": 4.5, "use": "Facebook link card domain" },
-    { "fg": "--rs-fb-text", "bg": "--rs-fb-avatar-bg", "min": 4.5, "use": "Facebook avatar initials" },
-    { "fg": "--rs-fb-on-brand", "bg": "--rs-fb-brand", "min": 3.0, "use": "Facebook logo glyph (non-text)" },
-    { "fg": "--rs-li-text", "bg": "--rs-li-page", "min": 4.5, "use": "LinkedIn link card title on page grey" },
-    { "fg": "--rs-li-muted", "bg": "--rs-li-page", "min": 4.5, "use": "LinkedIn link card domain on page grey" }
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-paper",
+      "min": 4.5,
+      "use": "body text on the page"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-card",
+      "min": 4.5,
+      "use": "text in the current-item card"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-rail-bg",
+      "min": 4.5,
+      "use": "rail titles"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-hover",
+      "min": 4.5,
+      "use": "hovered rows and quiet buttons"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-selected",
+      "min": 4.5,
+      "use": "selected segment, current rail entry"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-paper",
+      "min": 4.5,
+      "use": "meta text on the page"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-card",
+      "min": 4.5,
+      "use": "meta text in the card"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-rail-bg",
+      "min": 4.5,
+      "use": "agent name in the rail"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-hover",
+      "min": 4.5,
+      "use": "meta text in hovered rows"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-selected",
+      "min": 4.5,
+      "use": "meta of the current rail entry"
+    },
+    {
+      "fg": "--rs-on-accent",
+      "bg": "--rs-accent",
+      "min": 4.5,
+      "use": "primary button"
+    },
+    {
+      "fg": "--rs-on-accent",
+      "bg": "--rs-accent-hover",
+      "min": 4.5,
+      "use": "primary button hover"
+    },
+    {
+      "fg": "--rs-accent",
+      "bg": "--rs-paper",
+      "min": 4.5,
+      "use": "accent text on the page"
+    },
+    {
+      "fg": "--rs-accent",
+      "bg": "--rs-card",
+      "min": 4.5,
+      "use": "accent text in the card"
+    },
+    {
+      "fg": "--rs-danger",
+      "bg": "--rs-paper",
+      "min": 4.5,
+      "use": "error text on the page"
+    },
+    {
+      "fg": "--rs-danger",
+      "bg": "--rs-card",
+      "min": 4.5,
+      "use": "error text in the card"
+    },
+    {
+      "fg": "--rs-on-danger",
+      "bg": "--rs-danger",
+      "min": 4.5,
+      "use": "confirm (destructive) button"
+    },
+    {
+      "fg": "--rs-paper",
+      "bg": "--rs-ink",
+      "min": 4.5,
+      "use": "toast (inverted)"
+    },
+    {
+      "fg": "--rs-on-disabled",
+      "bg": "--rs-disabled",
+      "min": 4.5,
+      "use": "disabled button label (kept readable)"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-avatar-bg",
+      "min": 4.5,
+      "use": "initials avatar (rail and header)"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "focus ring on the page"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "focus ring in the card"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-rail-bg",
+      "min": 3.0,
+      "use": "focus ring in the rail"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-selected",
+      "min": 3.0,
+      "use": "focus ring on a selected segment"
+    },
+    {
+      "fg": "--rs-line-strong",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "input and checkbox borders"
+    },
+    {
+      "fg": "--rs-line-strong",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "input borders on the page"
+    },
+    {
+      "fg": "--rs-status-ok",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "ok status dot"
+    },
+    {
+      "fg": "--rs-status-warn",
+      "bg": "--rs-paper",
+      "min": 2.0,
+      "use": "warn status dot (always paired with text)"
+    },
+    {
+      "fg": "--rs-status-danger",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "danger status dot"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-x-bg",
+      "min": 3.0,
+      "use": "focus ring inside the X frame"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-li-bg",
+      "min": 3.0,
+      "use": "focus ring inside the LinkedIn frame"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-ig-bg",
+      "min": 3.0,
+      "use": "focus ring inside the Instagram frame"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-fb-bg",
+      "min": 3.0,
+      "use": "focus ring inside the Facebook frame"
+    },
+    {
+      "fg": "--rs-x-text",
+      "bg": "--rs-x-bg",
+      "min": 4.5,
+      "use": "X post text"
+    },
+    {
+      "fg": "--rs-x-muted",
+      "bg": "--rs-x-bg",
+      "min": 4.5,
+      "use": "X handle, time, after-fold text"
+    },
+    {
+      "fg": "--rs-x-link",
+      "bg": "--rs-x-bg",
+      "min": 4.5,
+      "use": "X hashtags and links"
+    },
+    {
+      "fg": "--rs-x-text",
+      "bg": "--rs-x-avatar-bg",
+      "min": 4.5,
+      "use": "X avatar initials"
+    },
+    {
+      "fg": "--rs-li-text",
+      "bg": "--rs-li-bg",
+      "min": 4.5,
+      "use": "LinkedIn post text"
+    },
+    {
+      "fg": "--rs-li-muted",
+      "bg": "--rs-li-bg",
+      "min": 4.5,
+      "use": "LinkedIn headline, time, after-fold text"
+    },
+    {
+      "fg": "--rs-li-link",
+      "bg": "--rs-li-bg",
+      "min": 4.5,
+      "use": "LinkedIn hashtags and links"
+    },
+    {
+      "fg": "--rs-li-text",
+      "bg": "--rs-li-avatar-bg",
+      "min": 4.5,
+      "use": "LinkedIn avatar initials"
+    },
+    {
+      "fg": "--rs-li-on-brand",
+      "bg": "--rs-li-brand",
+      "min": 3.0,
+      "use": "LinkedIn logo glyph (non-text)"
+    },
+    {
+      "fg": "--rs-ig-text",
+      "bg": "--rs-ig-bg",
+      "min": 4.5,
+      "use": "Instagram caption"
+    },
+    {
+      "fg": "--rs-ig-muted",
+      "bg": "--rs-ig-bg",
+      "min": 4.5,
+      "use": "Instagram meta, after-fold text"
+    },
+    {
+      "fg": "--rs-ig-link",
+      "bg": "--rs-ig-bg",
+      "min": 4.5,
+      "use": "Instagram hashtags"
+    },
+    {
+      "fg": "--rs-ig-muted",
+      "bg": "--rs-ig-placeholder",
+      "min": 4.5,
+      "use": "Instagram missing-image placeholder text"
+    },
+    {
+      "fg": "--rs-ig-text",
+      "bg": "--rs-ig-avatar-bg",
+      "min": 4.5,
+      "use": "Instagram avatar initials"
+    },
+    {
+      "fg": "--rs-fb-text",
+      "bg": "--rs-fb-bg",
+      "min": 4.5,
+      "use": "Facebook post text"
+    },
+    {
+      "fg": "--rs-fb-muted",
+      "bg": "--rs-fb-bg",
+      "min": 4.5,
+      "use": "Facebook time, action labels"
+    },
+    {
+      "fg": "--rs-fb-link",
+      "bg": "--rs-fb-bg",
+      "min": 4.5,
+      "use": "Facebook hashtags and links"
+    },
+    {
+      "fg": "--rs-fb-text",
+      "bg": "--rs-fb-card",
+      "min": 4.5,
+      "use": "Facebook link card title"
+    },
+    {
+      "fg": "--rs-fb-muted",
+      "bg": "--rs-fb-card",
+      "min": 4.5,
+      "use": "Facebook link card domain"
+    },
+    {
+      "fg": "--rs-fb-text",
+      "bg": "--rs-fb-avatar-bg",
+      "min": 4.5,
+      "use": "Facebook avatar initials"
+    },
+    {
+      "fg": "--rs-fb-on-brand",
+      "bg": "--rs-fb-brand",
+      "min": 3.0,
+      "use": "Facebook logo glyph (non-text)"
+    },
+    {
+      "fg": "--rs-li-text",
+      "bg": "--rs-li-page",
+      "min": 4.5,
+      "use": "LinkedIn link card title on page grey"
+    },
+    {
+      "fg": "--rs-li-muted",
+      "bg": "--rs-li-page",
+      "min": 4.5,
+      "use": "LinkedIn link card domain on page grey"
+    }
   ]
 }

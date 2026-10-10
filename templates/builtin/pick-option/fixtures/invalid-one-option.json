@@ -1,0 +1,9 @@
+{
+  "question": "Which venue should we book?",
+  "options": [
+    {
+      "id": "boathouse",
+      "name": "Riverside Boathouse"
+    }
+  ]
+}

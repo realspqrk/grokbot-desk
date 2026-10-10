@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "id": "holiday-calendar-2027",
+      "source": "People team",
+      "title": "Publish the 2027 holiday calendar as drafted",
+      "detail": "Same pattern as this year: the office closes between December 24 and January 1, plus two flexible days per person.",
+      "choices": ["approve", "reject"]
+    }
+  ]
+}

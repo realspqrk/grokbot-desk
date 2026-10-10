@@ -1,0 +1,82 @@
+/* pick-option (built-in, calm). Tokens only: var(--rs-*) colours,
+   var(--space-*) spacing, no colour literals, no URLs.
+   The question, then 2-4 option cards side by side (one column each; 3 or 4
+   cards fall back to two columns when the column is narrow). The cards are
+   the radios of one rs-action-row; their rows (name, summary, facts) line up
+   through a subgrid. Picked = ink border, neutral selected fill and a filled
+   mark: no accent, the accent stays on the one primary. */
+.po {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  container-type: inline-size;
+}
+.po__lead { display: flex; flex-direction: column; gap: var(--space-1); }
+.po__context { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+
+/* ---- the radio group: one grid column per option ---- */
+.po__options {
+  display: grid;
+  grid-template-columns: repeat(var(--po-cols, 2), minmax(0, 1fr));
+  gap: var(--space-3);
+  align-items: stretch;
+}
+.po .po__options > .po__card {
+  grid-row: span var(--po-rows, 1);
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-3);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--rs-line);
+  border-radius: var(--rs-r-lg);
+  background: var(--rs-card);
+  color: var(--rs-ink);
+  font-weight: var(--rs-fw-normal);
+  line-height: var(--rs-lh);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.po .po__options[data-count="4"] > .po__card { padding: var(--space-3); }
+.po .po__options > .po__card:hover { background: var(--rs-hover); }
+.po .po__options > .po__card[aria-checked="true"],
+.po .po__options > .po__card[aria-checked="true"]:hover {
+  border-color: var(--rs-ink);
+  box-shadow: inset 0 0 0 1px var(--rs-ink);
+  background: var(--rs-selected);
+  font-weight: var(--rs-fw-normal);
+}
+.po .po__options > .po__card:disabled { color: var(--rs-ink); }
+.po .po__options > .po__card:disabled:not([aria-checked="true"]) { color: var(--rs-muted); }
+
+.po__head { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+.po__mark { flex: none; display: inline-grid; padding-top: 1px; color: var(--rs-muted); }
+.po__mark > .rs-ico { grid-area: 1 / 1; width: 20px; height: 20px; }
+.po__mark > .po__mark-on { display: none; }
+.po__card[aria-checked="true"] .po__mark { color: var(--rs-ink); }
+.po__card[aria-checked="true"] .po__mark-off { display: none; }
+.po__card[aria-checked="true"] .po__mark > .po__mark-on { display: block; }
+.po__mark-on circle { fill: var(--rs-ink); }
+.po__mark-on path { stroke: var(--rs-paper); stroke-width: 2.2; }
+
+.po__title { display: flex; flex-direction: column; min-width: 0; }
+.po__name { font-weight: var(--rs-fw-strong); }
+.po__suggested,
+.po__summary,
+.po__label { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.po__fact { display: flex; flex-direction: column; min-width: 0; }
+.po__value { font-variant-numeric: tabular-nums; }
+
+/* narrow column: 3 or 4 options wrap to two columns, each card on its own */
+@container (max-width: 560px) {
+  .po .po__options[data-count="3"],
+  .po .po__options[data-count="4"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 360px) {
+  .po .po__options { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- the optional note ---- */
+.po__extra { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.po__note { width: 100%; max-width: var(--rs-measure); }

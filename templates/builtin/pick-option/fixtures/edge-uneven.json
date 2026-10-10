@@ -1,0 +1,47 @@
+{
+  "question": "Welcher Termin passt für die Wartung der Heizung?",
+  "context": "Die Technikerin braucht etwa zwei Stunden; das Warmwasser ist in der Zeit abgeschaltet.",
+  "options": [
+    {
+      "id": "mo-frueh",
+      "name": "Montag früh",
+      "summary": "Vor Arbeitsbeginn, danach ist alles wieder warm.",
+      "facts": [
+        {
+          "label": "Zeit",
+          "value": "07:00 bis 09:00"
+        },
+        {
+          "label": "Aufpreis",
+          "value": "€25 Frühzuschlag"
+        }
+      ]
+    },
+    {
+      "id": "mi-mittag",
+      "name": "Mittwoch Mittag",
+      "facts": [
+        {
+          "label": "Zeit",
+          "value": "11:00 bis 13:00"
+        }
+      ]
+    },
+    {
+      "id": "fr-nachmittag",
+      "name": "Freitag Nachmittag",
+      "summary": "Ein Ersatzteil für das Ventil ist dann sicher da.",
+      "facts": [
+        {
+          "label": "Zeit",
+          "value": "14:00 bis 16:00"
+        },
+        {
+          "label": "Aufpreis",
+          "value": "keiner"
+        }
+      ]
+    }
+  ],
+  "suggested": "fr-nachmittag"
+}

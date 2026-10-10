@@ -1,0 +1,238 @@
+{
+  "type": "object",
+  "required": [
+    "author",
+    "text",
+    "hashtags",
+    "platforms"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "persona": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "description": "Optional voice or persona the draft was written in; a quiet line in the overflow menu."
+    },
+    "post_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "description": "Optional id of this post draft at the agent; a quiet line in the overflow menu."
+    },
+    "author": {
+      "type": "object",
+      "required": [
+        "name",
+        "handle"
+      ],
+      "additionalProperties": false,
+      "description": "The account the post is published from.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "handle": {
+          "type": "string",
+          "pattern": "^[^\\s@]{1,30}$",
+          "description": "Without @; X shows it as @handle."
+        },
+        "headline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "LinkedIn headline under the name."
+        },
+        "avatar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "x-rs-media": true,
+          "description": "Absolute image path under a media root."
+        }
+      }
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63206,
+      "description": "Post text for every platform without a variant."
+    },
+    "hashtags": {
+      "type": "array",
+      "maxItems": 30,
+      "description": "Stored without #; appended as \"#a #b\" after a blank line when hashtag_mode is append.",
+      "items": {
+        "type": "string",
+        "pattern": "^[^\\s#]{1,100}$"
+      }
+    },
+    "hashtag_mode": {
+      "enum": [
+        "append",
+        "none"
+      ],
+      "default": "append"
+    },
+    "first_comment": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1250,
+      "description": "Optional first comment the reviewer posts under the post."
+    },
+    "link": {
+      "type": "object",
+      "required": [
+        "url",
+        "title",
+        "domain"
+      ],
+      "additionalProperties": false,
+      "description": "Link card, rendered from these fields only (nothing is fetched). Shown when there is no image.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 2000
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": [
+        "path",
+        "alt",
+        "ratio"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "x-rs-media": true,
+          "description": "Absolute image path under a media root."
+        },
+        "alt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "ratio": {
+          "enum": [
+            "1:1",
+            "4:5",
+            "1.91:1",
+            "16:9"
+          ]
+        }
+      }
+    },
+    "platforms": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "x",
+          "linkedin",
+          "instagram",
+          "facebook"
+        ]
+      }
+    },
+    "variants": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-platform text that replaces `text` for that platform.",
+      "properties": {
+        "x": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63206
+            }
+          }
+        },
+        "linkedin": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63206
+            }
+          }
+        },
+        "instagram": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63206
+            }
+          }
+        },
+        "facebook": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63206
+            }
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "The agent's note to the reviewer, shown above the previews."
+    },
+    "flag": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "description": "Characters or words the post should avoid (house style); each one found in the composed text or the first comment shows a warning badge. Never blocks approving.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["choice", "note"],
+  "additionalProperties": false,
+  "properties": {
+    "choice": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$", "description": "The id of the picked option."},
+    "note": {"type": "string", "maxLength": 1000, "description": "Optional note, may be empty."}
+  }
+}

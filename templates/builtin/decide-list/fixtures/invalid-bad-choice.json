@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"id": "travel-workshop", "title": "Train and hotel for the client workshop in Lisbon, 412.80 EUR"},
+    {"id": "laptop-refresh", "title": "Replace two laptops that fail the disk health check", "choices": ["maybe", "reject"]}
+  ]
+}

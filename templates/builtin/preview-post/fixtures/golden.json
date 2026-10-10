@@ -1,0 +1,30 @@
+{
+  "persona": "Friendly shop voice",
+  "post_id": "autumn-menu-2026",
+  "author": {
+    "name": "Linden Street Bakery",
+    "handle": "lindenstreetbakery",
+    "headline": "Neighbourhood bakery · Sourdough, cakes and coffee since 1998",
+    "avatar": "%RS_TEMPLATE%\\fixtures\\media\\avatar.jpg"
+  },
+  "text": "Our autumn menu starts Monday: pumpkin sourdough, apple crumb cake and a soup of the week. The first loaves come out of the oven at 7, so come early if you want a warm one. Thank you for all your suggestions!",
+  "hashtags": [
+    "AutumnMenu",
+    "Sourdough",
+    "LocalBakery"
+  ],
+  "hashtag_mode": "append",
+  "first_comment": "Opening hours and the full menu: lindenstreet.example/menu",
+  "image": {
+    "path": "%RS_TEMPLATE%\\fixtures\\media\\loaves.jpg",
+    "alt": "Round sourdough loaves and rolls on wooden shelves, baguettes standing in a basket",
+    "ratio": "1.91:1"
+  },
+  "platforms": [
+    "x",
+    "linkedin",
+    "instagram",
+    "facebook"
+  ],
+  "notes": "Autumn menu post for all four channels. The menu link is in the first comment."
+}

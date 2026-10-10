@@ -1,0 +1,56 @@
+{
+  "intro": "Approve these five requests? Approve = go ahead, Reject = I say no and tell the requester, Defer = ask me again next week.",
+  "items": [
+    {
+      "id": "travel-workshop",
+      "kind": "Travel",
+      "source": "Sam Okafor",
+      "title": "Train and hotel for the client workshop in Lisbon, 412.80 EUR",
+      "due": "2026-10-14",
+      "copy": [
+        {"label": "Copy booking ref", "text": "NW-TRV-20418"},
+        {"label": "Copy amount", "text": "412.80"}
+      ]
+    },
+    {
+      "id": "laptop-refresh",
+      "kind": "Purchase",
+      "source": "IT desk",
+      "title": "Replace two laptops that fail the disk health check",
+      "detail": "Both devices are older than five years. The quote covers two 14-inch laptops with three years of on-site service.",
+      "copy": [
+        {"label": "Copy quote no.", "text": "Q-2026-0381"}
+      ]
+    },
+    {
+      "id": "billing-repo-access",
+      "kind": "Access",
+      "source": "Priya Natarajan",
+      "title": "Write access to the billing-service repository",
+      "detail": "Joins the invoicing team on Monday. Read access is already in place.",
+      "choices": ["approve", "reject"]
+    },
+    {
+      "id": "cleaning-renewal",
+      "kind": "Contract",
+      "source": "Northwind Facilities",
+      "title": "Renew the office cleaning contract for 12 months at the same rate",
+      "due": "2026-10-31",
+      "copy": [
+        {"label": "Copy contract no.", "text": "NWF-7731-B"}
+      ]
+    },
+    {
+      "id": "offsite-date",
+      "kind": "Event",
+      "source": "People team",
+      "title": "Move the team offsite from November 6 to November 13",
+      "choices": ["approve", "defer"]
+    }
+  ],
+  "done": [
+    {"text": "Filed three receipts under October expenses"},
+    {"text": "Answered the parking permit question from facilities"},
+    {"text": "Declined two duplicate meeting invitations"}
+  ]
+}

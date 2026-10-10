@@ -1,20 +1,28 @@
 import json
+import io
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
+from core.cli import _load_show_payload
+from core.product import RUNNER_ID
+from core.registry import scan_registry
 
 import core.cli as cli_module
 import conftest as fixture_module
 from conftest import ROOT, free_port
 
-P6_RUNNER = ROOT / "tools" / "e2e.mjs"
-P6_SKIP_REASON = "tools/e2e.mjs backend is unavailable"
+E2E_RUNNER = ROOT / "tools" / "e2e.mjs"
+E2E_SKIP_REASON = "tools/e2e.mjs is unavailable"
 
 
 def _bounded_milliseconds(env, name, default):
@@ -51,7 +59,11 @@ def _check_timeout_seconds(env):
 def _timeout_text(value):
     if value is None:
         return ""
-    return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+    return (
+        value.decode("utf-8", errors="replace")
+        if isinstance(value, bytes)
+        else str(value)
+    )
 
 
 def cli(env, port, *args, input_text=None):
@@ -90,7 +102,11 @@ def cli(env, port, *args, input_text=None):
         stderr = _timeout_text(error.stderr)
         stdout = _timeout_text(error.stdout)
         try:
-            stage_output = stage_path.read_text(encoding="utf-8") if stage_path else ""
+            stage_output = (
+                stage_path.read_text(encoding="utf-8")
+                if stage_path
+                else ""
+            )
         except OSError:
             stage_output = ""
         stages = re.findall(
@@ -139,11 +155,11 @@ def test_teardown_never_touches_server_without_launch_ownership(
             "token": "test-stop-token",
             "measurement_owner": owner,
         }
-        (data_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        (data_dir / "state.json").write_text(
+            json.dumps(state), encoding="utf-8"
+        )
 
-    signals = []
     stop_requests = []
-    clock = iter(range(0, 1000, 10))
     monkeypatch.setattr(
         fixture_module,
         "_hello",
@@ -152,13 +168,6 @@ def test_teardown_never_touches_server_without_launch_ownership(
             "pid": pid,
             "port": requested_port,
         },
-    )
-    monkeypatch.setattr(fixture_module.time, "monotonic", lambda: next(clock))
-    monkeypatch.setattr(fixture_module.time, "sleep", lambda _: None)
-    monkeypatch.setattr(
-        fixture_module.os,
-        "kill",
-        lambda target, sent_signal: signals.append((target, sent_signal)),
     )
     monkeypatch.setattr(
         fixture_module.urllib.request,
@@ -171,7 +180,6 @@ def test_teardown_never_touches_server_without_launch_ownership(
         fixture_module._stop_owned_server(env, port)
 
     assert stop_requests == []
-    assert signals == []
 
 
 def test_owned_process_handle_escalates_only_that_handle():
@@ -198,6 +206,25 @@ def test_owned_process_handle_escalates_only_that_handle():
     assert calls == ["terminate", ("wait", 3), "kill", ("wait", 3)]
 
 
+def test_public_runner_identity_is_accepted(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    response = Response()
+    response.read = lambda: b'{"runner":"grokbot-desk/1","port":18901}'
+    monkeypatch.setattr(
+        cli_module.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: response,
+    )
+
+    assert cli_module._hello(18901)["runner"] == "grokbot-desk/1"
+
+
 def test_server_start_timeout_is_configurable_and_bounded(monkeypatch):
     monkeypatch.setenv("RS_SERVER_START_TIMEOUT_MS", "15000")
     assert cli_module._server_start_timeout_seconds() == 15
@@ -219,7 +246,7 @@ def test_server_fixture_failure_includes_captured_stderr_tail(
             return self.returncode
 
     def popen(*args, **kwargs):
-        kwargs["stderr"].write(b"darwin startup failure\n")
+        kwargs["stderr"].write(b"synthetic startup failure\n")
         kwargs["stderr"].flush()
         return Process()
 
@@ -229,7 +256,7 @@ def test_server_fixture_failure_includes_captured_stderr_tail(
     try:
         with pytest.raises(
             AssertionError,
-            match="server stderr tail.*darwin startup failure",
+            match="server stderr tail.*synthetic startup failure",
         ):
             start({})
     finally:
@@ -284,12 +311,21 @@ def test_e2e_reports_server_browser_and_expectation_wait_stages():
     assert "rs-e2e stage: running expect checks" in source
 
 
-def test_free_port_rotates_within_configured_test_range():
+def test_default_free_port_constants():
+    assert fixture_module.TEST_PORT_FIRST == 18920
+    assert fixture_module.TEST_PORT_LAST == 18939
+
+
+def test_free_port_rotates_within_configured_test_range(monkeypatch):
+    monkeypatch.setenv("RS_TEST_PORT_MIN", "18910")
+    monkeypatch.setenv("RS_TEST_PORT_MAX", "18919")
+    monkeypatch.setattr(fixture_module, "_next_test_port", 18910)
+
     first = free_port()
     second = free_port()
 
-    assert 18920 <= first <= 18939
-    assert 18920 <= second <= 18939
+    assert 18910 <= first <= 18919
+    assert 18910 <= second <= 18919
     assert first != second
 
 
@@ -313,12 +349,406 @@ def test_isolated_cli_http_timeout_is_configurable(monkeypatch):
         lambda request, timeout: seen.append(timeout) or Response(),
     )
 
-    assert cli_module._request(18920, "/test", body={"value": 1}) == {"ok": True}
+    assert cli_module._request(
+        18920, "/test", body={"value": 1}
+    ) == {"ok": True}
     assert seen == [12.0]
 
 
+def test_open_reports_bounded_browser_launch_error(tmp_path, monkeypatch, capsys):
+    from core import cli as cli_module
+    from core.platform_types import BrowserLaunchError
+
+    monkeypatch.setattr(
+        cli_module,
+        "_ensure_server",
+        lambda base, port: {"open_runs": 1, "window_alive": False},
+    )
+    monkeypatch.setattr(cli_module, "_state", lambda base: {})
+    monkeypatch.setattr(cli_module, "load_config", lambda base: {})
+    monkeypatch.setattr(
+        cli_module,
+        "_launch_window_once",
+        lambda *args: (_ for _ in ()).throw(
+            BrowserLaunchError("could not launch edge app window")
+        ),
+    )
+
+    assert cli_module.command_open(tmp_path, 18921) == 3
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "report-shell: could not launch edge app window\n"
+
+
+def test_show_reports_bounded_browser_launch_error(tmp_path, monkeypatch, capsys):
+    from core import cli as cli_module
+    from core.platform_types import BrowserLaunchError
+
+    template_path = tmp_path / "template"
+    template_path.mkdir()
+    (template_path / "schema.json").write_text("{}", encoding="utf-8")
+    template = type(
+        "Template",
+        (),
+        {
+            "id": "sample",
+            "path": template_path,
+            "root_identity": None,
+            "file_path": lambda self, name: self.path / name,
+                "read_text": lambda self, name: (
+                    self.path / name
+                ).read_text(encoding="utf-8"),
+        },
+    )()
+    payload = {"run_id": "run-1", "data": {}}
+    monkeypatch.setattr(
+        cli_module, "scan_registry", lambda root, user_root=None: {"sample": template}
+    )
+    monkeypatch.setattr(
+        cli_module, "_load_show_payload", lambda *args, **kwargs: payload
+    )
+    monkeypatch.setattr(cli_module, "load_config", lambda base: {})
+    monkeypatch.setattr(cli_module, "replace_media", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli_module, "_ensure_server", lambda base, port: {})
+    monkeypatch.setattr(cli_module, "_state", lambda base: {"token": "secret"})
+    response = io.BytesIO(
+        json.dumps(
+            {
+                "run_id": "run-1",
+                "url": "http://127.0.0.1:18921/?run=run-1",
+                "result_path": str(tmp_path / "result.json"),
+                "window_alive": False,
+            }
+        ).encode("utf-8")
+    )
+    monkeypatch.setattr(cli_module.urllib.request, "urlopen", lambda *args, **kwargs: response)
+    monkeypatch.setattr(
+        cli_module,
+        "_launch_window_once",
+        lambda *args: (_ for _ in ()).throw(
+            BrowserLaunchError("could not launch edge app window")
+        ),
+    )
+    args = type(
+        "Args",
+        (),
+        {
+            "template": "sample",
+            "data": "unused",
+            "no_window": False,
+            "focus": False,
+        },
+    )()
+
+    assert cli_module.command_show(args, tmp_path, 18921) == 3
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "report-shell: could not launch edge app window\n"
+
+
+def test_failed_launch_clears_pending_and_next_attempt_launches(
+    tmp_path, monkeypatch
+):
+    from core import cli as cli_module
+    from core.platform_types import (
+        BrowserLaunchError,
+        LaunchResult,
+        WindowLaunchStatus,
+    )
+
+    base = tmp_path / "data"
+    base.mkdir()
+    attempts = 0
+
+    def launch(*args):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise BrowserLaunchError("launch failed")
+        return LaunchResult("app")
+
+    monkeypatch.setattr(cli_module, "launch_window", launch)
+
+    with pytest.raises(BrowserLaunchError):
+        cli_module._launch_window_once(base, "http://127.0.0.1:18921/", {})
+    assert "browser_launch_pending_until" not in cli_module._state(base)
+    assert (
+        cli_module._launch_window_once(base, "http://127.0.0.1:18921/", {})
+        is WindowLaunchStatus.LAUNCHED
+    )
+    assert attempts == 2
+
+
+def test_concurrent_window_launches_return_explicit_pending_and_launch_once(
+    tmp_path, monkeypatch
+):
+    from core import cli as cli_module
+    from core.platform_types import LaunchResult, WindowLaunchStatus
+
+    base = tmp_path / "data"
+    base.mkdir()
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def launch(*args):
+        calls.append(args)
+        entered.set()
+        assert release.wait(2)
+        return LaunchResult("app")
+
+    monkeypatch.setattr(cli_module, "launch_window", launch)
+    background = []
+
+    def first():
+        background.append(
+            cli_module._launch_window_once(
+                base, "http://127.0.0.1:18921/", {}
+            )
+        )
+
+    thread = threading.Thread(target=first)
+    thread.start()
+    assert entered.wait(2)
+    concurrent = cli_module._launch_window_once(
+        base, "http://127.0.0.1:18921/", {}
+    )
+    release.set()
+    thread.join(2)
+
+    assert concurrent is WindowLaunchStatus.PENDING
+    assert background == [WindowLaunchStatus.LAUNCHED]
+    assert len(calls) == 1
+
+
+def test_concurrent_open_rechecks_page_readiness_after_stale_snapshot(
+    tmp_path, monkeypatch
+):
+    from core import cli as cli_module
+    from core.launch_coordination import (
+        clear_launch_pending_coordinated,
+        pending_launch_generation,
+    )
+    from core.platform_types import LaunchResult
+    from core.server import SSEHub
+
+    base = tmp_path / "data"
+    base.mkdir()
+    hub = SSEHub()
+    stale_snapshot = threading.Event()
+    resume = threading.Event()
+    real_launch_once = cli_module._launch_window_once
+
+    monkeypatch.setattr(
+        cli_module,
+        "_ensure_server",
+        lambda selected, port: {
+            "open_runs": 1,
+            "window_alive": False,
+        },
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_hello",
+        lambda port: {"window_alive": hub.window_alive()},
+    )
+    monkeypatch.setattr(cli_module, "load_config", lambda selected: {})
+    launches = []
+    monkeypatch.setattr(
+        cli_module,
+        "launch_window",
+        lambda *args: launches.append(args) or LaunchResult("app"),
+    )
+
+    def delayed_launch_once(*args):
+        if threading.current_thread().name == "stale-open":
+            stale_snapshot.set()
+            assert resume.wait(2)
+        return real_launch_once(*args)
+
+    monkeypatch.setattr(cli_module, "_launch_window_once", delayed_launch_once)
+    results = []
+    stale = threading.Thread(
+        name="stale-open",
+        target=lambda: results.append(cli_module.command_open(base, 18921)),
+    )
+    stale.start()
+    assert stale_snapshot.wait(2)
+    assert cli_module.command_open(base, 18921) == 0
+
+    subscriber_id, _ = hub.subscribe(False)
+    hub.mark_write(subscriber_id)
+    generation = pending_launch_generation(base)
+    assert generation is not None
+    assert clear_launch_pending_coordinated(base, generation)
+    resume.set()
+    stale.join(2)
+
+    assert not stale.is_alive()
+    assert results == [0]
+    assert len(launches) == 1
+
+
+def test_concurrent_show_rechecks_page_readiness_after_open_launch(
+    tmp_path, monkeypatch
+):
+    from core import cli as cli_module
+    from core.launch_coordination import (
+        clear_launch_pending_coordinated,
+        pending_launch_generation,
+    )
+    from core.platform_types import LaunchResult
+    from core.server import SSEHub
+
+    base = tmp_path / "data"
+    base.mkdir()
+    template_path = tmp_path / "template"
+    template_path.mkdir()
+    (template_path / "schema.json").write_text("{}", encoding="utf-8")
+    template = type(
+        "Template",
+        (),
+        {
+            "id": "sample",
+            "path": template_path,
+            "root_identity": None,
+            "file_path": lambda self, name: self.path / name,
+                "read_text": lambda self, name: (
+                    self.path / name
+                ).read_text(encoding="utf-8"),
+        },
+    )()
+    payload = {"run_id": "run-1", "data": {}}
+    response_body = json.dumps(
+        {
+            "run_id": "run-1",
+            "url": "http://127.0.0.1:18921/?run=run-1",
+            "result_path": str(tmp_path / "result.json"),
+            "window_alive": False,
+        }
+    ).encode("utf-8")
+    hub = SSEHub()
+    stale_snapshot = threading.Event()
+    resume = threading.Event()
+    real_launch_once = cli_module._launch_window_once
+
+    monkeypatch.setattr(
+        cli_module,
+        "scan_registry",
+        lambda root, user_root=None: {"sample": template},
+    )
+    monkeypatch.setattr(
+        cli_module, "_load_show_payload", lambda *args, **kwargs: payload
+    )
+    monkeypatch.setattr(cli_module, "replace_media", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        cli_module,
+        "_ensure_server",
+        lambda selected, port: {
+            "open_runs": 1,
+            "window_alive": False,
+        },
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_hello",
+        lambda port: {"window_alive": hub.window_alive()},
+    )
+    monkeypatch.setattr(cli_module, "_state", lambda selected: {"token": "secret"})
+    monkeypatch.setattr(cli_module, "load_config", lambda selected: {})
+    monkeypatch.setattr(
+        cli_module.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: io.BytesIO(response_body),
+    )
+    launches = []
+    monkeypatch.setattr(
+        cli_module,
+        "launch_window",
+        lambda *args: launches.append(args) or LaunchResult("app"),
+    )
+
+    def delayed_launch_once(*args):
+        if threading.current_thread().name == "stale-show":
+            stale_snapshot.set()
+            assert resume.wait(2)
+        return real_launch_once(*args)
+
+    monkeypatch.setattr(cli_module, "_launch_window_once", delayed_launch_once)
+    args = type(
+        "Args",
+        (),
+        {
+            "template": "sample",
+            "data": "unused",
+            "no_window": False,
+            "focus": False,
+        },
+    )()
+    results = []
+    stale = threading.Thread(
+        name="stale-show",
+        target=lambda: results.append(
+            cli_module.command_show(args, base, 18921)
+        ),
+    )
+    stale.start()
+    assert stale_snapshot.wait(2)
+    assert cli_module.command_open(base, 18921) == 0
+
+    subscriber_id, _ = hub.subscribe(False)
+    hub.mark_write(subscriber_id)
+    generation = pending_launch_generation(base)
+    assert generation is not None
+    assert clear_launch_pending_coordinated(base, generation)
+    resume.set()
+    stale.join(2)
+
+    assert not stale.is_alive()
+    assert results == [0]
+    assert len(launches) == 1
+
+
+def test_open_reports_pending_and_launched_truthfully(
+    tmp_path, monkeypatch, capsys
+):
+    from core import cli as cli_module
+    from core.platform_types import LaunchResult
+
+    base = tmp_path / "data"
+    base.mkdir()
+    monkeypatch.setattr(
+        cli_module,
+        "_ensure_server",
+        lambda selected, port: {"open_runs": 1, "window_alive": False},
+    )
+    monkeypatch.setattr(cli_module, "load_config", lambda selected: {})
+    calls = []
+    monkeypatch.setattr(
+        cli_module,
+        "launch_window",
+        lambda *args: calls.append(args) or LaunchResult("app"),
+    )
+    (base / "state.json").write_text(
+        json.dumps({"browser_launch_pending_until": time.time() + 5}),
+        encoding="utf-8",
+    )
+
+    assert cli_module.command_open(base, 18921) == 0
+    pending = json.loads(capsys.readouterr().out)
+    assert pending == {"ok": True, "opened": False, "pending": True}
+    assert calls == []
+
+    (base / "state.json").write_text("{}", encoding="utf-8")
+    assert cli_module.command_open(base, 18921) == 0
+    launched = json.loads(capsys.readouterr().out)
+    assert launched == {"ok": True, "opened": True, "pending": False}
+    assert len(calls) == 1
+
+
 def test_list_check_and_new_round_trip(tmp_path):
-    env = dict(os.environ, RS_DATA_DIR=str(tmp_path / "data"))
+    data_dir = tmp_path / "data"
+    env = dict(os.environ, RS_DATA_DIR=str(data_dir))
     port = free_port()
     listed = cli(env, port, "list")
     assert listed.returncode == 0
@@ -336,11 +766,12 @@ def test_list_check_and_new_round_trip(tmp_path):
         text=True,
     )
     assert created.returncode == 0
-    assert (repo / "templates" / "acme" / "sample" / "template.json").exists()
+    assert (data_dir / "templates" / "sample" / "template.json").exists()
+    assert not (repo / "templates" / "acme" / "sample").exists()
 
 
-@pytest.mark.skipif(not P6_RUNNER.is_file(), reason=P6_SKIP_REASON)
-def test_starter_check_succeeds_with_p6_expectation_backend(
+@pytest.mark.skipif(not E2E_RUNNER.is_file(), reason=E2E_SKIP_REASON)
+def test_starter_check_succeeds_with_expectation_backend(
     tmp_path, server_guard
 ):
     port = free_port()
@@ -356,7 +787,7 @@ def test_starter_and_new_template_carry_canonical_expectation(tmp_path):
     canonical = (
         ROOT
         / "templates"
-        / "global"
+        / "builtin"
         / "_starter"
         / "fixtures"
         / "expect"
@@ -373,14 +804,15 @@ def test_starter_and_new_template_carry_canonical_expectation(tmp_path):
     created = subprocess.run(
         [sys.executable, str(repo / "report_shell.py"), "new", "example/sample"],
         cwd=repo,
+        env=dict(os.environ, RS_DATA_DIR=str(tmp_path / "data")),
         capture_output=True,
         text=True,
     )
     assert created.returncode == 0, created.stderr
     copied = (
-        repo
+        tmp_path
+        / "data"
         / "templates"
-        / "example"
         / "sample"
         / "fixtures"
         / "expect"
@@ -389,7 +821,7 @@ def test_starter_and_new_template_carry_canonical_expectation(tmp_path):
     assert json.loads(copied.read_text(encoding="utf-8")) == expected
 
 
-@pytest.mark.skipif(not P6_RUNNER.is_file(), reason=P6_SKIP_REASON)
+@pytest.mark.skipif(not E2E_RUNNER.is_file(), reason=E2E_SKIP_REASON)
 def test_read_only_template_commands_do_not_create_data_dir(
     tmp_path, server_guard
 ):
@@ -405,37 +837,6 @@ def test_read_only_template_commands_do_not_create_data_dir(
     assert not data_dir.exists()
 
 
-def test_global_template_wraps_bare_data_with_neutral_agent_bot(
-    tmp_path, server_guard
-):
-    data_dir = tmp_path / "data"
-    port = free_port()
-    env = server_guard(
-        dict(os.environ, RS_DATA_DIR=str(data_dir)),
-        port,
-    )
-    payload = tmp_path / "bare.json"
-    payload.write_text('{"message":"Neutral payload"}', encoding="utf-8")
-    try:
-        shown = cli(
-            env,
-            port,
-            "show",
-            "_starter",
-            "--data",
-            str(payload),
-            "--no-window",
-        )
-        assert shown.returncode == 0, shown.stderr
-        run_id = json.loads(shown.stdout)["run_id"]
-        record = json.loads(
-            (data_dir / "runs" / f"{run_id}.json").read_text(encoding="utf-8")
-        )
-        assert record["payload"]["bot"] == "agent"
-    finally:
-        cli(env, port, "stop")
-
-
 def test_show_submit_wait_result_cancel_status_and_stop(
     tmp_path, server_guard
 ):
@@ -445,7 +846,7 @@ def test_show_submit_wait_result_cancel_status_and_stop(
         dict(os.environ, RS_DATA_DIR=str(data_dir)),
         port,
     )
-    fixture = ROOT / "templates" / "global" / "_starter" / "fixtures" / "golden.json"
+    fixture = ROOT / "templates" / "builtin" / "_starter" / "fixtures" / "golden.json"
     try:
         shown = cli(env, port, "show", "_starter", "--data", str(fixture), "--no-window")
         assert shown.returncode == 0, shown.stderr
@@ -453,9 +854,11 @@ def test_show_submit_wait_result_cancel_status_and_stop(
         status = json.loads(cli(env, port, "status").stdout)
         assert status["up"] is True and status["open_runs"] == 1
         hello = json.loads(
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/hello").read()
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/hello"
+            ).read()
         )
-        assert hello["runner"] == "grokbot-desk/1"
+        assert hello["runner"] == RUNNER_ID
 
         page = urllib.request.urlopen(f"http://127.0.0.1:{port}/").read().decode()
         boot = json.loads(re.search(r'<script id="rs-boot" type="application/json">(.*?)</script>', page, re.S).group(1))
@@ -492,6 +895,26 @@ def test_cli_exit_codes(tmp_path):
     assert cli(env, port, "wait", "missing", "--timeout", ".1").returncode == 6
 
 
+def test_cli_preserves_omitted_run_id_for_server_side_generation(tmp_path):
+    source = tmp_path / "payload.json"
+    source.write_text(json.dumps({"message": "Hello"}), encoding="utf-8")
+    registry = scan_registry(ROOT / "templates")
+    colliding_id = "20261008-120000-python-dev-abcd"
+
+    with patch(
+        "core.envelope.generate_run_id",
+        return_value=colliding_id,
+    ):
+        payload = _load_show_payload(
+            SimpleNamespace(data=str(source)),
+            registry["_starter"],
+            registry,
+            used_ids={colliding_id},
+        )
+
+    assert "run_id" not in payload
+
+
 def test_duplicate_run_id_is_invalid_payload(tmp_path, server_guard):
     data_dir = tmp_path / "data"
     port = free_port()
@@ -507,7 +930,7 @@ def test_duplicate_run_id_is_invalid_payload(tmp_path, server_guard):
                 "template": "_starter",
                 "version": 1,
                 "run_id": "20261008-120000-test-abcd",
-                "bot": "example-dev-bot",
+                "bot": "automation-agent",
                 "title": "Duplicate test",
                 "created": "2026-10-08T12:00:00+02:00",
                 "data": {"message": "Hello"},
@@ -557,7 +980,7 @@ def test_show_malformed_envelope_fields_exit_2_without_traceback(
         "schema": "report-shell/payload@1",
         "template": "_starter",
         "version": 1,
-        "bot": "example-dev-bot",
+        "bot": "automation-agent",
         "title": "Malformed envelope",
         "created": "2026-10-08T12:00:00+02:00",
         "data": {"message": "Hello"},
@@ -583,7 +1006,7 @@ def test_finding_8_cli_rejects_non_json_numeric_constants(tmp_path):
           "schema":"report-shell/payload@1",
           "template":"_starter",
           "version":1,
-          "bot":"example-dev-bot",
+          "bot":"automation-agent",
           "title":"Non-finite",
           "created":"2026-10-08T12:00:00+02:00",
           "expires_minutes":NaN,
@@ -659,15 +1082,18 @@ def test_new_rejects_existing_target(tmp_path):
     import shutil
 
     shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    env = dict(os.environ, RS_DATA_DIR=str(tmp_path / "data"))
     first = subprocess.run(
         [sys.executable, str(repo / "report_shell.py"), "new", "acme/sample"],
         cwd=repo,
+        env=env,
         capture_output=True,
         text=True,
     )
     second = subprocess.run(
         [sys.executable, str(repo / "report_shell.py"), "new", "acme/sample"],
         cwd=repo,
+        env=env,
         capture_output=True,
         text=True,
     )

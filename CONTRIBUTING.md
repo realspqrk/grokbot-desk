@@ -45,7 +45,7 @@ installed. macOS checks are experimental and advisory; browser launch,
 clipboard integration, and native platform behavior are not yet supported.
 
 Use a temporary `RS_DATA_DIR` and distinct ports in `18920`–`18939` for local
-server checks. Never use port 18742, and never point tests at a
+server checks. Never use the product port 18742, and never point tests at a
 production data directory.
 
 Live window measurements are not part of the public distribution.

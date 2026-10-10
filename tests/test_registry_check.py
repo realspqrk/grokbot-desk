@@ -17,12 +17,12 @@ from core.server import Handler, ReportHTTPServer
 
 
 ROOT = Path(__file__).resolve().parents[1]
-P6_RUNNER = ROOT / "tools" / "e2e.mjs"
-P6_SKIP_REASON = "tools/e2e.mjs backend is unavailable"
+E2E_RUNNER = ROOT / "tools" / "e2e.mjs"
+E2E_SKIP_REASON = "tools/e2e.mjs backend is unavailable"
 
 
-@pytest.mark.skipif(not P6_RUNNER.is_file(), reason=P6_SKIP_REASON)
-def test_starter_check_succeeds_with_p6_expectation_backend(
+@pytest.mark.skipif(not E2E_RUNNER.is_file(), reason=E2E_SKIP_REASON)
+def test_starter_check_succeeds_with_expectation_backend(
     tmp_path, monkeypatch, server_guard
 ):
     port = free_port()
@@ -829,3 +829,26 @@ def test_finding_5_node_tool_output_is_decoded_as_utf8(
     monkeypatch.setattr(check_module.subprocess, "run", run_fake_node)
     findings = check_template("_starter", tmp_path, visual=visual)
     assert expected in findings
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("template.html", '<div data-rs-strip><div role="toolbar"></div></div>'),
+        ("template.html", '<nav data-rs-rail></nav>'),
+        ("template.html", '<div id="rs-strip" role="toolbar"></div>'),
+        ("template.html", '<nav id="rs-strip-nav"></nav>'),
+        ("template.js", "root.querySelector('nav').setAttribute('data-rs-strip', '');"),
+        ("template.js", "root.querySelector('nav').dataset.rsStrip = '';"),
+        ("template.js", "root.querySelector('div').id = 'rs-strip';"),
+    ],
+)
+def test_p8d_fix1_templates_cannot_claim_the_shell_report_strip(tmp_path, filename, content):
+    # the calm checkers treat only the shell's own strip as the report
+    # switcher; a template must not be able to borrow that marker
+    target = install_minimal_template(tmp_path)
+    (target / filename).write_text(content, encoding="utf-8")
+    assert any(
+        "reserved for the shell's report strip" in finding
+        for finding in check_template("_starter", tmp_path)
+    )

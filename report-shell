@@ -1,0 +1,97 @@
+#!/bin/sh
+set -u
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 1
+
+resolve_path() {
+    target=$1
+    links=0
+    while [ -L "$target" ]; do
+        links=$((links + 1))
+        [ "$links" -le 40 ] || return 1
+        link=$(readlink "$target") || return 1
+        case $link in
+            /*) target=$link ;;
+            *) target=$(dirname "$target")/$link ;;
+        esac
+    done
+    directory=$(CDPATH= cd -- "$(dirname -- "$target")" && pwd -P) || return 1
+    printf '%s/%s\n' "$directory" "$(basename -- "$target")"
+}
+
+valid_python() {
+    candidate=$1
+    [ -x "$candidate" ] || return 1
+    resolved=$(resolve_path "$candidate") || return 1
+    [ "$resolved" != "/usr/bin/python3" ] || return 1
+    [ -x /usr/bin/perl ] || return 1
+    /usr/bin/perl -e '
+        use strict;
+        use warnings;
+        use POSIX qw(:sys_wait_h);
+        use Time::HiRes qw(time sleep);
+
+        my ($timeout, $grace, @command) = @ARGV;
+        my $child = fork();
+        exit 125 unless defined $child;
+        if ($child == 0) {
+            setpgrp(0, 0) or exit 125;
+            exec @command;
+            exit 126;
+        }
+
+        my $deadline = time() + $timeout;
+        while (1) {
+            my $waited = waitpid($child, WNOHANG);
+            if ($waited == $child) {
+                exit(($? & 127) ? 1 : ($? >> 8));
+            }
+            exit 125 if $waited == -1;
+            last if time() >= $deadline;
+            sleep(0.05);
+        }
+
+        # waitpid returned zero, so the retained child is still unreaped and
+        # its process-group identity cannot be recycled while we signal it.
+        kill "TERM", -$child;
+        my $term_deadline = time() + $grace;
+        while (time() < $term_deadline) {
+            my $waited = waitpid($child, WNOHANG);
+            exit 124 if $waited == $child;
+            exit 125 if $waited == -1;
+            sleep(0.05);
+        }
+        my $waited = waitpid($child, WNOHANG);
+        if ($waited == 0) {
+            kill "KILL", -$child;
+            waitpid($child, 0);
+        }
+        exit 124;
+    ' 5 1 "$candidate" -c \
+        'import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' \
+        >/dev/null 2>&1
+}
+
+python=
+if [ -n "${REPORT_SHELL_PYTHON:-}" ]; then
+    if valid_python "$REPORT_SHELL_PYTHON"; then
+        python=$REPORT_SHELL_PYTHON
+    fi
+else
+    path_python=$(command -v python3 2>/dev/null || true)
+    for candidate in "$path_python" /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+        [ -n "$candidate" ] || continue
+        if valid_python "$candidate"; then
+            python=$candidate
+            break
+        fi
+    done
+fi
+
+if [ -z "$python" ]; then
+    echo "report-shell: Python 3.11 or later is required; install it from python.org or Homebrew." >&2
+    exit 1
+fi
+
+exec "$python" "$script_dir/report_shell.py" "$@"

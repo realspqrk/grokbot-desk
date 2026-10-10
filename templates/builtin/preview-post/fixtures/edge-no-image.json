@@ -1,0 +1,29 @@
+{
+  "author": {
+    "name": "Linden Street Bakery",
+    "handle": "lindenstreetbakery"
+  },
+  "text": "Our sourdough class is back — two Saturday mornings in November, six places each. You bake your own loaf and take a jar of starter home. Booking opens today: lindenstreet.example/classes",
+  "hashtags": [
+    "Sourdough",
+    "BakingClass",
+    "LindenStreet"
+  ],
+  "hashtag_mode": "none",
+  "link": {
+    "url": "https://lindenstreet.example/classes",
+    "title": "Sourdough class: two Saturdays in November",
+    "domain": "lindenstreet.example"
+  },
+  "platforms": [
+    "x",
+    "linkedin",
+    "instagram",
+    "facebook"
+  ],
+  "notes": "No photo yet, so Instagram has to wait. Hashtags go in separately, not in the text.",
+  "flag": [
+    "—",
+    "best ever"
+  ]
+}

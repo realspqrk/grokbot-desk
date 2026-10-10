@@ -1,10 +1,12 @@
 """Template contract checks."""
 import json
+import os
 import subprocess
 from pathlib import Path
 
 from .jsonutil import loads
 from .lint import lint_template
+from .paths import data_dir as default_data_dir
 from .registry import RegistryError, scan_registry
 from .schema import SchemaError, check_schema, validate
 
@@ -14,6 +16,15 @@ def _read_json(path):
         return loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise ValueError(f"{path}: invalid JSON: {error}") from error
+
+
+def _read_template_json(template, relative):
+    try:
+        return loads(template.read_text(relative))
+    except (OSError, ValueError) as error:
+        raise ValueError(
+            f"{template.file_path(relative)}: invalid JSON: {error}"
+        ) from error
 
 
 def _expect_error(value, result_schema, counter_cases=False):
@@ -99,6 +110,15 @@ def _expect_error(value, result_schema, counter_cases=False):
     return None
 
 
+def _tool_env(registry):
+    if registry.user_templates_root is None:
+        return None
+    return dict(
+        os.environ,
+        RS_DATA_DIR=str(registry.user_templates_root.parent),
+    )
+
+
 def contract_findings(registry, repo_root, selected=None, run_expect_backend=False):
     root = Path(repo_root)
     findings = []
@@ -107,52 +127,65 @@ def contract_findings(registry, repo_root, selected=None, run_expect_backend=Fal
     if not strings_path.is_file():
         strings_path = Path(__file__).parent / "i18n" / "de.json"
     strings = _read_json(strings_path)
+    tool_env = _tool_env(registry)
     for template in selected:
         try:
-            data_schema = _read_json(template.path / "schema.json")
-            result_schema = _read_json(template.path / "result.schema.json")
+            data_schema = _read_template_json(template, "schema.json")
+            result_schema = _read_template_json(template, "result.schema.json")
             check_schema(data_schema)
             check_schema(result_schema)
         except (ValueError, SchemaError) as error:
             findings.append(f"{template.id}: {error}")
             continue
-        fixtures = template.path / "fixtures"
-        edges = sorted(fixtures.glob("edge-*.json"))
-        invalid = sorted(fixtures.glob("invalid-*.json"))
+        try:
+            edges = template.glob_files("fixtures", "edge-*.json")
+            invalid = template.glob_files("fixtures", "invalid-*.json")
+        except RegistryError as error:
+            findings.append(f"{template.id}: {error}")
+            continue
         if len(edges) < 2:
             findings.append(f"{template.id}: at least two edge fixtures are required")
         if len(invalid) < 2:
             findings.append(f"{template.id}: at least two invalid fixtures are required")
-        for path in [fixtures / "golden.json", *edges]:
+        for relative in [Path("fixtures/golden.json"), *edges]:
             try:
-                validate(_read_json(path), data_schema)
+                validate(_read_template_json(template, relative), data_schema)
             except (ValueError, SchemaError) as error:
-                findings.append(f"{path.name}: expected valid: {error}")
-        for path in invalid:
+                findings.append(f"{relative.name}: expected valid: {error}")
+        for relative in invalid:
             try:
-                validate(_read_json(path), data_schema)
+                validate(_read_template_json(template, relative), data_schema)
             except SchemaError:
                 pass
             except ValueError as error:
                 findings.append(str(error))
             else:
-                findings.append(f"{path.name}: expected invalid")
-        findings.extend(f"{template.id}: {item}" for item in lint_template(template, strings))
-        expect_dir = fixtures / "expect"
-        if expect_dir.exists():
+                findings.append(f"{relative.name}: expected invalid")
+        try:
+            findings.extend(
+                f"{template.id}: {item}"
+                for item in lint_template(template, strings)
+            )
+            expect_files = template.glob_files("fixtures/expect", "*.json")
+        except RegistryError as error:
+            findings.append(f"{template.id}: {error}")
+            continue
+        if expect_files:
             expect_valid = True
-            for path in sorted(expect_dir.glob("*.json")):
+            for relative in expect_files:
                 try:
-                    value = _read_json(path)
+                    value = _read_template_json(template, relative)
                 except ValueError as error:
                     findings.append(str(error))
                     expect_valid = False
                     continue
                 message = _expect_error(
-                    value, result_schema, counter_cases=path.name == "counter-cases.json"
+                    value,
+                    result_schema,
+                    counter_cases=relative.name == "counter-cases.json",
                 )
                 if message:
-                    findings.append(f"{path.name}: {message}")
+                    findings.append(f"{relative.name}: {message}")
                     expect_valid = False
             if run_expect_backend:
                 tool = root / "tools" / "e2e.mjs"
@@ -168,6 +201,7 @@ def contract_findings(registry, repo_root, selected=None, run_expect_backend=Fal
                         text=True,
                         encoding="utf-8",
                         errors="replace",
+                        env=tool_env,
                     )
                     if result.returncode:
                         findings.append(
@@ -178,18 +212,25 @@ def contract_findings(registry, repo_root, selected=None, run_expect_backend=Fal
     return findings
 
 
-def check_template(template_id, repo_root, visual=False):
+def check_template_details(
+    template_id, repo_root, data_dir_path=None, visual=False
+):
     root = Path(repo_root)
     try:
-        registry = scan_registry(root / "templates")
+        data_root = Path(data_dir_path or default_data_dir())
+        registry = scan_registry(root / "templates", data_root / "templates")
     except RegistryError as error:
-        return [str(error)]
+        return {"findings": [str(error)], "warnings": []}
     selected = list(registry.values()) if template_id == "--all" else [registry.get(template_id)]
     if selected == [None]:
-        return [f"unknown template: {template_id}"]
+        return {
+            "findings": [f"unknown template: {template_id}"],
+            "warnings": [],
+        }
     findings = contract_findings(
         registry, root, selected=selected, run_expect_backend=True
     )
+    tool_env = _tool_env(registry)
     if visual:
         tool = root / "tools" / "visual.mjs"
         if not tool.is_file():
@@ -204,7 +245,25 @@ def check_template(template_id, repo_root, visual=False):
                     text=True,
                     encoding="utf-8",
                     errors="replace",
+                    env=tool_env,
                 )
                 if result.returncode:
                     findings.append(result.stderr.strip() or result.stdout.strip() or f"visual check failed for {target}")
-    return findings
+    selected_ids = {template.id for template in selected}
+    warnings = [
+        warning
+        for warning in registry.warnings
+        if warning.split(":", 1)[0] in selected_ids
+    ]
+    return {"findings": findings, "warnings": warnings}
+
+
+def check_template(
+    template_id, repo_root, visual=False, data_dir_path=None
+):
+    return check_template_details(
+        template_id,
+        repo_root,
+        data_dir_path=data_dir_path,
+        visual=visual,
+    )["findings"]

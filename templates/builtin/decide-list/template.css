@@ -1,0 +1,121 @@
+/* decide-list (built-in, calm). Tokens only: var(--rs-*) colours,
+   var(--space-*) spacing, no colour literals, no URLs.
+   One thing at a time: the current item is the one raised card with its
+   choices; the other items are single quiet rows (click to open). What the
+   agent already handled sits under one closed disclosure. */
+.dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.dl-intro { max-width: var(--rs-measure); color: var(--rs-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.dl-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---- collapsed row ---- */
+.dl-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--rs-r-md);
+  background: transparent;
+  color: var(--rs-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--rs-dur) var(--rs-ease);
+}
+/* with categories, every row gets the same kind column */
+.dl[data-dl-kinds] .dl-row { grid-template-columns: 18px 7em minmax(0, 1fr) auto; }
+.dl-row:hover { background: var(--rs-hover); }
+.dl-item[data-current] > .dl-row { display: none; }
+
+.dl-row__kind,
+.dl-card__eyebrow { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.dl-row__kind { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dl-row__text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dl-source { font-weight: var(--rs-fw-strong); }
+.dl-row__title { color: var(--rs-muted); }
+.dl-row__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--rs-fs-sm);
+  color: var(--rs-muted);
+  white-space: nowrap;
+}
+.dl-row__state > .rs-ico { width: 16px; height: 16px; color: var(--rs-muted); }
+/* open vs decided at a glance: ring + ink text + chevron vs check + muted text + outcome */
+.dl-row__mark { display: inline-grid; align-self: center; color: var(--rs-ink); }
+.dl-row__mark > .rs-ico { width: 18px; height: 18px; }
+.dl-item[data-decided] .dl-row__mark { color: var(--rs-muted); }
+.dl-item[data-decided] .dl-row__text,
+.dl-item[data-decided] .dl-row__kind { color: var(--rs-muted); }
+.dl-item[data-decided] .dl-source { font-weight: var(--rs-fw-normal); }
+.dl-row__outcome { color: var(--rs-ink); }
+
+/* ---- current item: the one card ---- */
+rs-card.dl-card {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.dl-item[data-current] > rs-card.dl-card { display: flex; }
+
+.dl-card__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.dl-card__eyebrow:empty { display: none; }
+.dl-card__title {
+  max-width: var(--rs-measure);
+  overflow-wrap: anywhere;
+}
+.dl-card__detail { max-width: var(--rs-measure); color: var(--rs-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.dl-copies {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-6);
+}
+
+.dl-decide {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.dl-note[hidden] { display: none; }
+
+/* ---- handled by the agent (closed) ---- */
+.dl-plain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: var(--rs-measure);
+  overflow-wrap: anywhere;
+}
+
+.dl-overall { max-width: var(--rs-measure); }
+.dl-overall__field { max-width: var(--rs-measure); }

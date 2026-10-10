@@ -4,13 +4,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import {
-  browserChannel,
-  startServer,
-  loadChromium,
-  ROOT,
-} from './dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, ROOT } from './dev/rs-server.mjs';
 import { isSameOriginPath } from './dev/browser-safety.mjs';
+import { resolvedTemplates } from './template-registry.mjs';
 
 const PORT = Number(process.env.RS_TOOL_PORT || 18920);
 const FIXTURE_CREATED = '2026-10-08T10:39:00Z';
@@ -38,22 +34,14 @@ const MEASUREMENT_BOT_ID = readJson(
 
 function discover(selected, goldenOnly = false) {
   const output = [];
-  for (const namespace of readdirSync(path.join(ROOT, 'templates'), { withFileTypes: true }).filter((item) => item.isDirectory())) {
-    const parent = path.join(ROOT, 'templates', namespace.name);
-    for (const entry of readdirSync(parent, { withFileTypes: true }).filter((item) => item.isDirectory())) {
-      const dir = path.join(parent, entry.name);
-      const manifestPath = path.join(dir, 'template.json');
-      if (!existsSync(manifestPath)) continue;
-      const manifest = readJson(manifestPath);
-      if (selected && selected !== '--all' && selected !== manifest.id) continue;
-      const names = goldenOnly ? ['golden.json'] : readdirSync(path.join(dir, 'fixtures'))
-        .filter((name) => name === 'golden.json' || /^edge-.*\.json$/.test(name))
-        .sort();
-      for (const name of names) output.push({
-        dir, manifest, fixture: path.basename(name, '.json'),
-        data: readJson(path.join(dir, 'fixtures', name)),
-      });
-    }
+  for (const { dir, manifest } of resolvedTemplates(ROOT, selected)) {
+    const names = goldenOnly ? ['golden.json'] : readdirSync(path.join(dir, 'fixtures'))
+      .filter((name) => name === 'golden.json' || /^edge-.*\.json$/.test(name))
+      .sort();
+    for (const name of names) output.push({
+      dir, manifest, fixture: path.basename(name, '.json'),
+      data: readJson(path.join(dir, 'fixtures', name)),
+    });
   }
   if (!output.length) throw new Error(`no visual fixtures found for ${selected || '--all'}`);
   return output;

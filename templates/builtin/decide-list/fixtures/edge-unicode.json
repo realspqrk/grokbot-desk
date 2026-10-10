@@ -1,0 +1,61 @@
+{
+  "intro": "Requests from the Tokyo and Vienna offices 🌏 (mixed scripts, emoji, tabs and Windows line breaks).",
+  "items": [
+    {
+      "id": "tokyo-office-chairs",
+      "kind": "購入 · Purchase",
+      "source": "東京オフィス (Tokyo office)",
+      "title": "Six new office chairs 🪑 for the meeting room 会議室",
+      "detail": "Line 1: 見積もり付き\nLine 2: 한국어 견적도 있음\twith a tab",
+      "copy": [
+        {
+          "label": "Copy address",
+          "text": "〒100-0005\r\n東京都千代田区丸の内1-9-1\r\nJapan"
+        },
+        {
+          "label": "Copy price table",
+          "text": "Item\tQty\tPrice\r\nChair\t6\t¥ 38,000\r\nDelivery\t1\t¥ 4,500\r\n"
+        }
+      ]
+    },
+    {
+      "id": "vienna-team-lunch",
+      "kind": "Event 🎉",
+      "source": "Büro Wien 👩‍👩‍👧‍👦",
+      "title": "Team lunch on Friday: Grüße an alle, Café Ümläut ☕",
+      "copy": [
+        {
+          "label": "Copy greeting",
+          "text": "👩‍❤️‍👨 Schönes Wochenende! 🇦🇹 👍🏽"
+        }
+      ],
+      "choices": [
+        "approve",
+        "defer"
+      ]
+    },
+    {
+      "id": "name-spelling",
+      "source": "Ünïcödé Records ✨",
+      "title": "Correct the spelling of a client name (decomposed umlauts)",
+      "copy": [
+        {
+          "label": "Copy name",
+          "text": "Müller\tMüller"
+        }
+      ],
+      "choices": [
+        "approve",
+        "reject"
+      ]
+    }
+  ],
+  "done": [
+    {
+      "text": "Receipt 🧾 filed"
+    },
+    {
+      "text": "日本語のメールを翻訳しました"
+    }
+  ]
+}

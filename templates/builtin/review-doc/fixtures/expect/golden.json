@@ -1,0 +1,63 @@
+{
+  "copies": {},
+  "counters": {},
+  "flow": [
+    {
+      "click": "[data-section=\"4\"] .rd__comment-open"
+    },
+    {
+      "fill": [
+        "#rd-c-4",
+        "Say that the fees are per season, not per year."
+      ]
+    },
+    {
+      "click": "#rs-alt"
+    },
+    {
+      "fill": [
+        "#rd-comment",
+        "Looks good. Please fix the fee note, then send it on Friday."
+      ]
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "keyboard": [
+    {
+      "repeat": 5,
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "type": "Say that the fees are per season, not per year."
+    },
+    {
+      "repeat": 3,
+      "press": "Tab"
+    },
+    {
+      "press": "Space"
+    },
+    {
+      "type": "Looks good. Please fix the fee note, then send it on Friday."
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "result": {
+    "decision": "request_changes",
+    "comment": "Looks good. Please fix the fee note, then send it on Friday.",
+    "comments": [
+      {
+        "section": 4,
+        "heading": "Plot fees",
+        "comment": "Say that the fees are per season, not per year."
+      }
+    ]
+  }
+}

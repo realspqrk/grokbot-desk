@@ -10,11 +10,13 @@ from .timeutil import to_vienna, vienna_now
 
 
 MAX_PAYLOAD = 2 * 1024 * 1024
-RUN_ID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,20}-[0-9a-f]{4}$")
+RUN_ID_RE = re.compile(
+    r"^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,20}-[0-9a-f]{4}(?:[0-9a-f]{8})?$"
+)
 BOT_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 FIELDS = {
     "schema", "template", "version", "run_id", "bot", "title", "created",
-    "expires_minutes", "notify", "data",
+    "expires_minutes", "notify", "data", "identity",
 }
 
 
@@ -30,7 +32,7 @@ class EnvelopeError(ValueError):
 def generate_run_id(bot="report"):
     now = vienna_now()
     tag = re.sub("[^a-z0-9-]", "-", bot.lower()).strip("-")[:20] or "report"
-    return f"{now:%Y%m%d-%H%M%S}-{tag}-{secrets.token_hex(2)}"
+    return f"{now:%Y%m%d-%H%M%S}-{tag}-{secrets.token_hex(6)}"
 
 
 def validate_payload_bytes(raw, registry, used_ids=()):
@@ -94,7 +96,7 @@ def validate_payload(payload, registry, used_ids=()):
         if not isinstance(notify, dict) or set(notify) != {"webhook_url"} or not isinstance(notify["webhook_url"], str):
             raise EnvelopeError("/notify", "must contain only webhook_url")
     try:
-        schema = loads((template.path / "schema.json").read_text(encoding="utf-8"))
+        schema = loads(template.read_text("schema.json"))
         validate(payload["data"], schema, "/data")
     except SchemaError as error:
         raise EnvelopeError(error.pointer, error.message) from error

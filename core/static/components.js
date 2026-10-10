@@ -1,10 +1,15 @@
-/* grokbot-desk core components (spec 4.3, 5.2).
+/* report-shell core components (spec 4.3, 5.2).
  *
  * Light DOM only (no shadow DOM), so tokens, shell.css, axe and the text
  * checks reach every node. Styles live in shell.css. Components talk to the
  * core only through window.RS: RS.t, RS.copy, RS.toast, RS.count.
  * Elements: rs-card, rs-action-row, rs-copy, rs-badge, rs-counter,
  * rs-post-frame, rs-confirm. API reference: see docs/GUIDE.md.
+ * Calm UI semantics set here where the core owns the markup: copy controls
+ * are icon-only (28 px) with an aria-label and stay visible (each is its own
+ * tab stop). Status badges and the over-limit counter dot carry
+ * data-rs-status, platform previews carry data-rs-mockup. RS.icon(name)
+ * returns a decorative inline SVG.
  */
 (function () {
   'use strict';
@@ -48,7 +53,8 @@
   }
 
   function nf(n) {
-    return new Intl.NumberFormat('de-DE').format(n);
+    var R = window.RS;
+    return R && typeof R.number === 'function' ? R.number(n) : String(n);
   }
 
   // ---------------------------------------------------------------- icons --
@@ -65,14 +71,23 @@
     share: [['path', { d: 'M14 5l7 6.5-7 6.5v-4c-5 0-8.5 1.5-11 5 1-5 4-9.5 11-10z' }]],
     globe: [['circle', { cx: '12', cy: '12', r: '8.5' }], ['path', { d: 'M3.5 12h17M12 3.5c2.4 2.6 2.4 14.4 0 17M12 3.5c-2.4 2.6-2.4 14.4 0 17' }]],
     image: [['rect', { x: '3.5', y: '4.5', width: '17', height: '15', rx: '2' }], ['circle', { cx: '9', cy: '10', r: '1.8' }], ['path', { d: 'M3.5 17l5-4.5 4 3.5 3-2.5 5 4' }]],
-    more: [['circle', { cx: '5', cy: '12', r: '1.6', 'class': 'rs-ico-fill' }], ['circle', { cx: '12', cy: '12', r: '1.6', 'class': 'rs-ico-fill' }], ['circle', { cx: '19', cy: '12', r: '1.6', 'class': 'rs-ico-fill' }]]
+    more: [['circle', { cx: '5', cy: '12', r: '1.6', 'class': 'rs-ico-fill' }], ['circle', { cx: '12', cy: '12', r: '1.6', 'class': 'rs-ico-fill' }], ['circle', { cx: '19', cy: '12', r: '1.6', 'class': 'rs-ico-fill' }]],
+    copy: [['rect', { x: '8.5', y: '8.5', width: '11', height: '11', rx: '2' }], ['path', { d: 'M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2' }]],
+    check: [['path', { d: 'M5 12.5l4.5 4.5L19 7.5' }]],
+    plus: [['path', { d: 'M12 5v14M5 12h14' }]],
+    hash: [['path', { d: 'M9.5 4 7.5 20M16.5 4l-2 16M5 9h15M4 15h15' }]],
+    ring: [['circle', { cx: '12', cy: '12', r: '7.5' }]],
+    done: [['circle', { cx: '12', cy: '12', r: '8.5' }], ['path', { d: 'M8.5 12.2l2.4 2.4 4.8-4.9' }]],
+    chevron: [['path', { d: 'M10 7l5 5-5 5' }]],
+    dot: [['circle', { cx: '12', cy: '12', r: '4', 'class': 'rs-ico-fill' }]]
   };
 
   function icon(name, cls) {
     var svg = s('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false', 'class': 'rs-ico' + (cls ? ' ' + cls : '') });
-    ICONS[name].forEach(function (d) { svg.appendChild(s(d[0], d[1])); });
+    (ICONS[name] || []).forEach(function (d) { svg.appendChild(s(d[0], d[1])); });
     return svg;
   }
+  if (window.RS) window.RS.icon = function (name) { return icon(name); };
 
   function logo(skin) {
     var svg = s('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false', 'class': 'rs-pf-logo rs-pf-logo--' + skin });
@@ -245,13 +260,17 @@
   }
 
   // ============================================================== rs-copy ==
-  // Attributes: label (button text, default "Kopieren"), text (string to copy),
-  // mono (monospace value), max-lines (N: value box scrolls after N lines),
-  // no-value (hide the value; ONLY when the exact string is visible right
-  // next to the button anyway, e.g. the post text in rs-post-frame).
+  // The value as quiet text followed by an icon-only copy button (28 px).
+  // Attributes: label (accessible name + tooltip, default "Copy"), text
+  // (string to copy), icon (copy|hash), caption (show the label as quiet text:
+  // above the value, or next to the icon with no-value), mono (monospace
+  // value), block (long text: own line, quoted), max-lines (N: the value is
+  // clamped to N lines with a "Show all" disclosure; no extra tab stop at
+  // rest), no-value (hide the value; ONLY when the exact string is visible
+  // next to it anyway, e.g. the post text in rs-post-frame).
   // Property: text. Event: rs-copy {detail:{ok, busy}}. data-state: idle|working|copied|busy|error.
   class RsCopy extends HTMLElement {
-    static get observedAttributes() { return ['label', 'text', 'no-value', 'max-lines', 'mono']; }
+    static get observedAttributes() { return ['label', 'text', 'no-value', 'max-lines', 'mono', 'caption']; }
     constructor() {
       super();
       this._text = null;
@@ -269,25 +288,42 @@
     _build() {
       this._built = true;
       this.setAttribute('data-state', 'idle');
-      var btn = h('button', 'rs-copy__btn');
+      var btn = h('button', 'rs-icon-btn rs-copy__btn');
       btn.type = 'button';
-      this._label = h('span', 'rs-copy__label');
-      this._done = h('span', 'rs-copy__done', t('copied'));
-      btn.appendChild(this._label);
-      btn.appendChild(this._done);
+      var idle = icon(ICONS[this.getAttribute('icon')] ? this.getAttribute('icon') : 'copy', 'rs-copy__idle');
+      var done = icon('check', 'rs-copy__done');
+      btn.appendChild(idle);
+      btn.appendChild(done);
       this._btn = btn;
       this._val = h('span', 'rs-copy__value');
       this._val.id = uid('rs-copy-v');
       this._msg = h('span', 'rs-copy__msg');
       this._msg.hidden = true;
-      this.appendChild(btn);
+      this._cap = h('span', 'rs-copy__caption');
+      this._cap.setAttribute('aria-hidden', 'true');
+      this._more = h('details', 'rs-copy__more');
+      this._moreSum = h('summary', '', t('show_all'));
+      this._more.appendChild(this._moreSum);
+      this.appendChild(this._cap);
       this.appendChild(this._val);
+      this.appendChild(btn);
+      this.appendChild(this._more);
       this.appendChild(this._msg);
       var self = this;
       btn.addEventListener('click', function () { self._copy(); });
+      /* the caption is a larger pointer target for the same action */
+      this._cap.addEventListener('click', function () { self._copy(); });
+      this._more.addEventListener('toggle', function () {
+        self._val.classList.toggle('rs-copy__value--clamp', !self._more.open);
+        self._moreSum.textContent = t(self._more.open ? 'show_less' : 'show_all');
+      });
     }
     _render() {
-      this._label.textContent = this.getAttribute('label') || t('copy');
+      var label = this.getAttribute('label') || t('copy');
+      this._btn.setAttribute('aria-label', label);
+      this._btn.title = label;
+      this._cap.textContent = this.hasAttribute('caption') ? label : '';
+      this._cap.hidden = !this.hasAttribute('caption');
       var noValue = this.hasAttribute('no-value');
       this._val.hidden = noValue;
       this._val.textContent = this.text;
@@ -295,16 +331,12 @@
       var lines = parseInt(this.getAttribute('max-lines') || '0', 10);
       if (lines > 0 && !noValue) {
         this._val.style.setProperty('--rs-copy-lines', String(lines));
-        this._val.classList.add('rs-copy__value--clamp');
-        this._val.tabIndex = 0;
-        this._val.setAttribute('role', 'region');
-        this._val.setAttribute('aria-label', this._label.textContent);
+        this._val.classList.toggle('rs-copy__value--clamp', !this._more.open);
+        this._more.hidden = false;
       } else {
         this._val.style.removeProperty('--rs-copy-lines');
         this._val.classList.remove('rs-copy__value--clamp');
-        this._val.removeAttribute('tabindex');
-        this._val.removeAttribute('role');
-        this._val.removeAttribute('aria-label');
+        this._more.hidden = true;
       }
       if (noValue) this._btn.removeAttribute('aria-describedby');
       else this._btn.setAttribute('aria-describedby', this._val.id);
@@ -346,8 +378,16 @@
   // ============================================================= rs-badge ==
   // Attribute: variant (neutral|warn|danger|ok). Content: its text.
   class RsBadge extends HTMLElement {
+    static get observedAttributes() { return ['variant']; }
     connectedCallback() {
       if (!this.hasAttribute('variant')) this.setAttribute('variant', 'neutral');
+      this._sync();
+    }
+    attributeChangedCallback() { this._sync(); }
+    _sync() {
+      var v = this.getAttribute('variant');
+      if (v && v !== 'neutral') this.setAttribute('data-rs-status', v);
+      else this.removeAttribute('data-rs-status');
     }
   }
 
@@ -363,8 +403,12 @@
         this._built = true;
         this._num = h('span', 'rs-counter__num');
         this._num.setAttribute('aria-hidden', 'true');
+        this._dot = h('span', 'rs-dot');
+        this._dot.setAttribute('data-rs-status', 'danger');
+        this._dot.setAttribute('aria-hidden', 'true');
         this._over = h('span', 'rs-counter__over');
         this._over.setAttribute('aria-hidden', 'true');
+        this.appendChild(this._dot);
         this._sr = h('span', 'rs-vh');
         this.appendChild(this._num);
         this.appendChild(this._over);
@@ -383,7 +427,8 @@
       var platform = this.getAttribute('platform');
       if (platform && this._text !== null && window.RS && RS.count) {
         var r = RS.count(this._text, platform);
-        this._result = r;
+        /* result reflects what this counter shows (characters or hashtags) */
+        this._result = kind === 'hashtags' ? Object.assign({}, r, { count: r.hashtags, limit: r.hashtagLimit }) : r;
         value = kind === 'hashtags' ? r.hashtags : r.count;
         limit = kind === 'hashtags' ? r.hashtagLimit : r.limit;
       } else {
@@ -395,6 +440,7 @@
       this._num.textContent = t('counter_value', { value: nf(value), limit: nf(limit) });
       this._over.textContent = over ? t('counter_over', { n: nf(n) }) : '';
       this._over.hidden = !over;
+      this._dot.hidden = !over;
       var base = kind === 'hashtags' ? 'counter_hashtags_label' : 'counter_label';
       this._sr.textContent = t(over ? base + '_over' : base, { value: nf(value), limit: nf(limit), n: nf(n) });
       if (over) this.setAttribute('over', ''); else this.removeAttribute('over');
@@ -402,7 +448,8 @@
   }
 
   // ======================================================== rs-post-frame ==
-  // Attributes: skin (x|linkedin|instagram|facebook), ratio (1:1|4:5|1.91:1|16:9).
+  // Attributes: skin (x|linkedin|instagram|facebook), ratio (1:1|4:5|1.91:1|16:9),
+  // no-chrome (hide the logo + platform name row, e.g. when tabs name it).
   // Child slots (any element with slot="…"): avatar (img), name, handle,
   // headline, text, image (img), link-title, link-domain. Method refresh().
   var SKIN_ABBR = { x: 'x', linkedin: 'li', instagram: 'ig', facebook: 'fb' };
@@ -436,7 +483,6 @@
       if (!this._mo) {
         this._mo = new MutationObserver(function () { if (!self._rendering) self._render(); });
         this._textMo = new MutationObserver(function () { self._decorate(); });
-        this._ro = new ResizeObserver(function () { self._placeMarker(); });
       }
       this._render();
       this._mo.observe(this, { childList: true });
@@ -444,7 +490,6 @@
     disconnectedCallback() {
       this._mo.disconnect();
       this._textMo.disconnect();
-      this._ro.disconnect();
       this._clearRanges();
     }
     attributeChangedCallback() { if (this.isConnected && this._mo) this._render(); }
@@ -475,7 +520,6 @@
           if (c.hasAttribute('data-rs-part')) c.remove();
         });
         this._textMo.disconnect();
-        this._ro.disconnect();
         this._clearRanges();
 
         var skin = this.skin;
@@ -489,6 +533,8 @@
         this.appendChild(chrome);
 
         var post = h('div', 'rs-pf__post');
+        post.setAttribute('data-rs-mockup', skin);
+        if (this.id) post.id = this.id + '-preview';
         this.appendChild(post);
         var bin = h('div', 'rs-pf__bin');
         bin.hidden = true;
@@ -496,7 +542,6 @@
 
         var parts = this['_build_' + skin](post);
         this._parts = parts;
-        this._textBox = parts.text;
         var used = {};
         Object.keys(parts.targets).forEach(function (name) {
           var el = slots[name];
@@ -531,7 +576,6 @@
         }
 
         if (slots.text) this._textMo.observe(slots.text, { childList: true, subtree: true, characterData: true });
-        if (this._textBox) this._ro.observe(this._textBox);
       } finally {
         this._mo.takeRecords();
         this._rendering = false;
@@ -610,6 +654,8 @@
         box.appendChild(h('span', 'rs-pf__media-error', t('pf_image_error')));
         var retry = h('button', 'rs-btn rs-btn--quiet rs-pf__image-retry', t('pf_image_retry'));
         retry.type = 'button';
+        /* reloading media never changes a decision: stays usable on a locked report */
+        retry.setAttribute('data-rs-view-action', '');
         var self = this;
         retry.addEventListener('click', function () { self._retryImage(); });
         box.appendChild(retry);
@@ -653,11 +699,6 @@
 
     _textBlock(post) {
       var box = h('div', 'rs-pf__text');
-      var marker = h('span', 'rs-pf__fold');
-      marker.setAttribute('aria-hidden', 'true');
-      marker.hidden = true;
-      box.appendChild(marker);
-      this._marker = marker;
       post.appendChild(box);
       var note = h('p', 'rs-pf__foldnote');
       note.hidden = true;
@@ -794,24 +835,21 @@
 
     _decorate() {
       this._clearRanges();
-      this._fold = null;
       var textEl = this._slots.text;
-      if (!this._marker) return;
-      this._marker.hidden = true;
+      if (!this._foldNote) return;
       this._foldNote.hidden = true;
+      this._textMo.disconnect();
+      this._dropFoldLabel();
       if (!textEl || !textEl.isConnected) return;
       var abbr = SKIN_ABBR[this.skin];
       var nodes = [];
       var walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
       var n;
-      this._textMo.disconnect();
       while ((n = walker.nextNode())) {
         var nfc = n.data.normalize('NFC');
         if (nfc !== n.data) n.data = nfc;
         nodes.push(n);
       }
-      this._textMo.takeRecords();
-      this._textMo.observe(textEl, { childList: true, subtree: true, characterData: true });
 
       var self = this;
       nodes.forEach(function (node) {
@@ -830,52 +868,66 @@
       var full = nodes.map(function (x) { return x.data; }).join('');
       var R = window.RS;
       var res = R && R.count ? R.count(full, this.skin) : null;
-      if (!res || !res.fold || res.count <= res.fold) return;
-      // find (node, offset) after `fold` code points
-      var left = res.fold;
-      var pos = null;
-      for (var i = 0; i < nodes.length && !pos; i++) {
-        var d = nodes[i].data;
-        for (var j = 0; j < d.length; j++) {
-          if (left === 0) { pos = [nodes[i], j]; break; }
-          var c = d.charCodeAt(j);
-          if (c >= 0xD800 && c <= 0xDBFF && j + 1 < d.length) j++;
-          left--;
-        }
+      if (!res || !res.fold || res.count <= res.fold) return this._watchText(textEl);
+      // UTF-16 index after `fold` code points
+      var at = 0;
+      for (var left = res.fold; left > 0 && at < full.length; left--) {
+        var c = full.charCodeAt(at);
+        at += c >= 0xD800 && c <= 0xDBFF && at + 1 < full.length ? 2 : 1;
       }
-      if (!pos) return;
-      var after = document.createRange();
-      after.setStart(pos[0], pos[1]);
-      var last = nodes[nodes.length - 1];
-      after.setEnd(last, last.data.length);
-      this._addRange('rs-pf-after-' + abbr, after);
-      this._fold = pos;
-      var more = t('fold_more_' + this.skin);
-      this._foldNote.textContent = '';
-      var sw = h('span', 'rs-pf__foldnote-bar');
-      sw.setAttribute('aria-hidden', 'true');
-      this._foldNote.appendChild(sw);
-      this._foldNote.appendChild(document.createTextNode(t('fold_hint', { n: res.fold, more: more })));
-      this._foldNote.hidden = false;
-      this._placeMarker();
+      if (at > 0) {
+        // never split a grapheme (emoji + modifier, ZWJ sequence): fold after it
+        if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+          var seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(full).containing(at);
+          if (seg && seg.index < at) at = seg.index + seg.segment.length;
+        }
+        if (at < full.length) this._showFold(nodes, at, abbr, res.fold);
+      }
+      this._watchText(textEl);
     }
 
-    _placeMarker() {
-      if (!this._fold || !this._marker || !this._textBox) return;
-      var node = this._fold[0];
-      var off = this._fold[1];
-      if (!node.isConnected) return;
-      var r = document.createRange();
-      r.setStart(node, off);
-      r.setEnd(node, Math.min(node.data.length, off + 1));
-      var rects = r.getClientRects();
-      var rect = rects.length ? rects[0] : r.getBoundingClientRect();
-      var box = this._textBox.getBoundingClientRect();
-      if (!rect || (rect.width === 0 && rect.height === 0)) { this._marker.hidden = true; return; }
-      this._marker.hidden = false;
-      this._marker.style.left = (rect.left - box.left - 1) + 'px';
-      this._marker.style.top = (rect.top - box.top) + 'px';
-      this._marker.style.height = rect.height + 'px';
+    _watchText(textEl) {
+      this._textMo.takeRecords();
+      this._textMo.observe(textEl, { childList: true, subtree: true, characterData: true });
+    }
+
+    // The platform's own fold: a muted inline "… more" where the feed cuts the
+    // text, the rest stays readable but greyed. The label is a decorative,
+    // non-interactive span whose words are CSS generated content, so the text
+    // slot's textContent (and a mouse selection) is still the full post.
+    _showFold(nodes, at, abbr, fold) {
+      var node = null;
+      var off = at;
+      for (var i = 0; i < nodes.length; i++) {
+        if (off < nodes[i].data.length) { node = nodes[i]; break; }
+        off -= nodes[i].data.length;
+      }
+      if (!node) return;
+      if (off > 0) node = node.splitText(off);
+      var more = t('fold_more_' + this.skin);
+      // mid-word folds need a gap after the label; a fold before a space has one
+      var label = h('span', 'rs-pf__see-more' + (/^\s/.test(node.data) ? '' : ' rs-pf__see-more--gap'));
+      label.setAttribute('aria-hidden', 'true');
+      label.setAttribute('data-label', more);
+      node.parentNode.insertBefore(label, node);
+      this._foldLabel = label;
+      var after = document.createRange();
+      after.setStart(node, 0);
+      var last = nodes[nodes.length - 1];
+      if (last === nodes[i]) last = node;
+      after.setEnd(last, last.data.length);
+      this._addRange('rs-pf-after-' + abbr, after);
+      this._foldNote.textContent = t('fold_hint', { n: fold, more: more });
+      this._foldNote.hidden = false;
+    }
+
+    _dropFoldLabel() {
+      var label = this._foldLabel;
+      this._foldLabel = null;
+      if (!label || !label.parentNode) return;
+      var parent = label.parentNode;
+      parent.removeChild(label);
+      parent.normalize();
     }
   }
 

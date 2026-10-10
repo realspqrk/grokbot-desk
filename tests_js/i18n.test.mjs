@@ -9,7 +9,7 @@ test('spec 5.3 core set, exact wording', () => {
   const core = {
     submit: 'An Bot senden', discard: 'Verwerfen', seen: 'Gesehen', copy: 'Kopieren',
     copied: 'Kopiert ✓', copy_text: 'Text kopieren', copy_hashtags: 'Hashtags kopieren',
-    copy_comment: 'Kommentar kopieren', reveal: 'Im Explorer zeigen', approve: 'Freigeben',
+    copy_comment: 'Kommentar kopieren', reveal: 'Im Ordner zeigen' /* calm UI: cross-platform wording */, approve: 'Freigeben',
     request_changes: 'Änderungen anfordern', comment: 'Kommentar', note: 'Notiz',
     sent: 'An Bot übermittelt ✓', expired: 'Abgelaufen',
     clipboard_busy: 'Zwischenablage belegt – bitte nochmal klicken', new: 'neu',
@@ -21,7 +21,7 @@ test('spec 5.3 core set, exact wording', () => {
 
 test('template strings from spec 4.6 / 4.7', () => {
   const want = {
-    section_todo: '⚠️ Zu tun ({n})', section_done: 'Erledigt', section_feed: 'Feed', section_keep: 'Behalten',
+    section_todo: 'Wartet auf dich' /* calm UI: no icon, no count */, section_done: 'Erledigt', section_feed: 'Feed', section_keep: 'Behalten',
     verb_pay: 'Zahlen', verb_sign: 'Unterschreiben', verb_reply: 'Antworten', verb_shop: 'Neuer Shop',
     verb_unsub: 'Abmelden?', verb_check: 'Prüfen', verb_other: 'Sonstiges',
     choice_erledigt: 'Erledigt', choice_spaeter: 'Später', choice_ignorieren: 'Ignorieren',

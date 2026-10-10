@@ -1,4 +1,4 @@
-// Static rules for the core UI files: no colour literals outside tokens.css,
+// Static UI rules: no colour literals outside tokens.css,
 // no URLs (the SVG namespace constant in components.js is the only exception).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +11,10 @@ const files = [
   'core/static/platforms.json', 'core/static/contrast-pairs.json', 'core/i18n/de.json',
   'tools/dev/kit-preview.html', 'tools/dev/kit-preview.mjs',
   'core/static/rs.js', 'core/static/shell.html',
-  'templates/global/_starter/template.html', 'templates/global/_starter/template.css', 'templates/global/_starter/template.js',
+  'templates/builtin/_starter/template.html', 'templates/builtin/_starter/template.css', 'templates/builtin/_starter/template.js',
+  'templates/builtin/preview-post/template.html',
+  'templates/builtin/preview-post/template.css',
+  'templates/builtin/preview-post/template.js',
 ];
 const read = (f) => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
 const SVG_NS_LINE = "var SVG_NS = 'http://www.w3.org/2000/svg';";
@@ -28,9 +31,9 @@ for (const f of files) {
   });
 }
 
-test('components use only var(--rs-*) custom properties', () => {
+test('components use only var(--rs-*) and var(--space-*) custom properties', () => {
   for (const f of ['core/static/components.js', 'core/static/shell.css']) {
-    const bad = [...read(f).matchAll(/var\(\s*(--[a-z0-9-]+)/g)].map((m) => m[1]).filter((v) => !v.startsWith('--rs-'));
+    const bad = [...read(f).matchAll(/var\(\s*(--[a-z0-9-]+)/g)].map((m) => m[1]).filter((v) => !v.startsWith('--rs-') && !v.startsWith('--space-'));
     assert.deepEqual(bad, [], f);
   }
 });
@@ -44,16 +47,16 @@ test('no shadow DOM, no positive tabindex in components', () => {
 // review round 2, finding 6: publishable examples are fictional and portable
 test('kit and starter examples use fictional neutral identities and relative commands', () => {
   const kit = read('tools/dev/kit-preview.html');
-  const readme = read('templates/global/_starter/README.md');
+  const readme = read('templates/builtin/_starter/README.md');
   const bots = read('core/bots.json');
-  const schema = JSON.parse(read('templates/global/_starter/result.schema.json'));
-  const fixture = JSON.parse(read('templates/global/_starter/fixtures/golden.json'));
+  const schema = JSON.parse(read('templates/builtin/_starter/result.schema.json'));
+  const fixture = JSON.parse(read('templates/builtin/_starter/fixtures/golden.json'));
 
   assert.match(kit, /Northwind/);
   assert.match(kit, /example\.invalid/);
   assert.match(kit, /Social Agent/);
   assert.match(kit, /Inbox Agent/);
-  assert.deepEqual(JSON.parse(bots), { agent: 'Agent' });
+  assert.match(bots, /Operations Agent/);
   assert.match(readme, /py -3 report_shell\.py new <namespace>\/<name>/);
   assert.equal(schema.properties.choice.description, 'The option the user picked.');
   assert.match(fixture.copy.text, /files\.example\.invalid/);
@@ -62,6 +65,10 @@ test('kit and starter examples use fictional neutral identities and relative com
 test('counter examples and verification notes are fictional and role-based', () => {
   const counterTests = read('tests_js/count.test.mjs');
   const platforms = read('core/static/platforms.json');
+  const oldProjectPrefix = ['spq', 'rk'].join('');
+  const privateNames = new RegExp(`${oldProjectPrefix}|Research`, 'i');
+  assert.doesNotMatch(counterTests, privateNames);
+  assert.doesNotMatch(platforms, privateNames);
   assert.match(counterTests, /Example Coffee/);
   assert.match(platforms, /template author verifies them/);
 });

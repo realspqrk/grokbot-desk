@@ -1,0 +1,23 @@
+{
+  "description": "approve or reject: the comment is optional. request_changes (only offered with allow_changes): the comment is required.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["decision", "comment"],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {"enum": ["approve", "reject"]},
+        "comment": {"type": "string", "maxLength": 2000, "description": "Optional note, may be empty."}
+      }
+    },
+    {
+      "type": "object",
+      "required": ["decision", "comment"],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {"const": "request_changes"},
+        "comment": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S", "description": "What should change."}
+      }
+    }
+  ]
+}

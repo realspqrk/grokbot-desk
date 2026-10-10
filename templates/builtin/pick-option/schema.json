@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "required": ["question", "options"],
+  "additionalProperties": false,
+  "properties": {
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "The decision in one sentence, shown above the options (plain text)."
+    },
+    "context": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "Optional quiet line below the question: constraints, what the agent already checked."
+    },
+    "options": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "x-rs-unique-key": "id",
+      "description": "2 to 4 options, shown side by side in this order; every id is different. Use the same fact labels in the same order in every option so the rows line up.",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$", "description": "Returned as the result's choice; unique within the payload (a repeated id is rejected)."},
+          "name": {"type": "string", "minLength": 1, "maxLength": 48, "description": "Short name; also part of the primary button label."},
+          "summary": {"type": "string", "minLength": 1, "maxLength": 240, "description": "One or two sentences."},
+          "facts": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "required": ["label", "value"],
+              "additionalProperties": false,
+              "properties": {
+                "label": {"type": "string", "minLength": 1, "maxLength": 32},
+                "value": {"type": "string", "minLength": 1, "maxLength": 80}
+              }
+            }
+          }
+        }
+      }
+    },
+    "suggested": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+      "description": "Optional id of the option the agent suggests. It is marked, never preselected."
+    }
+  }
+}

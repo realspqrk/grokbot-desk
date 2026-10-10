@@ -1,0 +1,110 @@
+{
+  "summary": "Release 7.12.0 passed every staging check, the data migration was rehearsed twice on a full copy of production, and the rollback path is verified. Release 7.12.0 passed every staging check, the data migration was rehearsed twice on a full copy of production, and the rollback path is verified. Release 7.12.0 passed every staging check, the data migration was rehearsed twice on a full copy of production, and the rollback path is verified. Release 7.12.0 passed every staging check, the data migration was rehearsed twice on a full copy of production, and the rollback path is verified. Release 7.1.",
+  "approve_label": "Approve the release now.",
+  "allow_changes": true,
+  "facts": [
+    {
+      "label": "Fact 1 with a long labe.",
+      "value": "Value 1: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 1: v7.11.4-hotfix.2+bui.",
+      "mono": false
+    },
+    {
+      "label": "Fact 2 with a long labe.",
+      "value": "Value 2: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 2: v7.11.4-hotfix.2+bui.",
+      "mono": true
+    },
+    {
+      "label": "Fact 3 with a long labe.",
+      "value": "Value 3: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 3: v7.11.4-hotfix.2+bui.",
+      "mono": false
+    },
+    {
+      "label": "Fact 4 with a long labe.",
+      "value": "Value 4: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 4: v7.11.4-hotfix.2+bui.",
+      "mono": true
+    },
+    {
+      "label": "Fact 5 with a long labe.",
+      "value": "Value 5: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 5: v7.11.4-hotfix.2+bui.",
+      "mono": false
+    },
+    {
+      "label": "Fact 6 with a long labe.",
+      "value": "Value 6: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 6: v7.11.4-hotfix.2+bui.",
+      "mono": true
+    }
+  ],
+  "copy": [
+    {
+      "label": "Copy release notes link.",
+      "text": "Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column order. Release notes: export screen streams large reports in pages and keeps the chosen column o. End ✓ äöü"
+    },
+    {
+      "label": "Copy version",
+      "text": "v7.12.0"
+    },
+    {
+      "label": "Copy change ticket",
+      "text": "CHG-2026-10-0815"
+    }
+  ],
+  "points_title": "What changes in this release What chang.",
+  "points": [
+    "Change 1: the export screen now streams large reports in pages, keeps the column order the user chose and shows progress while it works Change 1: the export sc.",
+    "Change 2: the export screen now streams large reports in pages, keeps the column order the user chose and shows progress while it works Change 2: the export sc.",
+    "Change 3: the export screen now streams large reports in pages, keeps the column order the user chose and shows progress while it works Change 3: the export sc.",
+    "Change 4: the export screen now streams large reports in pages, keeps the column order the user chose and shows progress while it works Change 4: the export sc.",
+    "Change 5: the export screen now streams large reports in pages, keeps the column order the user chose and shows progress while it works Change 5: the export sc.",
+    "Change 6: the export screen now streams large reports in pages, keeps the column order the user chose and shows progress while it works Change 6: the export sc.",
+    "Change 7: the export screen now streams large reports in pages, keeps the column order the user chose and shows progress while it works Change 7: the export sc.",
+    "Change 8: the export screen now streams large reports in pages, keeps the column order the user chose and shows progress while it works Change 8: the export sc."
+  ],
+  "checks": [
+    {
+      "label": "Check 1: end-to-end suite for billing, export and account settings Check 1: end.",
+      "detail": "All scenarios passed on the staging cluster with production-like data volumes and slow network simulation All scenarios.",
+      "state": "ok"
+    },
+    {
+      "label": "Check 2: end-to-end suite for billing, export and account settings Check 2: end.",
+      "detail": "All scenarios passed on the staging cluster with production-like data volumes and slow network simulation All scenarios.",
+      "state": "ok"
+    },
+    {
+      "label": "Check 3: end-to-end suite for billing, export and account settings Check 3: end.",
+      "detail": "All scenarios passed on the staging cluster with production-like data volumes and slow network simulation All scenarios.",
+      "state": "warn"
+    },
+    {
+      "label": "Check 4: end-to-end suite for billing, export and account settings Check 4: end.",
+      "detail": "All scenarios passed on the staging cluster with production-like data volumes and slow network simulation All scenarios.",
+      "state": "ok"
+    },
+    {
+      "label": "Check 5: end-to-end suite for billing, export and account settings Check 5: end.",
+      "detail": "All scenarios passed on the staging cluster with production-like data volumes and slow network simulation All scenarios.",
+      "state": "fail"
+    },
+    {
+      "label": "Check 6: end-to-end suite for billing, export and account settings Check 6: end.",
+      "detail": "All scenarios passed on the staging cluster with production-like data volumes and slow network simulation All scenarios.",
+      "state": "ok"
+    },
+    {
+      "label": "Check 7: end-to-end suite for billing, export and account settings Check 7: end.",
+      "detail": "All scenarios passed on the staging cluster with production-like data volumes and slow network simulation All scenarios.",
+      "state": "warn"
+    },
+    {
+      "label": "Check 8: end-to-end suite for billing, export and account settings Check 8: end.",
+      "detail": "All scenarios passed on the staging cluster with production-like data volumes and slow network simulation All scenarios.",
+      "state": "ok"
+    }
+  ],
+  "reference": {
+    "title": "Rollback and recovery commands Rollback.",
+    "label": "Copy rollback command C.",
+    "text": "deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep-data --notify release-channel --confirm deploy rollback --to v7.11.4-hotfix.2 --keep.",
+    "mono": true
+  }
+}

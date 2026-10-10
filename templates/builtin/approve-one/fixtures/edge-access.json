@@ -1,0 +1,23 @@
+{
+  "summary": "Lena Park asks for read access to the reporting database to prepare the quarterly revenue review.",
+  "approve_label": "Grant access",
+  "facts": [
+    {"label": "Requested by", "value": "Lena Park, Finance"},
+    {"label": "Access", "value": "Read only, reporting replica"},
+    {"label": "Until", "value": "December 31, then removed automatically"}
+  ],
+  "copy": [
+    {"label": "Copy username", "text": "lena.park"},
+    {"label": "Copy ticket", "text": "ACC-2291"}
+  ],
+  "points_title": "Why",
+  "points": [
+    "Prepares the Q4 revenue review for the management meeting",
+    "Today she receives weekly CSV exports by email"
+  ],
+  "checks": [
+    {"label": "Security training", "detail": "Completed, valid until March 2027", "state": "ok"},
+    {"label": "Manager approval", "detail": "Approved by Dana Ito", "state": "ok"},
+    {"label": "Personal data in scope", "detail": "Customer names are masked on the replica", "state": "warn"}
+  ]
+}

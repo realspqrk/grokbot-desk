@@ -1,31 +1,9 @@
 [project]
 name = "grokbot-desk"
-version = "0.1.0"
+version = "1.0.0-beta.1"
 description = "A local desktop review and approval window for AI agents."
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
-keywords = [
-  "human-in-the-loop",
-  "ai-agent",
-  "approval",
-  "desktop-ui",
-  "review",
-]
-classifiers = [
-  "Development Status :: 3 - Alpha",
-  "License :: OSI Approved :: MIT License",
-  "Operating System :: Microsoft :: Windows",
-  # macOS checks are experimental; do not advertise macOS support yet.
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-]
 dependencies = []
-
-[project.urls]
-Homepage = "https://github.com/realspqrk/grokbot-desk"
-Repository = "https://github.com/realspqrk/grokbot-desk"
-Issues = "https://github.com/realspqrk/grokbot-desk/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

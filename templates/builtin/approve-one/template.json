@@ -1,0 +1,30 @@
+{
+  "id": "approve-one",
+  "namespace": "global",
+  "version": 1,
+  "title_de": "Freigabe",
+  "description": "Built-in (calm): one yes/no decision with details (deploy, purchase, access request). Summary, key facts, copy icons, one segmented choice (Approve, Reject, optional Request changes) with an optional note, then points, checks with status dots and a reference behind a disclosure. The primary names the decision.",
+  "components": [
+    "rs-action-row",
+    "rs-copy"
+  ],
+  "strings": [
+    "choice_approve",
+    "choice_reject",
+    "request_changes",
+    "decision_label",
+    "decision_pick",
+    "add_note",
+    "note",
+    "request_changes_label",
+    "comment_required",
+    "send_rejection",
+    "send_request",
+    "section_details",
+    "section_checks",
+    "check_ok",
+    "check_warn",
+    "check_fail",
+    "copy"
+  ]
+}

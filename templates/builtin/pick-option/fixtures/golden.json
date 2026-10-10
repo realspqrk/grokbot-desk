@@ -1,0 +1,64 @@
+{
+  "question": "Which venue should we book for the spring team day?",
+  "context": "All three are free on Friday 15 May. Prices include room hire and lunch for 24 people.",
+  "options": [
+    {
+      "id": "boathouse",
+      "name": "Riverside Boathouse",
+      "summary": "Bright room on the water with a terrace. Kayaks for the afternoon if the weather holds.",
+      "facts": [
+        {
+          "label": "Price",
+          "value": "€1,450"
+        },
+        {
+          "label": "Travel",
+          "value": "25 min by tram"
+        },
+        {
+          "label": "Rain plan",
+          "value": "Indoor room only"
+        }
+      ]
+    },
+    {
+      "id": "old-mill",
+      "name": "Old Mill Studio",
+      "summary": "Quiet workshop space with a garden and a long shared table. Easy to reach for everyone.",
+      "facts": [
+        {
+          "label": "Price",
+          "value": "€1,180"
+        },
+        {
+          "label": "Travel",
+          "value": "10 min walk"
+        },
+        {
+          "label": "Rain plan",
+          "value": "Covered courtyard"
+        }
+      ]
+    },
+    {
+      "id": "hilltop",
+      "name": "Hilltop Farm",
+      "summary": "Farm kitchen and orchard outside town. A cooking session is included in the price.",
+      "facts": [
+        {
+          "label": "Price",
+          "value": "€1,690"
+        },
+        {
+          "label": "Travel",
+          "value": "50 min by coach"
+        },
+        {
+          "label": "Rain plan",
+          "value": "Barn with heating"
+        }
+      ]
+    }
+  ],
+  "suggested": "old-mill"
+}

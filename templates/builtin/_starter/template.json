@@ -1,0 +1,21 @@
+{
+  "id": "_starter",
+  "namespace": "global",
+  "version": 1,
+  "title_de": "Beispielbericht",
+  "description": "Model template (calm): one item with a short text, one copy value (icon), one choice (2 options) and a note behind \"Add note\". Copy it with `report-shell new <namespace>/<name>`.",
+  "components": [
+    "rs-copy",
+    "rs-action-row"
+  ],
+  "strings": [
+    "starter_heading",
+    "choice_erledigt",
+    "choice_spaeter",
+    "choice_group_label",
+    "add_note",
+    "note",
+    "starter_note_placeholder",
+    "starter_pick_choice"
+  ]
+}

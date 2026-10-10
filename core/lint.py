@@ -7,6 +7,9 @@ ALLOWED_CUSTOM = {
     "rs-card", "rs-action-row", "rs-copy", "rs-badge", "rs-counter",
     "rs-post-frame", "rs-confirm",
 }
+# P8d: the calm checkers treat only the shell's own strip as the report switcher
+RESERVED_STRIP_IDS = {"rs-strip", "rs-strip-nav", "rs-strip-count", "rs-rail", "rs-rail-nav"}
+STRIP_RESERVED = "data-rs-strip, data-rs-rail and the rs-strip ids are reserved for the shell's report strip"
 
 
 _IDENTIFIER_ESCAPE = re.compile(
@@ -533,6 +536,12 @@ class _TemplateParser(HTMLParser):
         if "-" in tag and tag not in ALLOWED_CUSTOM:
             self.findings.append(f"custom element <{tag}> is not allowed")
         attributes = {name.lower(): value for name, value in attrs}
+        if (
+            "data-rs-strip" in attributes
+            or "data-rs-rail" in attributes
+            or (attributes.get("id") or "").strip() in RESERVED_STRIP_IDS
+        ):
+            self.findings.append(STRIP_RESERVED)
         for name, value in attrs:
             name = name.lower()
             if name.lower().startswith("on"):
@@ -555,16 +564,19 @@ class _TemplateParser(HTMLParser):
 
 def lint_template(template, strings):
     findings = []
-    html = (template.path / "template.html").read_text(encoding="utf-8")
-    css_path = template.path / "template.css"
-    js_path = template.path / "template.js"
-    css = css_path.read_text(encoding="utf-8") if css_path.exists() else ""
-    js = js_path.read_text(encoding="utf-8") if js_path.exists() else ""
+    html = template.read_text("template.html")
+    css = template.read_optional_text("template.css") or ""
+    js = template.read_optional_text("template.js") or ""
     joined = "\n".join((html, css, js))
     if re.search(r"(?:https?:|(?<!:)//)", joined, re.I):
         findings.append("external or protocol-relative URL is forbidden")
     if re.search(r"#[0-9a-f]{3,8}\b|\brgb\(|\bhsl\(", css, re.I):
         findings.append("color literals are forbidden in template.css")
+    if re.search(
+        r"data-rs-(?:strip|rail)\b|\brs(?:Strip|Rail)\b|[\"'`]rs-(?:strip|rail)(?:-nav)?[\"'`]",
+        js,
+    ):
+        findings.append(STRIP_RESERVED)
     for api in _forbidden_js_apis(js):
         findings.append(f"forbidden API in template.js: {api}")
     findings.extend(_visible_js_literal_findings(js))

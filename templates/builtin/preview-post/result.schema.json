@@ -1,0 +1,25 @@
+{
+  "description": "approve: the platforms the reviewer released (each was approvable: within its limit, Instagram with an image). request_changes: a comment is required and no platform is released.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["decision", "platforms", "comment"],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {"const": "approve"},
+        "platforms": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": {"enum": ["x", "linkedin", "instagram", "facebook"]}},
+        "comment": {"type": "string", "maxLength": 2000}
+      }
+    },
+    {
+      "type": "object",
+      "required": ["decision", "platforms", "comment"],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {"const": "request_changes"},
+        "platforms": {"type": "array", "maxItems": 0},
+        "comment": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"}
+      }
+    }
+  ]
+}

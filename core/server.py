@@ -7,26 +7,41 @@ import secrets
 import select
 import socket
 import socketserver
-import subprocess
-import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from . import __version__
 from .actionlog import ActionLog
 from .check import contract_findings
-from .clipboard import ClipboardBusy, utf16_units, write_text
 from .envelope import EnvelopeError, MAX_PAYLOAD, validate_payload_bytes
+from .identity import SHIPPED_REGISTRY, display_names, load_registry
 from .jsonutil import JSONBoundaryError, dumps as json_dumps, loads as json_loads
-from .launcher import flash_window
+from .launch_coordination import (
+    clear_launch_pending_coordinated,
+    pending_launch_generation,
+)
 from .media import MediaError, open_validated_media
 from .page import build_page
 from .paths import ensure_layout, load_config
-from .product import PRODUCT_NAME, RUNNER_ID
+from .platform import (
+    ALLOW_REUSE_ADDRESS,
+    ClipboardBusy,
+    ClipboardError,
+    ClipboardTimeout,
+    ClipboardUnavailable,
+    install_signal_handlers,
+    request_attention,
+    reveal_file,
+    utf16_units,
+    write_clipboard,
+)
+from .platform_types import LaunchResult
+from .product import RUNNER_ID
 from .registry import RegistryError, scan_registry
-from .runs import AlreadyDecided, RunStore, UnknownRun
+from .runs import AlreadyDecided, RunIdAlreadyUsed, RunStore, UnknownRun
 from .schema import SchemaError
 from .webhook import validate_webhook_url
 
@@ -35,7 +50,18 @@ CSP = (
     "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
     "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
 )
+STATIC_TYPES = {
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".webmanifest": "application/manifest+json",
+}
 SID_RE = re.compile(r"^[0-9a-f]{32}$")
+AVATAR_RE = re.compile(r"^[0-9a-f]{64}$")
+GENERATED_RUN_ID_ATTEMPTS = 8
 
 
 def retain_recent(data_dir, days=30):
@@ -54,10 +80,24 @@ class SSEHub:
     def __init__(self):
         self._lock = threading.Lock()
         self._subscribers = {}
+        self._page_generations = {}
+        # P8d fix2: launch generation -> the one sid that owns its app window
+        self._app_owners = {}
         self._next_id = 0
 
-    def subscribe(self, test_client, sid=None, writer=None, sock=None):
+    def subscribe(
+        self,
+        test_client,
+        sid=None,
+        writer=None,
+        sock=None,
+        launch_generation=None,
+    ):
         with self._lock:
+            if not test_client and sid is not None:
+                launch_generation = self._page_generations.setdefault(
+                    sid, launch_generation
+                )
             self._next_id += 1
             subscriber = {
                 "queue": queue.Queue(),
@@ -67,9 +107,47 @@ class SSEHub:
                 "writer": writer,
                 "socket": sock,
                 "closed": threading.Event(),
+                "launch_generation": launch_generation,
             }
             self._subscribers[self._next_id] = subscriber
             return self._next_id, subscriber
+
+    def claim_app_window(self, sid, token, launch_generation, previous=None):
+        """P8d fix2: a launch's app window belongs to exactly one page. The
+        first stream presenting the pending launch's token claims it under
+        the hub lock, before any page is told; the same page (sid)
+        reconnecting keeps it. A new page in the app window (a reload)
+        names the page it replaces (`previous`, kept in that window only)
+        and takes over once that page's streams are gone; a live owner is
+        never displaced. Every other page is refused."""
+        if (
+            sid is None
+            or not isinstance(token, str)
+            or SID_RE.fullmatch(token) is None
+        ):
+            return False
+        if not isinstance(previous, str) or SID_RE.fullmatch(previous) is None:
+            previous = None
+        with self._lock:
+            owner = self._app_owners.get(token)
+        if owner is not None and owner != sid and owner == previous:
+            # the replaced page's stream may not have been noticed gone yet
+            self._probe_sid(owner)
+        with self._lock:
+            owner = self._app_owners.get(token)
+            if owner is None:
+                if not (
+                    isinstance(launch_generation, str)
+                    and secrets.compare_digest(token, launch_generation)
+                ):
+                    return False
+            elif not secrets.compare_digest(owner, sid):
+                if previous is None or not secrets.compare_digest(owner, previous):
+                    return False
+                if any(item["sid"] == owner for item in self._subscribers.values()):
+                    return False
+            self._app_owners[token] = sid
+            return True
 
     def _drop_locked(self, subscriber_id):
         subscriber = self._subscribers.pop(subscriber_id, None)
@@ -83,9 +161,15 @@ class SSEHub:
 
     def bye(self, sid):
         with self._lock:
+            matched = False
+            launch_generation = None
             for subscriber_id, subscriber in list(self._subscribers.items()):
                 if subscriber["sid"] == sid:
+                    if not matched:
+                        launch_generation = subscriber["launch_generation"]
+                    matched = True
                     self._drop_locked(subscriber_id)
+            return matched, launch_generation
 
     def mark_write(self, subscriber_id):
         with self._lock:
@@ -106,29 +190,41 @@ class SSEHub:
                 for item in self._subscribers.values()
             )
 
+    def _probe(self, subscriber_id, subscriber):
+        peer = subscriber["socket"]
+        if peer is not None:
+            try:
+                if select.select([peer], [], [], 0)[0] and not peer.recv(
+                    1, socket.MSG_PEEK
+                ):
+                    self.remove(subscriber_id)
+                    return
+            except (ConnectionResetError, OSError, ValueError):
+                self.remove(subscriber_id)
+                return
+        try:
+            subscriber["writer"](": ping\n\n")
+        except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
+            self.remove(subscriber_id)
+        else:
+            self.mark_write(subscriber_id)
+
+    def _probe_sid(self, sid):
+        with self._lock:
+            subscribers = [
+                item for item in self._subscribers.items() if item[1]["sid"] == sid
+            ]
+        for subscriber_id, subscriber in subscribers:
+            if subscriber["writer"] is not None:
+                self._probe(subscriber_id, subscriber)
+
     def probe_window(self):
         with self._lock:
             subscribers = list(self._subscribers.items())
         for subscriber_id, subscriber in subscribers:
             if subscriber["test"] or subscriber["writer"] is None:
                 continue
-            peer = subscriber["socket"]
-            if peer is not None:
-                try:
-                    if select.select([peer], [], [], 0)[0] and not peer.recv(
-                        1, socket.MSG_PEEK
-                    ):
-                        self.remove(subscriber_id)
-                        continue
-                except (ConnectionResetError, OSError, ValueError):
-                    self.remove(subscriber_id)
-                    continue
-            try:
-                subscriber["writer"](": ping\n\n")
-            except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
-                self.remove(subscriber_id)
-            else:
-                self.mark_write(subscriber_id)
+            self._probe(subscriber_id, subscriber)
         return self.window_alive()
 
     def has_subscribers(self):
@@ -137,17 +233,23 @@ class SSEHub:
 
 
 class ReportHTTPServer(ThreadingHTTPServer):
-    allow_reuse_address = False
+    # Darwin permits rapid rebinding after TIME_WAIT; a live exact-address
+    # listener still fails. Neither backend enables SO_REUSEPORT.
+    allow_reuse_address = ALLOW_REUSE_ADDRESS
     daemon_threads = True
+    # a page opens its stylesheets, scripts, events and API in parallel; with
+    # socketserver's backlog of 5 Windows resets the surplus connections
+    request_queue_size = 128
 
     def server_bind(self):
+        # HTTPServer.server_bind calls socket.getfqdn(), which can stall
+        # for ~35 s on macOS before listen(); the name is never used.
         socketserver.TCPServer.server_bind(self)
         self.server_name, self.server_port = self.server_address[:2]
 
     def __init__(self, address, handler, data_dir, registry, config):
-        self.allow_reuse_address = sys.platform != "win32"
         if registry:
-            repo_root = next(iter(registry.values())).path.parents[2]
+            repo_root = registry.templates_root.parent
             findings = contract_findings(registry, repo_root)
             if findings:
                 raise RegistryError("; ".join(findings))
@@ -158,14 +260,20 @@ class ReportHTTPServer(ThreadingHTTPServer):
         self.port = address[1]
         self.token = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
-        self.bots = json_loads((Path(__file__).parent / "bots.json").read_text(encoding="utf-8"))
+        # display names of the shipped registry (runs carry their resolved identity)
+        self.bots = display_names(load_registry(SHIPPED_REGISTRY, "shipped")[0])
         self.action_log = ActionLog(data_dir)
         self.runs = RunStore(data_dir, registry, config, self.action_log)
         self.hub = SSEHub()
         self.window_title = None
         self.page = build_page(registry, self.csrf, self.port).encode("utf-8")
         self.static_dir = Path(__file__).parent / "static"
-        self.static_files = {path.name: path for path in self.static_dir.iterdir() if path.is_file()}
+        # relative posix names ("rs.js", "icons/icon.svg"): a request can only
+        # reach a file listed here
+        self.static_files = {
+            path.relative_to(self.static_dir).as_posix(): path
+            for path in self.static_dir.rglob("*") if path.is_file()
+        }
         self.stopping = threading.Event()
         self.last_activity = time.monotonic()
         self.idle_since = (
@@ -182,16 +290,16 @@ class ReportHTTPServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = PRODUCT_NAME
+    server_version = "report-shell"
     sys_version = ""
 
     def log_message(self, format, *args):
         return
 
-    def _headers(self, status, content_type="application/json; charset=utf-8", length=None):
+    def _headers(self, status, content_type="application/json; charset=utf-8", length=None, cache="no-store"):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.send_header("Content-Security-Policy", CSP)
         self.send_header("X-Content-Type-Options", "nosniff")
         if length is not None:
@@ -302,6 +410,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/hello":
             self._json(200, {
                 "runner": RUNNER_ID,
+                "version": __version__,
                 "pid": os.getpid(),
                 "port": self.server.port,
                 "open_runs": self.server.runs.open_count(),
@@ -313,6 +422,8 @@ class Handler(BaseHTTPRequestHandler):
             self._events(
                 "test" in query.get("client", []),
                 query.get("sid", [None])[-1],
+                query.get("app", [None])[-1],
+                query.get("prev", [None])[-1],
             )
         elif path == "/api/runs":
             if self._require_csrf():
@@ -342,24 +453,29 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._headers(200, entry.content_type, len(body))
             self.wfile.write(body)
-        elif path.startswith("/static/"):
-            name = unquote(path.removeprefix("/static/"))
-            source = self.server.static_files.get(name) if "/" not in name and "\\" not in name else None
+        elif path.startswith("/avatar/"):
+            sha = path.removeprefix("/avatar/")
+            avatar = self.server.runs.avatars.get(sha) if AVATAR_RE.fullmatch(sha) else None
+            if avatar is None:
+                self._json(404, {"error": "unknown_avatar"})
+                return
+            body, content_type = avatar
+            # content-addressed: the rail re-renders without refetching
+            self._headers(200, content_type, len(body), cache="private, max-age=86400, immutable")
+            self.wfile.write(body)
+        elif path.startswith("/static/") or path == "/favicon.ico":
+            name = "icons/favicon.ico" if path == "/favicon.ico" else unquote(path.removeprefix("/static/"))
+            source = self.server.static_files.get(name) if "\\" not in name else None
             if source is None:
                 self._json(404, {"error": "not_found"})
                 return
             body = source.read_bytes()
-            content_type = {
-                ".js": "text/javascript; charset=utf-8",
-                ".css": "text/css; charset=utf-8",
-                ".json": "application/json; charset=utf-8",
-            }.get(source.suffix, "application/octet-stream")
-            self._headers(200, content_type, len(body))
+            self._headers(200, STATIC_TYPES.get(source.suffix, "application/octet-stream"), len(body))
             self.wfile.write(body)
         else:
             self._json(404, {"error": "not_found"})
 
-    def _events(self, test_client, sid):
+    def _events(self, test_client, sid, app_token=None, previous=None):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-store")
@@ -373,19 +489,38 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(message.encode("utf-8"))
                 self.wfile.flush()
 
+        launch_generation = (
+            None
+            if test_client
+            else pending_launch_generation(self.server.data_dir)
+        )
         subscriber_id, subscriber = self.server.hub.subscribe(
             test_client,
             sid=sid if isinstance(sid, str) and SID_RE.fullmatch(sid) else None,
             writer=write_message,
             sock=self.connection,
+            launch_generation=launch_generation,
+        )
+        launch_generation = subscriber["launch_generation"]
+        # P8d: the page the CLI launched with --app presents that launch's
+        # one-time token (?app=); only it may close itself after its last
+        # decision. The first page presenting it claims it (hub, atomic); a
+        # reload in that window names the page it replaces (?prev=).
+        app_window = not test_client and self.server.hub.claim_app_window(
+            subscriber["sid"], app_token, launch_generation, previous
         )
         initial = (
             "retry: 1000\n"
-            f"event: runs\ndata: {json_dumps({'runs': self.server.runs.summaries(self.server.bots)}, separators=(',', ':'))}\n\n"
+            + ('event: window\ndata: {"app":true}\n\n' if app_window else "")
+            + f"event: runs\ndata: {json_dumps({'runs': self.server.runs.summaries(self.server.bots)}, separators=(',', ':'))}\n\n"
         )
         try:
             write_message(initial)
             self.server.hub.mark_write(subscriber_id)
+            if not test_client:
+                _clear_browser_launch_pending(
+                    self.server.data_dir, launch_generation
+                )
             while not self.server.stopping.is_set():
                 try:
                     message = subscriber["queue"].get(timeout=15)
@@ -400,6 +535,10 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             self.close_connection = True
             self.server.hub.remove(subscriber_id)
+            if not test_client:
+                _clear_browser_launch_pending(
+                    self.server.data_dir, launch_generation
+                )
 
     def do_POST(self):
         if not self._require_host():
@@ -417,7 +556,7 @@ class Handler(BaseHTTPRequestHandler):
         raw, value = body
         self.server.touch()
         if path == "/push":
-            self._push(raw)
+            self._push(raw, value)
         elif path == "/stop":
             if not self._action_body(value, {}):
                 return
@@ -450,7 +589,13 @@ class Handler(BaseHTTPRequestHandler):
             if SID_RE.fullmatch(value["sid"]) is None:
                 self._json(400, {"error": "invalid_sid", "pointer": "/sid"})
             else:
-                self.server.hub.bye(value["sid"])
+                matched, launch_generation = self.server.hub.bye(
+                    value["sid"]
+                )
+                if matched:
+                    _clear_browser_launch_pending(
+                        self.server.data_dir, launch_generation
+                    )
                 self._json(200, {"ok": True})
         elif path == "/title":
             if not self._action_body(value, {"title": str}):
@@ -509,20 +654,34 @@ class Handler(BaseHTTPRequestHandler):
                         400, {"error": "invalid_media", "pointer": "/media_id"}
                     )
                 else:
-                    subprocess.Popen(
-                        ["explorer.exe", f'/select,"{reveal_path}"'], shell=False
-                    )
-                    self._json(200, {"ok": True})
+                    try:
+                        reveal_file(reveal_path)
+                    except OSError:
+                        self._json(500, {"error": "reveal_failed"})
+                    else:
+                        self._json(200, {"ok": True})
         else:
             self._json(404, {"error": "not_found"})
 
-    def _push(self, raw):
+    def _push(self, raw, value):
+        explicit_run_id = isinstance(value, dict) and "run_id" in value
+        attempts = 1 if explicit_run_id else GENERATED_RUN_ID_ATTEMPTS
         try:
-            payload = validate_payload_bytes(raw, self.server.registry, self.server.runs.ids())
-            notify = payload.get("notify", {}).get("webhook_url")
-            if notify:
-                validate_webhook_url(notify, self.server.config)
-            detail = self.server.runs.register(payload)
+            for attempt in range(attempts):
+                used_ids = self.server.runs.ids() if explicit_run_id else ()
+                payload = validate_payload_bytes(
+                    raw, self.server.registry, used_ids
+                )
+                notify = payload.get("notify", {}).get("webhook_url")
+                if notify:
+                    validate_webhook_url(notify, self.server.config)
+                try:
+                    self.server.runs.register(payload)
+                except RunIdAlreadyUsed:
+                    if attempt == attempts - 1:
+                        raise
+                else:
+                    break
         except (EnvelopeError, MediaError, ValueError) as error:
             self._json(400, {"error": str(error), "pointer": getattr(error, "pointer", "")})
             return
@@ -530,7 +689,9 @@ class Handler(BaseHTTPRequestHandler):
         self.server.broadcast_runs(payload["run_id"], "open")
         if alive:
             state = _read_state(self.server.data_dir)
-            flash_window(state.get("browser_pid"), self.server.window_title)
+            request_attention(
+                _browser_identity(state), self.server.window_title
+            )
         result_path = self.server.runs.results_dir / f"{payload['run_id']}.json"
         self._json(200, {
             "run_id": payload["run_id"],
@@ -550,9 +711,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         run_id = value.get("run_id")
         try:
-            write_text(text)
+            write_clipboard(text)
         except ClipboardBusy:
             self._json(423, {"error": "clipboard_busy"})
+            return
+        except ClipboardUnavailable:
+            self._json(503, {"error": "clipboard_unavailable"})
+            return
+        except ClipboardTimeout:
+            self._json(504, {"error": "clipboard_timeout"})
+            return
+        except ClipboardError:
+            self._json(500, {"error": "clipboard_failed"})
             return
         self.server.action_log.write(run_id, "copy", {"text": text})
         self._json(200, {"ok": True})
@@ -579,6 +749,17 @@ def _read_state(data_dir):
         return {}
 
 
+def _clear_browser_launch_pending(data_dir, generation):
+    clear_launch_pending_coordinated(data_dir, generation)
+
+
+def _browser_identity(state):
+    result = LaunchResult.from_state(state.get("browser"))
+    if result is not None:
+        return result.identity
+    return state.get("browser_pid")
+
+
 def _write_state(server):
     path = server.data_dir / "state.json"
     old = _read_state(server.data_dir)
@@ -591,7 +772,9 @@ def _write_state(server):
     measurement_owner = os.environ.get("RS_MEASUREMENT_OWNER")
     if measurement_owner:
         state["measurement_owner"] = measurement_owner
-    if "browser_pid" in old:
+    if "browser" in old:
+        state["browser"] = old["browser"]
+    elif "browser_pid" in old:
         state["browser_pid"] = old["browser_pid"]
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json_dumps(state, separators=(",", ":")) + "\n", encoding="utf-8")
@@ -638,15 +821,19 @@ def _maintenance(server):
 def run_server(data_dir, port, repo_root):
     data_dir = ensure_layout(data_dir)
     retain_recent(data_dir)
-    registry = scan_registry(Path(repo_root) / "templates")
+    registry = scan_registry(
+        Path(repo_root) / "templates", Path(data_dir) / "templates"
+    )
     config = load_config(data_dir)
     server = ReportHTTPServer(("127.0.0.1", port), Handler, data_dir, registry, config)
     _write_state(server)
     maintenance = threading.Thread(target=_maintenance, args=(server,), daemon=True)
     maintenance.start()
+    restore_signals = install_signal_handlers(server)
     try:
         server.serve_forever(poll_interval=.2)
     finally:
+        restore_signals()
         server.stopping.set()
         server.server_close()
         state = _read_state(data_dir)

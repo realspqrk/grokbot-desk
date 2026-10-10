@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run grokbot-desk acceptance measurements and write the section 8 rubric."""
+"""Run report-shell acceptance measurements and write the section 8 rubric."""
 from __future__ import annotations
 
 import argparse
@@ -11,7 +11,14 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.paths import data_dir
+from core.registry import scan_registry
+
 LIVE_WINDOW_CRITERIA = frozenset({"C1", "C2", "C3", "C4"})
 LIVE_WINDOW_UNAVAILABLE = (
     "live window measurements are not part of this distribution"
@@ -169,6 +176,53 @@ def _visual_summary(raw):
     return themes
 
 
+def _complete_open(raw):
+    runs = raw.get("runs")
+    if raw.get("error") or not isinstance(runs, list):
+        return False
+    cold = [item for item in runs if isinstance(item, dict) and item.get("kind") == "cold"]
+    warm = [item for item in runs if isinstance(item, dict) and item.get("kind") == "warm"]
+    return (
+        len(runs) == 20
+        and len(cold) == 10
+        and len(warm) == 10
+        and all(
+            isinstance(item.get("latency_ms"), (int, float))
+            and not isinstance(item.get("latency_ms"), bool)
+            and isinstance(item.get("pid"), int)
+            and not isinstance(item.get("pid"), bool)
+            and item["pid"] > 0
+            and item.get("class") == "Chrome_WidgetWin_1"
+            and item.get("visible") is True
+            and item.get("profile_owned") is True
+            and isinstance(item.get("profile_window_count"), int)
+            and item["profile_window_count"] > 0
+            and isinstance(item.get("profile_process_count"), int)
+            and item["profile_process_count"] > 0
+            for item in runs
+        )
+    )
+
+
+def _complete_c2(raw):
+    return _complete_open(raw) and all(
+        isinstance(item.get("c2_pass"), bool) for item in raw["runs"]
+    )
+
+
+def _valid_snapshot(raw, source):
+    if raw is None or raw.get("error"):
+        return False
+    if not all(isinstance(raw.get(key), list) for key in (
+        "brave_before", "brave_after", "new_brave_pids"
+    )):
+        return False
+    if source == "open":
+        return _complete_open(raw)
+    updates = raw.get("updates")
+    return isinstance(updates, list) and len(updates) == 10
+
+
 def _complete_cases(raw):
     cases = raw.get("cases")
     total = raw.get("total")
@@ -179,20 +233,6 @@ def _complete_cases(raw):
         and len(cases) == total
         and all(isinstance(item, dict) for item in cases)
     )
-
-
-def _selected_port(args=None):
-    selected = getattr(args, "port", None) if args is not None else None
-    selected = selected if selected is not None else os.environ.get("RS_TOOL_PORT", "18920")
-    try:
-        port = int(selected)
-    except (TypeError, ValueError) as error:
-        raise ValueError("--port/RS_TOOL_PORT must be an integer") from error
-    if port == 18742:
-        raise ValueError(f"port {port} is reserved")
-    if not 18920 <= port <= 18939:
-        raise ValueError("--port/RS_TOOL_PORT must be in the isolated range 18920-18939")
-    return port
 
 
 def _number(value):
@@ -251,8 +291,8 @@ def _valid_k_raw(name, raw, *, open_runs, measured_k9, screenshot_k7):
     if name == "K3":
         return (
             raw.get("open_runs") == open_runs
-            and isinstance(raw.get("rail_rendered"), bool)
-            and _number(raw.get("rail_width"))
+            and isinstance(raw.get("strip_rendered"), bool)
+            and _number(raw.get("strip_width"))
             and isinstance(raw.get("focusable_descendants"), int)
             and not isinstance(raw.get("focusable_descendants"), bool)
         )
@@ -418,16 +458,24 @@ def _valid_calm_result(result):
     ):
         return False
     scenes = result.get("scenes")
-    if not isinstance(scenes, list) or len(scenes) != 16:
+    if not isinstance(scenes, list) or len(scenes) != 24:
         return False
-    expected_scenes = {
+    expected_base_scenes = {
         (fixture, theme, width, height, open_runs)
         for fixture in ("golden", "edge-max")
         for theme in ("light", "dark")
         for width, height in ((1500, 1000), (1280, 720))
         for open_runs in (1, 3)
     }
+    expected_identity_scenes = {
+        (fixture, theme, width, height, 3)
+        for fixture in ("golden+custom-accent", "golden+low-contrast-accent")
+        for theme in ("light", "dark")
+        for width, height in ((1500, 1000), (1280, 720))
+    }
+    expected_scenes = expected_base_scenes | expected_identity_scenes
     actual_scenes = set()
+    identity_failures = []
     for scene in scenes:
         viewport = scene.get("viewport", {})
         key = (
@@ -439,6 +487,8 @@ def _valid_calm_result(result):
         )
         actual_scenes.add(key)
         scene_items = scene.get("items")
+        identity = scene.get("identity")
+        identity_scene = key in expected_identity_scenes
         if (
             scene.get("template") != template
             or
@@ -450,13 +500,52 @@ def _valid_calm_result(result):
             )
         ):
             return False
-        if scene["ok"] is not all(
+        k_items_pass = all(
             scene_items[f"K{index}"].get("pass") is True
             for index in range(1, 14)
-        ):
+        )
+        identity_pass = True
+        if identity_scene:
+            if (
+                not isinstance(identity, dict)
+                or set(identity) != {
+                    "expected_accent", "observed_accent", "strip_accents", "pass",
+                }
+                or any(
+                    not isinstance(identity.get(name), str)
+                    or len(identity[name]) != 7
+                    or not identity[name].startswith("#")
+                    or any(char not in "0123456789abcdefABCDEF" for char in identity[name][1:])
+                    for name in ("expected_accent", "observed_accent")
+                )
+                or not _list_of(
+                    identity.get("strip_accents"),
+                    lambda value: isinstance(value, str),
+                )
+                or not isinstance(identity.get("pass"), bool)
+            ):
+                return False
+            identity_pass = (
+                identity["observed_accent"] == identity["expected_accent"]
+                and not identity["strip_accents"]
+            )
+            if identity["pass"] is not identity_pass:
+                return False
+            if not identity_pass:
+                identity_failures.append(
+                    f"{scene['template']}/{scene['fixture']}/{scene['theme']}/"
+                    f"{viewport['width']}x{viewport['height']}: "
+                    f"accent {identity['observed_accent']} "
+                    f"(expected {identity['expected_accent']}), "
+                    f"strip accents {' '.join(identity['strip_accents']) or 'none'}"
+                )
+        elif identity is not None:
             return False
-        expected_k9 = key[0] == "golden" and key[2:4] == (1280, 720)
-        screenshot_k7 = key[0] == "golden" and key[2:4] == (1500, 1000)
+        if scene["ok"] is not (k_items_pass and identity_pass):
+            return False
+        golden_scene = key[0] == "golden" or identity_scene
+        expected_k9 = golden_scene and key[2:4] == (1280, 720)
+        screenshot_k7 = golden_scene and key[2:4] == (1500, 1000)
         for index in range(1, 14):
             name = f"K{index}"
             item = scene_items[name]
@@ -473,6 +562,14 @@ def _valid_calm_result(result):
             ):
                 return False
     if actual_scenes != expected_scenes:
+        return False
+    identity = result.get("identity")
+    if (
+        not isinstance(identity, dict)
+        or set(identity) != {"scenes", "failed"}
+        or identity.get("scenes") != len(expected_identity_scenes)
+        or identity.get("failed") != identity_failures
+    ):
         return False
     items = result.get("items")
     if not isinstance(items, dict):
@@ -502,22 +599,37 @@ def _valid_calm_result(result):
             if aggregate != expected:
                 return False
     passed = sum(result["items"][f"K{index}"]["pass"] for index in range(1, 14))
-    if result.get("passed") != passed or result.get("ok") is not (passed == 13):
+    expected_ok = passed == 13 and not identity_failures
+    if result.get("passed") != passed or result.get("ok") is not expected_ok:
         return False
     return True
 
 
 def _registered_templates():
-    templates = []
-    for path in sorted((ROOT / "templates").glob("*/*/template.json")):
-        try:
-            manifest = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        template_id = manifest.get("id")
-        if isinstance(template_id, str) and template_id:
-            templates.append(template_id)
-    return sorted(set(templates))
+    return sorted(
+        scan_registry(
+            ROOT / "templates", data_dir() / "templates"
+        )
+    )
+
+
+def _selected_port(args=None):
+    selected = getattr(args, "port", None) if args is not None else None
+    selected = (
+        selected
+        if selected is not None
+        else os.environ.get("RS_TOOL_PORT", "18920")
+    )
+    try:
+        port = int(selected)
+    except (TypeError, ValueError) as error:
+        raise ValueError("--port/RS_TOOL_PORT must be an integer") from error
+    if not (18880 <= port <= 18899 or 18900 <= port <= 18939):
+        raise ValueError(
+            "--port/RS_TOOL_PORT must be in an isolated range "
+            "(18880-18899 or 18900-18939)"
+        )
+    return port
 
 
 def _allowed_browser_url(url, port):
@@ -603,6 +715,7 @@ def _run_score(args, netlog_dir, selected_port):
     if unknown:
         raise ValueError(f"unknown criteria: {', '.join(sorted(unknown))}")
     criteria = {}
+    open_raw = push_raw = None
     copy_raw = None
     network_raw = None
     c12_raw = None
@@ -624,7 +737,6 @@ def _run_score(args, netlog_dir, selected_port):
         created = sorted(browser_logs() - before)
         browser_runs.append({"command": command, "logs": created})
         return raw
-
     for criterion in (f"C{index}" for index in range(1, 17)):
         if criterion not in selected:
             criteria[criterion] = _not_run(criterion, "not selected")
@@ -637,7 +749,50 @@ def _run_score(args, netlog_dir, selected_port):
                 criterion, "--no-windows (clipboard measurement disabled)"
             )
             continue
-        if criterion == "C5":
+        if criterion == "C1":
+            cold = open_raw.get("cold_median_ms")
+            warm = open_raw.get("warm_median_ms")
+            valid = _complete_open(open_raw)
+            summary = {
+                "cold_pass": valid and cold is not None and cold <= 4000,
+                "warm_pass": valid and warm is not None and warm <= 1500,
+                "measurement_valid": valid,
+            }
+            status = "pass" if summary["cold_pass"] and summary["warm_pass"] else "fail"
+            value = (
+                f"cold {cold:.0f} ms; warm {warm:.0f} ms"
+                if valid and cold is not None and warm is not None
+                else _error(open_raw)
+            )
+            criteria[criterion] = _entry(status, value, {**open_raw, **summary}, criterion)
+        elif criterion == "C2":
+            valid = _complete_c2(open_raw)
+            total = len(open_raw.get("runs", [])) if isinstance(open_raw.get("runs"), list) else 0
+            passed = sum(item.get("c2_pass") is True for item in open_raw.get("runs", []))
+            status = "pass" if valid and (passed, total) == (20, 20) else "fail"
+            raw = {**open_raw, "measurement_valid": valid, "c2_passed": passed, "c2_total": total}
+            criteria[criterion] = _entry(status, f"{passed}/{total}", raw, criterion)
+        elif criterion == "C3":
+            lint = _command_json(["py", "-3", str(ROOT / "tools" / "lint_src.py")], timeout=60)
+            snapshot_sources = [item for item in (open_raw, push_raw) if item]
+            new_brave = sorted({pid for item in snapshot_sources for pid in item.get("new_brave_pids", [])})
+            snapshots_valid = (
+                _valid_snapshot(open_raw, "open") and _valid_snapshot(push_raw, "push")
+            )
+            passed = lint.get("ok") is True and snapshots_valid and not new_brave
+            raw = {
+                "lint": lint,
+                "new_brave_pids": new_brave,
+                "snapshot_runs": len(snapshot_sources),
+                "snapshots_valid": snapshots_valid,
+            }
+            criteria[criterion] = _entry("pass" if passed else "fail", f"{len(lint.get('findings', []))} findings; {len(new_brave)} new browser processes", raw, criterion)
+        elif criterion == "C4":
+            maximum = push_raw.get("max_update_ms")
+            passed = push_raw.get("ok") is True
+            value = f"{push_raw.get('extra_windows', '?')} extra; max {maximum:.0f} ms" if maximum is not None else _error(push_raw)
+            criteria[criterion] = _entry("pass" if passed else "fail", value, push_raw, criterion)
+        elif criterion == "C5":
             raw = browser_json(
                 ["py", "-3", str(ROOT / "tools" / "measure_copy.py")], timeout=300
             )
@@ -983,13 +1138,10 @@ def main(argv=None):
     parser.add_argument("--automated-only", action="store_true")
     parser.add_argument("--only")
     parser.add_argument("--no-windows", action="store_true")
-    parser.add_argument("--live", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--port", type=int)
     parser.add_argument("--shots", action="store_true")
     parser.add_argument("--out", type=Path, default=ROOT / "docs" / "scores")
     args = parser.parse_args(argv)
-    if args.live:
-        parser.error(LIVE_WINDOW_UNAVAILABLE)
     try:
         score = run_score(args)
     except ValueError as error:

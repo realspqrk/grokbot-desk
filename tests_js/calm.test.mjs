@@ -13,11 +13,8 @@ import {
   pngBackgroundRatio,
 } from '../tools/calm.mjs';
 import * as calmTools from '../tools/calm.mjs';
-import {
-  browserChannel,
-  loadChromium,
-  ROOT,
-} from '../tools/dev/rs-server.mjs';
+import { browserChannel, loadChromium } from '../tools/dev/rs-server.mjs';
+import { ROOT } from '../tools/dev/rs-server.mjs';
 
 const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
@@ -41,7 +38,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
     });
     return page.evaluate(calmEvaluator, {
       thresholds: CALM_THRESHOLDS,
-      templateId: 'synthetic-platform-preview',
+      templateId: 'preview-post',
       openRuns,
       verifiedRovingGroups,
     });
@@ -82,7 +79,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       const reduced = await page.evaluate(calmEvaluator, {
         thresholds: CALM_THRESHOLDS,
-        templateId: 'synthetic-platform-preview',
+        templateId: 'preview-post',
         openRuns: 1,
       });
       facts.K12 = { normal: facts.K12, reduced: reduced.K12 };
@@ -97,7 +94,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
   }
 
   async function judgeHtml(html, {
-    templateId = 'synthetic-platform-preview',
+    templateId = 'preview-post',
     viewport = { width: 1500, height: 1000 },
     theme = 'light',
     screenshot = false,
@@ -123,8 +120,8 @@ describe('C16 calm synthetic pages', { skip }, () => {
           one.K3,
           {
             open_runs: 3,
-            rail_rendered: true,
-            rail_width: 180,
+            strip_rendered: true,
+            strip_width: 180,
             focusable_descendants: 1,
           },
         ],
@@ -195,8 +192,8 @@ describe('C16 calm synthetic pages', { skip }, () => {
     const baseline = await measure();
     const one = structuredClone(baseline);
     const three = structuredClone(baseline);
-    one.K3 = { open_runs: 1, rail_rendered: false, rail_width: 0, focusable_descendants: 0 };
-    three.K3 = { open_runs: 3, rail_rendered: true, rail_width: 180, focusable_descendants: 1 };
+    one.K3 = { open_runs: 1, strip_rendered: false, strip_width: 0, focusable_descendants: 0 };
+    three.K3 = { open_runs: 3, strip_rendered: true, strip_width: 180, focusable_descendants: 1 };
     one.K9 = { measured: true, visible_interactive_above_fold: 11 };
     three.K9 = { measured: true, visible_interactive_above_fold: 14 };
     three.K13 = { copy_focus: { pass: true }, keyboard: false, accessibility: false };
@@ -206,13 +203,14 @@ describe('C16 calm synthetic pages', { skip }, () => {
     const scope = {
       CALM_THRESHOLDS,
       judgeCalmFacts,
-      requestedTemplate: 'synthetic-platform-preview',
-      calmFixtureCases: () => [{ fixture: 'golden', manifest: { id: 'synthetic-platform-preview' } }],
-      withHarness: (callback) => callback({}),
+      requestedTemplate: 'preview-post',
+      calmFixtureCases: () => [{ fixture: 'golden', manifest: { id: 'preview-post' } }],
+      withSession: (callback) => callback({}),
       calmScene: async (_browser, _server, _testCase, scene) => (
         structuredClone(scene.openRuns === 1 ? one : three)
       ),
       coverageReport: () => ({}),
+      calmIdentityScenes: async () => [],
     };
     vm.createContext(scope);
     vm.runInContext(
@@ -395,6 +393,128 @@ describe('C16 calm synthetic pages', { skip }, () => {
       } finally {
         await context.close();
       }
+    }
+  });
+
+  test('P8d fix1: only the shell strip with verified arrow keys counts as the report switcher', async () => {
+    const source = readFileSync(path.join(ROOT, 'tools/e2e.mjs'), 'utf8');
+    const scope = {
+      CALM_THRESHOLDS,
+      focusedControlFacts,
+      settleShortAnimations: calmTools.settleShortAnimations,
+      setTimeout,
+      clearTimeout,
+    };
+    vm.createContext(scope);
+    vm.runInContext(
+      source.slice(
+        source.indexOf('async function focusedControl('),
+        source.indexOf('async function runStep('),
+      ) + source.slice(
+        source.indexOf('async function waitForTabAuditReady('),
+        source.indexOf('function validateKeyboardSteps('),
+      ),
+      scope,
+    );
+    const style = '<style>body{background:white;color:black}button:focus{outline:2px solid blue;outline-offset:2px}</style>';
+    const extras = Array.from({ length: 9 }, (_, i) => `<button>Extra ${i + 1}</button>`).join('');
+    // four toolbar buttons with one Tab stop and no arrow handler (review case)
+    const toolbar = (attrs = '') => `<div role="toolbar" aria-label="Reports" data-rs-item ${attrs}>`
+      + [0, 1, 2, 3].map((i) => `<button tabindex="${i ? -1 : 0}" class="rs-strip__run" data-run-id="r${i}">Agent ${i + 1}</button>`).join('')
+      + '</div>';
+    const pages = {
+      marked: `<main>${'<div data-rs-strip>'}${toolbar()}</div>${extras}</main>`,
+      'marked in template': `<main id="rs-mount"><div class="rs-tpl"><nav id="rs-strip-nav" data-rs-strip>${toolbar('id="rs-strip"')}</nav>${extras}</div></main>`,
+      'shell strip without arrow keys': `<nav id="rs-strip-nav" data-rs-strip>${toolbar('id="rs-strip"')}</nav><main id="rs-mount">${extras}</main>`,
+    };
+    // the shell's strip: arrows switch the shown report, which re-renders the
+    // strip after a moment (data-rs-ready 0 -> 1) with the new one current
+    const switcher = `<script>(() => {
+      const strip = document.getElementById('rs-strip');
+      let active = 0;
+      function render() {
+        strip.textContent = '';
+        for (let i = 0; i < 4; i += 1) {
+          const b = document.createElement('button');
+          b.className = 'rs-strip__run';
+          b.dataset.runId = 'r' + i;
+          b.textContent = 'Agent ' + (i + 1);
+          b.tabIndex = i === active ? 0 : -1;
+          if (i === active) b.setAttribute('aria-current', 'page');
+          strip.appendChild(b);
+        }
+      }
+      render();
+      document.documentElement.dataset.rsReady = '1';
+      strip.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        e.preventDefault();
+        active = (active + (e.key === 'ArrowRight' ? 1 : 3)) % 4;
+        strip.children[active].focus();
+        document.documentElement.dataset.rsReady = '0';
+        setTimeout(() => {
+          render();
+          strip.children[active].focus();
+          document.documentElement.dataset.rsReady = '1';
+        }, 60);
+      });
+    })();</script>`;
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const page = await context.newPage();
+    const scene = async (html) => {
+      await page.setContent(`<html lang="de"><head>${style}</head><body>${html}</body></html>`);
+      let audit = null;
+      let error = null;
+      try { audit = await scope.tabAudit(page); } catch (caught) { error = String(caught); }
+      const verified = audit ? audit.groups.map((group) => group.identity).filter(Boolean) : [];
+      const facts = await page.evaluate(calmEvaluator, {
+        thresholds: CALM_THRESHOLDS, templateId: '_starter', openRuns: 3, verifiedRovingGroups: verified,
+      });
+      return { audit, error, facts };
+    };
+    try {
+      for (const [name, html] of Object.entries(pages)) {
+        const { error, facts } = await scene(html);
+        assert.match(error || '', /ArrowRight did not move within toolbar/, `${name}: the arrow audit still runs`);
+        // K13 has no keyboard evidence; K2/K9 count all four buttons again
+        const judged = judgeCalmFacts(facts, {
+          templateId: '_starter',
+          k13: { keyboard: error === null, accessibility: true, copy_focus: true },
+        });
+        assert.equal(judged.items.K13.pass, false, name);
+        assert.equal(facts.K2.items[0].interactive_count, 4, name);
+        assert.equal(judged.items.K2.pass, false, name);
+        assert.equal(facts.K9.visible_interactive_above_fold, 13, name);
+        assert.equal(judged.items.K9.pass, false, name);
+      }
+      // the real switcher: arrows verified (each moves focus, makes the next
+      // report current and wraps), then it counts as one control
+      const { audit, error, facts } = await scene(
+        `<nav id="rs-strip-nav" data-rs-strip><div role="toolbar" aria-label="Reports" id="rs-strip" data-rs-item></div></nav><main id="rs-mount">${extras}</main>${switcher}`,
+      );
+      assert.equal(error, null);
+      const group = audit.groups.find((item) => item.kind === 'toolbar');
+      assert.equal(group.switcher, true);
+      assert.deepEqual([...group.arrowed], ['r1', 'r2', 'r3', 'r0']);
+      assert.equal(facts.K2.items[0].interactive_count, 1);
+      assert.equal(facts.K9.visible_interactive_above_fold, 10);
+
+      // the shell re-renders the strip whenever the server's list changes
+      // (e.g. the shown report was marked read on the first key press):
+      // fresh buttons, same reports; the audit follows them by run id
+      const rerendering = switcher.replace(
+        "strip.addEventListener('keydown'",
+        "let again = 2; document.addEventListener('keydown', () => { if (again > 0) { again -= 1; setTimeout(() => { const held = strip.contains(document.activeElement); render(); if (held) strip.children[active].focus(); }, 0); } }, true); strip.addEventListener('keydown'",
+      );
+      assert.notEqual(rerendering, switcher);
+      const again = await scene(
+        `<nav id="rs-strip-nav" data-rs-strip><div role="toolbar" aria-label="Reports" id="rs-strip" data-rs-item></div></nav><main id="rs-mount">${extras}</main>${rerendering}`,
+      );
+      assert.equal(again.error, null);
+      assert.ok(again.audit.groups.some((group) => group.switcher));
+      assert.equal(again.facts.K2.items[0].interactive_count, 1);
+    } finally {
+      await context.close();
     }
   });
 
@@ -865,13 +985,13 @@ describe('C16 calm synthetic pages', { skip }, () => {
     const item = `K${index}`;
     test(`${item}: cluttered synthetic page fails exactly ${item} and calm synthetic page passes all items`, async () => {
       const calm = judgeCalmFacts(await measure(), {
-        templateId: 'synthetic-platform-preview',
+        templateId: 'preview-post',
         k13: passingEvidence,
       });
       assert.equal(calm.ok, true, JSON.stringify(calm.items, null, 2));
 
       const cluttered = judgeCalmFacts(await measure(item), {
-        templateId: 'synthetic-platform-preview',
+        templateId: 'preview-post',
         k13: passingEvidence,
       });
       const failed = Object.entries(cluttered.items)
@@ -924,21 +1044,21 @@ describe('C16 calm synthetic pages', { skip }, () => {
 
       const facts = await measure();
       const missingC12 = judgeCalmFacts(facts, {
-        templateId: 'synthetic-platform-preview',
+        templateId: 'preview-post',
         k13: { keyboard: false, accessibility: true, copy_focus: true },
       });
       assert.equal(missingC12.items.K13.pass, false);
       assert.match(missingC12.items.K13.reasons.join(' '), /C12/);
 
       const missingC13 = judgeCalmFacts(facts, {
-        templateId: 'synthetic-platform-preview',
+        templateId: 'preview-post',
         k13: { keyboard: true, accessibility: false, copy_focus: true },
       });
       assert.equal(missingC13.items.K13.pass, false);
       assert.match(missingC13.items.K13.reasons.join(' '), /C13/);
 
       const hiddenCopy = judgeCalmFacts(facts, {
-        templateId: 'synthetic-platform-preview',
+        templateId: 'preview-post',
         k13: { keyboard: true, accessibility: true, copy_focus: false },
       });
       assert.equal(hiddenCopy.items.K13.pass, false);
@@ -947,4 +1067,120 @@ describe('C16 calm synthetic pages', { skip }, () => {
       await context.close();
     }
   });
+
+  test('calm mode adds accent and shape-avatar scenes per golden', async () => {
+    const source = readFileSync(path.join(ROOT, 'tools/e2e.mjs'), 'utf8');
+    const seen = [];
+    const scope = {
+      readFileSync,
+      path,
+      ROOT,
+      judgeCalmFacts: () => ({ ok: true, items: {} }),
+      calmScene: async (_browser, _server, testCase, scene) => {
+        seen.push({ template: testCase.manifest.id, ...scene });
+        return {
+          K13: { keyboard: { pass: true }, accessibility: { pass: true }, copy_focus: { pass: true } },
+          identity: { pass: true, expected_accent: scene.expectedAccent },
+        };
+      },
+    };
+    vm.createContext(scope);
+    vm.runInContext(
+      source.slice(
+        source.indexOf('const IDENTITY_FOREIGN = ['),
+        source.indexOf('async function calmScene('),
+      ),
+      scope,
+    );
+    const scenes = await scope.calmIdentityScenes({}, {}, [
+      { fixture: 'golden', manifest: { id: '_starter' } },
+      { fixture: 'edge-max', manifest: { id: '_starter' } },
+    ]);
+    assert.equal(scenes.length, 20);
+    assert.ok(seen.every((scene) => scene.openRuns === 3 && scene.identities.length === 3));
+    const accentScenes = seen.filter((scene) => scene.fixture.endsWith('accent'));
+    assert.equal(accentScenes.length, 8);
+    assert.ok(accentScenes.every((scene) => new Set(scene.identities.map((item) => item.accent)).size === 3));
+    const shapes = new Set(seen.flatMap((scene) => scene.identities.map((item) => item.avatar_shape)).filter(Boolean));
+    assert.deepEqual([...shapes].sort(), ['blob', 'hex', 'pebble', 'squircle', 'star', 'tablet', 'teardrop']);
+    const accent = (fixture, theme) => seen.find((scene) => (
+      scene.fixture === fixture && scene.theme === theme
+    )).expectedAccent;
+    assert.equal(accent('golden+custom-accent', 'light'), '#3b4fd8');
+    assert.equal(accent('golden+custom-accent', 'dark'), '#0891b2');
+    assert.equal(accent('golden+low-contrast-accent', 'light'), '#3b4fd8');
+    assert.equal(accent('golden+low-contrast-accent', 'dark'), '#f6c945');
+    assert.equal(accent('golden+shape-avatars', 'light'), '#8b4cf0');
+    assert.equal(accent('golden+shape-avatars', 'dark'), '#8f9cf7');
+    assert.equal(accent('golden+shape-avatars-2', 'light'), '#3b4fd8');
+    assert.equal(accent('golden+shape-avatars-2', 'dark'), '#ff6700');
+    assert.equal(accent('golden+shape-fallbacks', 'light'), '#3b4fd8');
+    assert.equal(accent('golden+shape-fallbacks', 'dark'), '#8f9cf7');
+  });
+
+  // Identity calibration: avatars are media, a bot accent is the one
+  // accent, and a foreign run's accent painted in the rail is caught.
+  test('24 and 32 px avatars are media, not nested boxes (K5)', async () => {
+    const avatar = (size, inner = '') => (
+      `<span data-rs-avatar aria-hidden="true" style="display:inline-grid;width:${size}px;height:${size}px;border-radius:50%;background:#c4c4cc">${inner}</span>`
+    );
+    const nested = (content) => (
+      `Second decision item</p><div style="padding:8px;background:#e0e0e0"><div style="padding:8px;background:#d0d0d4">${content} Inbox Agent</div></div>`
+    );
+    for (const [content, pass] of [
+      [avatar(24) + avatar(32, '<img alt="" src="data:,">'), true],
+      [avatar(48), false],
+      [avatar(32, '<span>IA</span>'), false],
+      [avatar(32, '<svg data-rs-shape="blob" viewBox="0 0 48 48"><path fill-rule="evenodd" d="M4 24a20 20 0 1 0 40 0a20 20 0 1 0-40 0Z"/></svg>'), true],
+      [avatar(32, '<svg viewBox="0 0 48 48"><path d="M4 24h40"/></svg>'), false],
+    ]) {
+      const result = await judgeHtml(calmPage().replace('Second decision item</p>', nested(content)));
+      try {
+        assert.equal(result.judged.items.K5.pass, pass, content);
+      } finally {
+        await result.context.close();
+      }
+    }
+  });
+
+  test('a bot accent replacing the accent token passes K1 and K6', async () => {
+    for (const accent of ['#0891b2', '#f6c945']) {
+      const result = await judgeHtml(calmPage().replaceAll('#336699', accent));
+      try {
+        assert.equal(result.judged.items.K1.pass, true, accent);
+        assert.equal(result.judged.items.K6.pass, true, accent);
+        assert.equal(result.facts.K1.accent_fill_ids.length, 1, accent);
+      } finally {
+        await result.context.close();
+      }
+    }
+  });
+
+  test('another run\'s accent painted in the rail fails K6 (one accent at a time)', async () => {
+    const page = calmPage({ runCount: 3 }).replaceAll('#336699', '#0891b2');
+    const clean = await judgeHtml(page);
+    try {
+      assert.equal(clean.judged.items.K6.pass, true);
+    } finally {
+      await clean.context.close();
+    }
+    const foreign = await judgeHtml(page.replace(
+      '<button>Run 2</button>',
+      '<button>Run 2 <span style="color:#a855f7">Desk Agent</span></button>',
+    ));
+    try {
+      assert.equal(foreign.judged.items.K6.pass, false);
+    } finally {
+      await foreign.context.close();
+    }
+  });
+});
+
+test('K10 social audit scope: the preview-post built-in and templates extending it', () => {
+  assert.equal(calmTools.isSocialPreview('preview-post'), true);
+  assert.equal(calmTools.isSocialPreview('preview-post'), true);
+  assert.equal(calmTools.isSocialPreview({ id: 'shop-post', extends: 'preview-post' }), true);
+  assert.equal(calmTools.isSocialPreview({ id: 'decide-list' }), false);
+  assert.equal(calmTools.isSocialPreview({ id: 'shop-list', extends: 'decide-list' }), false);
+  assert.equal(calmTools.isSocialPreview(null), false);
 });

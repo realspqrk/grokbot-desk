@@ -1,0 +1,127 @@
+/* review-doc (built-in, calm). Tokens only: var(--rs-*) colours,
+   var(--space-*) spacing, no colour literals, no URLs.
+   The agent's lead and quiet reading facts first; then the document on the
+   page itself (no card), one hairline above it, a 72ch reading column and a
+   relaxed line height. Each section is an item whose "Comment" action shows
+   on hover/focus; "Request changes" is the footer's quiet alternative. */
+.rd { display: flex; flex-direction: column; gap: var(--space-5); }
+.rd__lead { display: flex; flex-direction: column; gap: var(--space-1); }
+.rd__summary { max-width: var(--rs-measure); }
+.rd__meta { font-size: var(--rs-fs-sm); color: var(--rs-muted); font-variant-numeric: tabular-nums; }
+.rd__request { display: flex; flex-direction: column; gap: var(--space-1); max-width: var(--rs-measure); }
+
+/* ---- the document ---- */
+.rd__doc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: var(--rs-measure);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--rs-line);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.rd__section { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+
+.rd__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.rd__head > .rd__h { min-width: 0; }
+.rd__comment-open { flex: none; }
+.rd__comment-open > .rs-ico { width: 16px; height: 16px; }
+.rd__cbox { display: flex; flex-direction: column; gap: var(--space-1); }
+.rd__cbox > .rs-label { max-width: var(--rs-measure); }
+
+/* headings: 20 / 15 / 15 / 13, one weight */
+.rd__h { margin: 0; font-weight: var(--rs-fw-strong); line-height: var(--rs-lh-tight); }
+.rd__h--1 { font-size: var(--rs-fs-lg); }
+.rd__h--2,
+.rd__h--3 { font-size: var(--rs-fs-md); }
+.rd__h--4 { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.rd__section > .rd__h { margin-top: var(--space-3); }
+.rd__section > .rd__head + .rd__h,
+.rd__section > .rd__cbox + .rd__h,
+.rd__section > .rd__h:first-child { margin-top: 0; }
+
+.rd__p { margin: 0; }
+.rd__p--plain { white-space: pre-wrap; }
+.rd strong, .rd th { font-weight: var(--rs-fw-strong); }
+.rd__code {
+  font-family: var(--rs-font-mono);
+  font-size: var(--rs-fs-sm);
+}
+.rd__link { text-decoration: underline; text-decoration-color: var(--rs-line-strong); text-underline-offset: 3px; }
+.rd__url {
+  padding-left: var(--space-1);
+  font-size: var(--rs-fs-sm);
+  color: var(--rs-muted);
+}
+.rd__url,
+.rd__address { overflow-wrap: anywhere; }
+.rd__url::before { content: "("; }
+.rd__url::after { content: ")"; }
+
+.rd__list { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
+.rd__list .rd__list { margin-top: var(--space-1); }
+.rd__list > li::marker { color: var(--rs-muted); }
+
+.rd__quote {
+  margin: 0;
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--rs-line);
+  color: var(--rs-muted);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.rd__pre {
+  margin: 0;
+  max-width: var(--rs-measure);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--rs-r-md);
+  background: var(--rs-hover);
+  font-family: var(--rs-font-mono);
+  font-size: var(--rs-fs-sm);
+  line-height: var(--rs-lh);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rd__hr { width: 100%; margin: 0; border: 0; border-top: 1px solid var(--rs-line); }
+
+.rd__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  line-height: var(--rs-lh);
+}
+.rd__table th,
+.rd__table td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: 1px solid var(--rs-line);
+  text-align: left;
+  vertical-align: top;
+}
+.rd__table th { color: var(--rs-muted); }
+.rd__table .rd__cell--right { text-align: right; }
+.rd__table .rd__cell--center { text-align: center; }
+.rd__table th:last-child,
+.rd__table td:last-child { padding-right: 0; }
+
+.rd__figure { display: flex; }
+.rd__img {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  border-radius: var(--rs-r-md);
+}
+.rd__img-missing {
+  display: inline-block;
+  max-width: var(--rs-measure);
+  font-size: var(--rs-fs-sm);
+  color: var(--rs-muted);
+}

@@ -1,0 +1,60 @@
+/* approve-one (built-in, calm). Tokens only: var(--rs-*) colours,
+   var(--space-*) spacing, no colour literals, no URLs.
+   The decision sits right under what it is about: summary, key facts and
+   copy icons, then one segmented choice; points and checks follow as quiet
+   lists, a longer reference value behind a closed disclosure. */
+.ao { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-6); }
+.ao > * { align-self: stretch; }
+
+.ao__lead { display: flex; flex-direction: column; gap: var(--space-3); }
+.ao__summary { max-width: var(--rs-measure); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.ao__facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--space-5);
+  row-gap: var(--space-1);
+  max-width: var(--rs-measure);
+}
+.ao__facts dt { font-size: var(--rs-fs-sm); color: var(--rs-muted); align-self: baseline; }
+.ao__facts dd { margin: 0; overflow-wrap: anywhere; align-self: baseline; }
+.ao__mono { font-family: var(--rs-font-mono); font-size: var(--rs-fs-sm); }
+
+.ao__copies {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-6);
+}
+
+.ao__decide {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ao__comment { display: flex; flex-direction: column; gap: var(--space-1); max-width: var(--rs-measure); }
+.ao__comment[hidden] { display: none; }
+
+.ao__points {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: var(--rs-measure);
+  overflow-wrap: anywhere;
+}
+.ao__points > li::marker { color: var(--rs-muted); }
+
+.ao__checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ao__checks li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 20em) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  overflow-wrap: anywhere;
+}
+.ao__check-detail { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
