@@ -18,7 +18,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 </div>
 
 > [!WARNING]
-> ⚠️ This is not an official Grok Bot plugin. SpaceXAI, please don't sue me.
+> ⚠️ This is not an official Grok Bot plugin. SpaceXAI, please don't sue me. But please steal it. Add it to Grok Bot natively 🙏
 
 <div align="center">
 
