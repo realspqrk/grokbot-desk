@@ -24,6 +24,7 @@ from conftest import free_port, install_minimal_template
 from core.actionlog import ActionLog
 from core.cli import command_open
 from core.envelope import validate_payload
+from core.launch_coordination import launch_is_pending
 from core.media import MediaError, register_media, replace_media
 from core.paths import ensure_layout, load_config
 from core.registry import scan_registry
@@ -739,6 +740,16 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
         dead.shutdown(socket.SHUT_RDWR)
         dead.close()
         streams.remove(dead)
+        # The dead peer's stream clears the pending launch on the server's
+        # thread, after the client already saw its first event; wait for that
+        # (well inside the pending launch's 5 s deadline, so expiry can't pass
+        # this) and for the peer to be gone before opening again.
+        deadline = time.monotonic() + 3
+        while (
+            launch_is_pending(data_dir) or server.hub.probe_window()
+        ) and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert not launch_is_pending(data_dir)
         with (
             patch("core.cli.launch_window", return_value=1234) as launch,
             patch("core.cli.focus_window") as focus,

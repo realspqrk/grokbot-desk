@@ -1,41 +1,45 @@
+<div align="center">
+
+<img src="core/static/icons/icon-192.png" alt="grokbot-desk icon: a white blob with two eyes" width="112" height="112">
+
+<h1>grokbot-desk</h1>
+
+<p><strong>The CEO dashboard for decisions and reports from your bots.</strong></p>
+
+<p>You manage your bots like employees. Make decisions like a CEO.<br>
+Optimized for Grok Bot. Works with any agent that can run a command.</p>
+
 [![CI](https://github.com/realspqrk/grokbot-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/realspqrk/grokbot-desk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Platforms: Windows | macOS (experimental)](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%28experimental%29-lightgrey.svg)](#platforms)
 [![Version: 1.0.0-beta.1](https://img.shields.io/badge/version-1.0.0--beta.1-blue.svg)](CHANGELOG.md)
 
+<p>
+  <a href="#quick-start">Quick start</a> &middot;
+  <a href="#templates">Templates</a> &middot;
+  <a href="#use-with-grok-bot">Use with Grok Bot</a> &middot;
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+<img src="docs/img/hero-strip-light.png" alt="Three open reports with a slim avatar strip along the top" width="760">
+
+</div>
+
 > [!WARNING]
 > ⚠️ This is not an official Grok Bot plugin. SpaceXAI, please don't sue me.
 
-# grokbot-desk
+Chat is awful for discussing serious work. When a bot needs your decision, a calm window pops up instead: the bot sends JSON, you decide, the bot reads your decision as JSON. Everything stays on your computer.
 
-Status: 1.0.0-beta.1. Windows is supported; macOS is a beta.
-
-The CEO/CTO decision dashboard for your bots.
-
-You manage your bots like employees. Make decisions like a CEO.
-
-Optimized for Grok Bot. Works with any agent that can run a command.
-
-Chat is awful for discussing serious work. When a bot needs your decision, a human-friendly window pops up instead. grokbot-desk gives AI agents, including a Grok Bot, a local desktop UI: send JSON, review it, and read the decision as JSON.
-
-Bots bring you decisions and reports when they need you. The server stays on this machine.
+**Status:** 1.0.0-beta.1. Windows is supported; macOS is a beta.
 
 ## What you see
 
-One open report is a compact pop-up.
+| One open report | After the decision |
+| :---: | :---: |
+| <img src="docs/img/hero-popup-dark.png" alt="One open report in a compact pop-up, dark theme" width="400"> | <img src="docs/img/hero-done.png" alt="A report after the decision has been sent" width="400"> |
 
-![One open report in a compact pop-up, dark theme](docs/img/hero-popup-dark.png)
-
-Several open reports use a slim avatar strip along the top. After each decision, the next report comes forward.
-
-![Three open reports with a slim avatar strip along the top, light theme](docs/img/hero-strip-light.png)
-
-When you send the decision, that report is done.
-
-![A report after the decision has been sent](docs/img/hero-done.png)
-
-The window is German by default. `RS_LANG=en` selects the English string table. Result times use Europe/Vienna.
+One open report is a compact pop-up. Several open reports share one window with an avatar strip on top; after each decision the next one comes forward. The window is German by default; `RS_LANG=en` switches to English. Result times use Europe/Vienna.
 
 ## Use with Grok Bot
 
@@ -130,9 +134,7 @@ python report_shell.py wait RUN_ID --timeout 120
 python report_shell.py result RUN_ID
 ```
 
-Replace `RUN_ID` with the id printed by `show`. `wait` prints `{"status":"submitted","result_path":"..."}` when you submit. Other terminal statuses are `cancelled` and `expired`. `--timeout` is in seconds. `0` waits without a limit. `result` prints the full envelope. This illustration uses example ids and timestamps:
-
-The default timeout is 0. In a bot runtime, use a timeout below its shell-call limit; exit 5 means the report is still waiting, so call `wait` again later.
+Replace `RUN_ID` with the id printed by `show`. `wait` prints `{"status":"submitted","result_path":"..."}` when you submit. Other terminal statuses are `cancelled` and `expired`. `--timeout` is in seconds. `0` waits without a limit. `result` prints the full envelope. In a bot runtime, use a timeout below its shell-call limit; exit 5 means the report is still waiting, so call `wait` again later. Example result (ids and timestamps are illustrative):
 
 ```json
 {
@@ -158,7 +160,7 @@ The default timeout is 0. In a bot runtime, use a timeout below its shell-call l
 
 `created` and `decided` use Europe/Vienna time. `duration_s` is the time since the payload was created. `log` points at the local action log.
 
-The result may also contain `identity` diagnostics. With this example's blue avatar colour, it includes `"identity": {"name": "Inbox Agent", "accent_fallback": ["dark"], "warnings": []}`. This records a theme accent fallback and does not change the decision.
+The result may also carry `identity` diagnostics (for example a theme accent fallback); they never change the decision.
 
 ## Templates
 
