@@ -24,7 +24,7 @@ var noteOpen = part('note-open');
 var noteBox = part('note-box');
 
 RS.fillText(part('question'), data.question);
-if (data.context) RS.fillText(part('context'), data.context);
+if (data.context && RS.task.why_from !== 'context') RS.fillText(part('context'), data.context);
 else part('context').remove();
 
 /* the schema rejects a repeated id (x-rs-unique-key); should one still
@@ -153,7 +153,7 @@ function update(save) {
   var picked = Object.prototype.hasOwnProperty.call(byId, row.value) ? byId[row.value] : null;
   var value = { choice: picked ? picked.id : '', note: note.value };
   if (save) RS.draft.set(value);
-  RS.setSubmitLabel(picked ? RS.t('po_choose', { name: picked.name }) : RS.t('po_choose_idle'));
+  RS.setSubmitLabel(picked ? RS.t('po_choose', { name: picked.name }) : RS.cta('choose'));
   RS.setResult(picked ? value : null);
   RS.setStatus(picked ? null : RS.t('po_pick', { n: RS.number(options.length) }));
 }

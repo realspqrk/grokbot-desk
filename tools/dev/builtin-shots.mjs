@@ -42,6 +42,21 @@ const SHOTS = {
       'edge-no-image': 'Bread class announcement',
     },
   },
+  'pick-option': {
+    bot: 'example-office-bot',
+    identity: { name: 'Office Agent', avatar_shape: 'pebble', avatar_color: 'green' },
+    fixtures: { golden: 'Venue for the spring team day' },
+  },
+  'review-doc': {
+    bot: 'example-writer-bot',
+    identity: { name: 'Writer Agent', avatar_shape: 'squircle', avatar_color: 'violet' },
+    fixtures: { golden: 'Spring opening announcement' },
+  },
+  _starter: {
+    bot: 'example-ops-bot',
+    identity: { name: 'Ops Agent' },
+    fixtures: { golden: 'Nightly backup check' },
+  },
 };
 
 function selection(args) {

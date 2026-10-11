@@ -43,7 +43,7 @@ Chat is awful for discussing serious work. When a bot needs your decision, a cal
 | :---: | :---: |
 | <img src="docs/img/hero-popup-dark.png" alt="One open report in a compact pop-up, dark theme" width="400"> | <img src="docs/img/hero-done.png" alt="A report after the decision has been sent" width="400"> |
 
-One open report is a compact pop-up. Several open reports share one window with an avatar strip on top; after each decision the next one comes forward. The window is German by default; `RS_LANG=en` switches to English. Result times use Europe/Vienna.
+One open report is a compact pop-up. A tinted banner above the title says what to do and who acts next (for example `Approve and the bot posts`, or `Post this yourself, then mark it posted`), with the steps and a short why; the buttons match it. Several open reports share one window with an avatar strip on top; after each decision the next one comes forward. The window is German by default; `RS_LANG=en` switches to English. Result times use Europe/Vienna.
 
 ## Use with Grok Bot
 

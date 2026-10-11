@@ -39,6 +39,7 @@ What the person sees:
 
 - One window (Edge or Chrome in `--app` mode, own profile, no tabs, no address bar): a compact pop-up for one decision, 880x920 at 0,0 of the primary monitor by default (an 864x836 page: every built-in golden but the long `review-doc` fits without scrolling; `config.json` `window` overrides it).
 - If the window is already open, a new report arrives quietly: the title gets the prefix `● ` and the taskbar button flashes, at most once per burst of reports (pushes less than 30 seconds apart are one burst; a window opened for the first report of a burst counts as its one bring-forward). The page uses that same 30-second quiet gap for its one announcement. The window does not jump to the front. `show --focus` brings it to the front, also at most once per burst; use it only when the person asked for the report right now.
+- Above the title of every report a tinted task banner says what to do and who acts next: one task line (`Freigeben, dann postet der Bot` / `Approve and the bot posts`), one line of steps, at most three sentences of why, and the effort and due date as quiet meta (`~3 Min.`, `fällig heute 15:00`). A decided report keeps it, neutral, saying what happened. See *Task banner* in section D.
 - With exactly one open report there is no list at all: the header shows the bot's avatar, its name in bold and the report title as one quiet line below. With 2 or more open reports a slim avatar strip sits above the header with one avatar per bot (see "Several bots" below), the active one underlined, and `n von m offen` / `n of m open` at the end (counting reports, up to 12). `Ctrl+1..9` switches from anywhere; on the strip `Left`/`Right`/`Home`/`End` move along it (one Tab stop). A new report never replaces the report on screen; it waits in the strip with a filled dot and the window title gets `● `.
 
 ### Several bots
@@ -55,6 +56,7 @@ When several bots post at once (a burst), the window stays one calm window:
 ## 2. Action design
 
 - Every item ends in an explicit choice. The person picks; nothing is decided by default.
+- Set `task.kind` and write a short `task.why` (at most 3 sentences). Labels say who acts next: `Gepostet ✓` when the person posted it, `Freigeben & posten` when the bot will, `Verstanden` when there is nothing to decide. The built-ins take their buttons from one table per kind (*Task banner*, section D).
 - Choice labels are German verbs of at most 2 words (`Erledigt`, `Später`, `Ignorieren`, `Ja`, `Nein`, `Freigeben`, `Änderungen anfordern`).
 - At most 3 choices per item. Use `rs-action-row` (radio-group semantics, arrow keys).
 - No pre-selected choice. "Do nothing" is the default: a report that is discarded (`Verwerfen`) or expires gives the bot a `cancelled` or `expired` result, and the bot then does nothing.
@@ -292,6 +294,7 @@ Payload `report-shell/payload@1` (max 2 MB; unknown top-level fields are rejecte
 | `notify` | optional `{"webhook_url"}`; the webhook is **off in v1**, bots use `wait` |
 | `data` | validated against the template's `schema.json` |
 | `identity` | optional `{"name", "avatar", "accent", "avatar_shape", "avatar_color"}`, each key optional; see *Bot identity* below. Never rejects the report |
+| `task` | optional `{"kind", "steps", "eta_min", "due", "why"}`: what the person does and who acts next; see *Task banner* below. Without it the kind is derived. An unknown field or kind, or a kind that contradicts `data`, is rejected with a pointer (exit 2) |
 
 Result `report-shell/result@1`: `schema`, `run_id`, `template`, `template_version`, `bot`, `status` (`submitted` \| `cancelled` \| `expired`), `created`, `decided`, `duration_s`, `log`, and `data` (only for `submitted`). Example in section A, step 4. When the page could not use part of the bot's identity, the result also carries `identity`: `{"name", "accent_fallback": ["light"|"dark"...], "warnings": [{"source", "field", "reason"}...]}` (the same warnings are in the action log `log` as `warning` events).
 
@@ -307,6 +310,52 @@ Each bot can show its own **name**, **avatar** (an image or a built-in shape) an
 - `accent`: `#RRGGBB`. Checked per theme: accent and its derived hover fill vs page and card >= 3:1, the label (black or white, whichever is higher) vs accent and hover >= 4.5:1, the focus ring (= accent) >= 3:1 on every focus background in `contrast-pairs.json`. A theme that fails uses the default accent and is listed in `accent_fallback`. For example, `#0891b2` falls back in light mode because its derived hover fill is below 3:1 against white, while `#a855f7` passes both themes. Without `accent`, `avatar_color` seeds the accent through the same checks (e.g. `blue` is used in light mode and falls back in dark mode, `orange` the other way round); a seeded theme that fails is listed in `accent_fallback` without a warning.
 - Problems never reject the report: an invalid value is skipped (the next source is used) and logged as a warning. `doctor` lists the problems of both registries under `identity_warnings`.
 - Grok Bot: a bot reads its own `profile.json` and passes `avatarShape` / `avatarColor` as `avatar_shape` / `avatar_color` (camelCase to snake_case); an empty profile value stays omitted.
+
+### Task banner
+
+A busy person who was interrupted should know within 10 seconds what to do. Every report therefore opens with a banner above the title: the task line of its kind, one line of steps (`task.steps`, else a default per kind), at most three sentences of why, and `eta_min` / `due` as quiet meta (`~3 min`, `due today 15:00`, `overdue since 09:00`; Vienna time). A longer why from the template is folded behind `Mehr dazu` / `More on why`, the only control the banner may hold. A decided report keeps the banner, neutral and muted (`Gelesen: nichts weiter zu tun`, `Verworfen: der Bot macht nichts`).
+
+`task` fields:
+
+| Field | Rule |
+|---|---|
+| `kind` | required: `post_yourself`, `approve_bot_acts`, `pick`, `fyi`, `review` or `blocking` |
+| `steps` | optional, one line, 1-140 characters |
+| `eta_min` | optional integer 1-120 (minutes of the person's effort) |
+| `due` | optional ISO date (`2026-10-14`) or ISO datetime with an offset |
+| `why` | optional, 1-360 characters and at most 3 sentences. Without it the banner shows the template's own lead text (`summary`, `intro`, `context` or `notes`, first three sentences, the rest folded) and the template leaves that text out, so nothing is said twice. A lead text with a link stays in the template |
+
+Without `task` the kind is derived:
+
+| Template | Derived kind |
+|---|---|
+| `preview-post` | every platform `manual`: `post_yourself`; any `auto`: `approve_bot_acts` |
+| `decide-list` | every item `actor: "user"`: `post_yourself`; else `approve_bot_acts` |
+| `pick-option` | `pick` |
+| `review-doc` | `review`; with `action`: `approve_bot_acts`; `actor: "user"`: `post_yourself`; `actor: "none"`: `fyi` |
+| `approve-one` | `approve_bot_acts`; `actor: "user"`: `post_yourself`; `actor: "none"`: `fyi` |
+| other templates | `review` |
+
+A given kind sets the matching actor when `data` leaves it out (for example `fyi` on `approve-one` means `actor: "none"`, `post_yourself` on `preview-post` makes every platform manual) and is rejected with a pointer when `data` says otherwise (`/data/actor`, `/data/platforms/1/mode`). Each built-in accepts only the kinds it can show (`pick-option`: `pick`, `blocking`). `blocking` keeps the derived kind's buttons and emphasises its primary.
+
+Buttons per kind (one table, `core\static\tasks.js`, used by every built-in's footer and per-item controls):
+
+| Kind | Who acts next | Primary | Other buttons |
+|---|---|---|---|
+| `post_yourself` | the person posts, then reports back | `Gepostet ✓` | `Überspringen`; per decide-list item also `Später` |
+| `approve_bot_acts` | the bot, after approval | `Freigeben & posten` / `& senden` / `& weiter` (or the payload's `approve_label`) | `Änderungen anfordern` or `Ablehnen` |
+| `pick` | the bot, with the chosen option | `Auswählen` (`<Option> wählen` once picked) | an optional note |
+| `fyi` | nobody | `Verstanden`, enabled at once | none, and no `Verwerfen` |
+| `review` | the bot, with the verdict | `Passt` | `Änderungen` |
+| `blocking` | as the derived kind | the derived kind's primary, emphasised | as the derived kind |
+
+Colours: one calm tint per kind with a 4 px edge (`--rs-task-<kind>-bg` / `-edge` in `tokens.css`): amber for `post_yourself`, green for `approve_bot_acts`, violet for `pick`, grey for `fyi`, teal for `review`. Red only for `blocking` or when `due` is today or past. Text on every tint is at least 4.5:1 and the edge at least 3:1 in light and dark (`contrast-pairs.json`).
+
+The C16 exception: a report shows one accent and otherwise only neutral greys and small status dots (calm rule K6). The banner tint is a status colour, not the accent, and it is the only other colour allowed: exactly one banner, above the title, with no buttons in it. The calm checker (`tools\calm.mjs`) enforces all three. One primary action and at most 3 buttons per item still hold, because the banner adds none.
+
+Templates read the kind as `RS.task` (`{kind, base, verb, why_from}`) and a label as `RS.cta(value)` (`RS.cta('approve')` is `Freigeben & posten` for a post the bot makes, `Passt` for a review). Templates without an actor model, such as `_starter` and user templates that do not extend a built-in, show the banner but keep their own buttons.
+
+When no report is on screen while some wait (for example, a report failed to load), the window lists them under `Wartet auf dich` / `Waiting for you`: avatar, bot, title and the kind of task. A row opens its report.
 
 ---
 

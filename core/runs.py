@@ -18,6 +18,7 @@ from .media import (
 from .platform import directory_identity
 from .results import ResultExists, write_result
 from .schema import SchemaError, validate
+from .tasks import task_brief, task_view
 from .timeutil import format_vienna, iso_now, to_vienna, vienna_now
 from .webhook import fire_after_result
 
@@ -446,6 +447,7 @@ class RunStore:
                     "created_display": format_vienna(item["payload"]["created"]),
                     "state": item["state"],
                     "unread": item["unread"],
+                    "task": task_brief(item["payload"], self.registry),
                 }
                 seq = item.get("seq")
                 if isinstance(seq, int) and not isinstance(seq, bool):
@@ -474,6 +476,7 @@ class RunStore:
                 "expires": record["expires"],
                 "state": record["state"],
                 "data": payload["data"],
+                "task": task_view(payload, self.registry),
                 "result": self._submitted_data(run_id, record),
             }
 

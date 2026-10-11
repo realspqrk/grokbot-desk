@@ -6,7 +6,7 @@
    approval state: tick, blocked dot, accessible name) over one large
    preview (only the selected panel is in the document). Approve = the core
    primary button; "Request changes" is the footer's quiet alternative and
-   opens a comment. The decision mode is part of the draft, so a reload never
+   opens a comment (posting yourself: "Skip"). The decision mode is part of the draft, so a reload never
    turns a change request into an approval.
 
    The checkboxes hold the decision: restored from the draft, or from the
@@ -23,11 +23,10 @@
    An optional target is a quote card under the body, or a reply line
    plus the parent card above the post; its URL is not part of the text,
    so X does not count it. A ticked manual platform is
-   `done`; an unticked one is `skipped`. When nothing is ticked and the
-   report has a manual platform, the primary reads Done and submitting
-   reports every manual platform as skipped (auto platforms stay
-   not_approved, and `platforms` is empty). An all-auto report stays
-   disabled until a platform is ticked. The result lists only auto
+   `done`; an unticked one is `skipped`. The primary stays disabled until
+   a platform is ticked. When every platform is manual, the footer's
+   alternative is "Skip": it reports every platform as skipped (and
+   `platforms` is empty). The result lists only auto
    approvals in `platforms` (what the bot may post) and every platform
    with its mode and decision in `per_platform`. */
 var data = RS.data;
@@ -101,7 +100,7 @@ function badge(box, variant, text) {
 
 /* ---- agent note; persona and post id (when given) are quiet lines in the
    overflow, next to "Show in folder" ---- */
-if (data.notes) part('notes').textContent = data.notes;
+if (data.notes && RS.task.why_from !== 'notes') part('notes').textContent = data.notes;
 else part('notes').remove();
 if (data.persona) RS.addMenuMeta(RS.t('meta_persona', { persona: data.persona }));
 if (data.post_id) RS.addMenuMeta(RS.t('meta_post_id', { id: data.post_id }));
@@ -479,14 +478,20 @@ function perPlatform(list, note) {
   return out;
 }
 
-/* The primary names what happens: "Done" (nothing ticked, and a manual
-   platform is present: submitting only reports skips), "Approve & post"
-   (the bot posts), "Posted ✓" (the reviewer did), "Confirm" for both. */
+/* The task kind says who acts next (RS.cta, the shell's table). Every
+   platform manual: you post yourself, "Posted ✓" once one is ticked, "Skip"
+   reports every platform as skipped. Any auto platform: "Approve & post"
+   (the bot posts what is ticked; "Posted ✓" when only manual ones are
+   ticked), "Request changes" as the alternative. */
+var selfPost = RS.task.base === 'post_yourself';
 function submitLabel(list) {
-  if (!list.length) return RS.t(anyManual ? 'footer_done' : 'approve_post');
+  if (selfPost) return RS.cta('done');
   var auto = list.some(function (p) { return !manual(p); });
-  var hand = list.some(manual);
-  return RS.t(auto && hand ? 'confirm_decision' : hand ? 'posted' : 'approve_post');
+  return list.length && !auto ? RS.t('posted') : RS.cta('approve');
+}
+function skipAll() {
+  RS.setResult({ decision: 'approve', platforms: [], comment: '', per_platform: perPlatform([]) });
+  RS.submit();
 }
 
 function saveSelection() { if (RS.run.state === 'open') update(true); }
@@ -508,7 +513,8 @@ function update(save) {
   }
   /* an approval never carries the (hidden) change-request text */
   RS.setSubmitLabel(submitLabel(list));
-  RS.setAlternative(RS.t('request_changes'), function () { setRequesting(true, true); });
+  if (selfPost) RS.setAlternative(RS.cta('skipped'), skipAll);
+  else RS.setAlternative(RS.cta('request_changes'), function () { setRequesting(true, true); });
   var waiting = list.filter(function (p) { return !confirmed(p); })[0];
   if (waiting) {
     RS.setResult(null);
@@ -522,23 +528,17 @@ function update(save) {
     return;
   }
   /* only auto approvals are the bot's to post; a manual one never is.
-     Nothing ticked, with a manual platform: report every skip. Nothing
-     ticked and every platform is auto: stay disabled. */
+     Nothing ticked: stay disabled (posting yourself, "Skip" reports every
+     skip). */
   if (list.length) {
     RS.setResult({
       decision: 'approve', platforms: list.filter(function (p) { return !manual(p); }), comment: '',
       per_platform: perPlatform(list)
     });
     RS.setStatus(RS.t(anyManual ? 'decided_count' : 'approve_count', { n: list.length, total: platforms.length }));
-  } else if (anyManual) {
-    RS.setResult({
-      decision: 'approve', platforms: [], comment: '',
-      per_platform: perPlatform([])
-    });
-    RS.setStatus(RS.t('report_skips'));
   } else {
     RS.setResult(null);
-    RS.setStatus(RS.t('select_platform'));
+    RS.setStatus(RS.t(anyManual ? 'select_platform_manual' : 'select_platform'));
   }
 }
 

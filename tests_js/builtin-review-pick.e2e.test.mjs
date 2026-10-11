@@ -319,7 +319,9 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
         const rows = [...doc.querySelectorAll('tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim());
         const checks = [...doc.querySelectorAll('li')].map((li) => li.innerText.replace(/\s+/g, ' ').trim());
         return {
-          summary: document.querySelector('.rd__summary').textContent,
+          /* the summary is the task banner's why (the rest folded there) */
+          summary: document.querySelector('#rs-task').textContent,
+          repeated: !!document.querySelector('.rd__summary'),
           verdict: strong ? strong.textContent : '',
           verdictBeforeCopies: !!(strong && copies && (strong.compareDocumentPosition(copies) & Node.DOCUMENT_POSITION_FOLLOWING)),
           copiesBeforeDoc: !!(copies && (copies.compareDocumentPosition(doc) & Node.DOCUMENT_POSITION_FOLLOWING)),
@@ -329,6 +331,7 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       });
       assert.match(view.summary, /You paste the corrected tagline/);
       assert.match(view.summary, /Looks good means those three are live/);
+      assert.equal(view.repeated, false);
       assert.match(view.verdict, /fix the tagline, the description and the price/);
       assert.equal(view.verdictBeforeCopies, true);
       assert.equal(view.copiesBeforeDoc, true);

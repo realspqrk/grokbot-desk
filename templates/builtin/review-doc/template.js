@@ -524,6 +524,8 @@ var sectionLevel = atMost(2) >= 2 ? 2 : (atMost(3) >= 2 ? 3 : 0);
 var doc = part('doc');
 var sections = [];
 var target = null;
+/* information only offers just "Got it": no section comments either */
+var commentable = RS.task.base !== 'fyi';
 function sectionFor(b) {
   var index = sections.length + 1;
   var section = make('section', 'rd__section');
@@ -539,7 +541,7 @@ function sectionFor(b) {
   open.appendChild(make('span', null, RS.t('rd_comment')));
   open.setAttribute('aria-label', RS.t('rd_comment_for', { what: title }));
   head.appendChild(heading);
-  head.appendChild(open);
+  if (commentable) head.appendChild(open);
   var box = make('div', 'rd__cbox');
   box.hidden = true;
   var input = make('textarea', 'rs-input');
@@ -594,8 +596,9 @@ blocks.forEach(function (b) {
   });
 });
 
-/* lead: the agent's summary, then quiet reading facts */
-if (data.summary) RS.fillText(part('summary'), data.summary);
+/* lead: the agent's summary (unless the task banner shows it as the why),
+   then quiet reading facts */
+if (data.summary && RS.task.why_from !== 'summary') RS.fillText(part('summary'), data.summary);
 else part('summary').remove();
 if (data.copy && data.copy.length) {
   var copies = make('div', 'rd__copies');
@@ -636,13 +639,11 @@ RS.addMenuItem(RS.t(isText ? 'copy_text' : 'rd_copy_markdown'), function () {
 /* ------------------------------------------------------------ decision -- */
 var overall = root.querySelector('#rd-comment');
 var requesting = false;
-var actor = data.actor === 'user' || data.actor === 'none' ? data.actor : 'bot';
-function botPrimary() {
-  if (data.action === 'post') return RS.t('approve_post');
-  if (data.action === 'send') return RS.t('approve_send');
-  if (data.action) return RS.t('approve_continue');
-  return RS.t('looks_good');
-}
+/* the task kind says who acts next (RS.cta, the shell's table): the user
+   posts (Posted, Skip), information only (Got it), the bot acts once
+   approved (Approve & verb, Request changes), or a plain review (Looks
+   good, Changes) */
+var base = RS.task.base;
 
 function sectionComments() {
   return sections.filter(function (s) { return s.input.value.trim(); }).map(function (s) {
@@ -669,20 +670,22 @@ function update(save) {
     RS.setStatus(ready ? null : RS.t('comment_required'));
     return;
   }
-  if (actor === 'user') {
-    RS.setSubmitLabel(RS.t('done_check'));
-    RS.setAlternative(RS.t('skip'), function () {
+  if (base === 'post_yourself') {
+    RS.setSubmitLabel(RS.cta('done'));
+    RS.setAlternative(RS.cta('skipped'), function () {
       RS.setResult({ decision: 'skipped', comment: '', comments: sectionComments() });
       RS.submit();
     });
     RS.setResult({ decision: 'done', comment: '', comments: list });
-  } else if (actor === 'none') {
-    RS.setSubmitLabel(RS.t('got_it'));
-    RS.setAlternative(RS.t('request_changes_ask'), function () { setRequesting(true, true); });
-    RS.setResult({ decision: 'acknowledged', comment: '', comments: list });
+  } else if (base === 'fyi') {
+    RS.setSubmitLabel(RS.cta('acknowledged'));
+    RS.setAlternative(null);
+    RS.setResult({ decision: 'acknowledged', comment: '', comments: [] });
+    RS.setStatus(null);
+    return;
   } else {
-    RS.setSubmitLabel(botPrimary());
-    RS.setAlternative(RS.t(data.action ? 'request_changes' : 'changes'), function () { setRequesting(true, true); });
+    RS.setSubmitLabel(RS.cta('approve'));
+    RS.setAlternative(RS.cta('request_changes'), function () { setRequesting(true, true); });
     RS.setResult({ decision: 'approve', comment: '', comments: list });
   }
   if (!list.length) RS.setStatus(RS.t('rd_waiting'));
@@ -711,7 +714,7 @@ if (sent) {
 } else if (RS.run.state === 'open') {
   restore = RS.draft.get();
 }
-if (restore && typeof restore === 'object') {
+if (restore && typeof restore === 'object' && commentable) {
   if (typeof restore.comment === 'string') overall.value = restore.comment;
   if (restore.requesting === true) { requesting = true; part('request').hidden = false; }
   var savedComments = restore.comments && typeof restore.comments === 'object' ? restore.comments : {};

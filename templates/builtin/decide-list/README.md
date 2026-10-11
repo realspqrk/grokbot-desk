@@ -9,7 +9,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 ## What the person sees
 
-- An optional `intro` line (muted), then **one item at a time**: the current item is a card with its kind and due date, the source and title, an optional detail, the values the person would otherwise retype next to copy icons, one segmented choice (`Approve`, `Reject`, `Defer`) and an optional note (`Add note`, shown on hover and keyboard focus).
+- An optional `intro` line (shown as the why of the task banner above the title; it stays in the report, muted, when the payload brings its own `task.why` or the intro has a link), then **one item at a time**: the current item is a card with its kind and due date, the source and title, an optional detail, the values the person would otherwise retype next to copy icons, one segmented choice (`Approve`, `Reject`, `Defer`) and an optional note (`Add note`, shown on hover and keyboard focus).
 - The other items are one-line rows (kind, source, title). Open rows carry a ring, the due date and a chevron; decided rows a check, muted text and the chosen outcome. A row opens its card.
 - Picking a choice by click, Enter or Space moves on to the first open item; the arrow keys only change the choice.
 - What the agent already handled (`done`) sits under one closed disclosure (`Sorted by your agent: 3 done`). The overall note sits behind `Add a note for your agent`.
@@ -73,7 +73,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 }
 ```
 
-`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`). For a `user` item, `choice` is `done`, `skipped` or `later`. `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Done (Fertig): it reports the status back. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
+`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`). For a `user` item, `choice` is `done`, `skipped` or `later`. `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Posted ✓ (Gepostet ✓), or Done (Fertig) when nothing was posted: it reports the status back. Otherwise it reads Approve & continue (Freigeben & weiter) while something is approved or nothing is decided yet. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)
 
@@ -82,7 +82,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | `section_todo` | Needs you | Wartet auf dich |
 | `choice_approve`, `choice_reject`, `choice_defer` | Approve, Reject, Defer | Genehmigen, Ablehnen, Zurückstellen |
 | `posted`, `skip`, `later` | Posted ✓, Skip, Later (user items) | Gepostet ✓, Überspringen, Später |
-| `footer_done` | Done (footer when every item is a user item) | Fertig |
+| `footer_done` | Done (footer when every item is a user item and none was posted) | Fertig |
 | `links_label` | Links (name of a row that holds more than one link) | Links |
 | `choice_group_label` | Decision: {what} (name of each choice row) | Entscheidung: {what} |
 | `due` | due {date} | fällig {date} |

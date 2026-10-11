@@ -94,11 +94,23 @@ If `show` fails, read its error. Correct the payload field named in the error; `
 
 ## Labels say who acts next
 
-Set `actor` from who actually does the next step. `bot` means you act after the result. `user` means the person does it (posts it, sends it, finishes it). `none` means the report is information only.
+Rule: set `task.kind` and write a short `task.why` (<=3 sentences); labels say who acts next.
+
+Every report opens with a task banner above its title: what to do, the steps, why, and optional effort and due date. Add a top-level `task` to the payload:
+
+```json
+"task": {"kind": "approve_bot_acts", "why": "The hosting invoice is due Friday. The toner can wait a week.", "eta_min": 2, "due": "2026-10-14"}
+```
+
+- `kind`: `post_yourself` (the user posts or does it, then reports back), `approve_bot_acts` (you act after approval), `pick` (choose one option), `fyi` (information only, just Got it), `review` (read and give a verdict), `blocking` (you are stuck until the user answers; the banner turns red).
+- `why`: at most 3 sentences and 360 characters. `steps`: one line, at most 140 characters, only when the default steps do not fit. `eta_min`: 1-120 minutes. `due`: an ISO date or a datetime with offset; today or past turns the banner red.
+- Without `task` the kind is derived from the template and `actor` (see `docs/GUIDE.md`, *Task banner*). A `kind` that contradicts `data` is rejected with a pointer, for example `fyi` with `"actor": "bot"`.
+
+Set `actor` from who actually does the next step (or let `task.kind` set it). `bot` means you act after the result. `user` means the person does it (posts it, sends it, finishes it). `none` means the report is information only.
 
 - On a `user` or `none` item, do not act. Record the result and stop.
-- `decide-list`: omit `actor` (or set `bot`) for Approve / Reject / Defer. Set `actor` to `user` when the person posts it. Add `url` for the post they reply under, and `copy` for the text they paste. When every item is `user`, the footer says Done: that reports the status back, it is not a new instruction to you.
-- `approve-one` and `review-doc`: omit `actor` for today's Approve / Reject (or Looks good / Changes). Set `user` for Done ✓ / Skip (`done` / `skipped`). Set `none` for Got it (`acknowledged`). An optional `action` of `post` or `send` names the bot's primary button; any other verb reads Approve & continue.
+- `decide-list`: omit `actor` (or set `bot`) for Approve / Reject / Defer. Set `actor` to `user` when the person posts it. Add `url` for the post they reply under, and `copy` for the text they paste. When every item is `user`, the footer says Posted ✓ (or Done when nothing was posted): that reports the status back, it is not a new instruction to you.
+- `approve-one` and `review-doc`: omit `actor` for today's Approve / Reject (or Looks good / Changes). Set `user` for Posted ✓ / Skip (`done` / `skipped`). Set `none` for Got it (`acknowledged`, no other button). An optional `action` of `post` or `send` names the bot's primary button; any other verb reads Approve & continue.
 - User result values are `done`, `skipped` and, on a list, `later`. Info-only is `acknowledged`. Bot values stay `approve`, `reject`, `request_changes`, `defer`.
 
 ## Social posts: who posts where

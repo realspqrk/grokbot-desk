@@ -1083,13 +1083,22 @@ export function calmEvaluator(options) {
     'color', 'backgroundColor', 'borderTopColor', 'borderRightColor',
     'borderBottomColor', 'borderLeftColor', 'outlineColor',
   ];
+  /* C16 exception: the one task banner above the title may carry a status
+     tint per task kind; it is the only non-accent colour allowed beyond small
+     status dots. It holds no controls besides the details toggle of a long
+     why. */
+  const taskBanners = [...document.querySelectorAll('[data-rs-task]')].filter(visible);
+  const taskBanner = taskBanners.length === 1 ? taskBanners[0] : null;
+  const taskBannerControls = taskBanners.flatMap((banner) => [
+    ...banner.querySelectorAll('button, a[href], input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])'),
+  ].map(identity));
   const offAccent = [];
   for (const element of elements.filter((item) => visible(item) && outsideMockupText(item))) {
     const rect = rectOf(element);
     const statusException = element.hasAttribute('data-rs-status')
       && rect.width * rect.height < innerWidth * innerHeight
         * thresholds.statusViewportAreaMax;
-    if (statusException) continue;
+    if (statusException || taskBanner?.contains(element)) continue;
     const style = getComputedStyle(element);
     for (const property of colorProperties) {
       const color = parseColor(style[property]);
@@ -1365,7 +1374,12 @@ export function calmEvaluator(options) {
       boxes: boxDepths,
       max_box_ancestors: Math.max(0, ...boxDepths.map((item) => item.ancestors)),
     },
-    K6: { accent_hue: accentHue, off_accent: offAccent },
+    K6: {
+      accent_hue: accentHue,
+      off_accent: offAccent,
+      task_banners: taskBanners.length,
+      task_banner_controls: taskBannerControls,
+    },
     K7: {
       item_gaps: itemGaps,
       wide_text: wideText,
@@ -1444,9 +1458,14 @@ export function judgeCalmFacts(facts, options = {}) {
   ]);
   set('K5', facts.K5.max_box_ancestors <= thresholds.boxAncestorMax
     ? [] : [`K5 found ${facts.K5.max_box_ancestors} box ancestors`]);
-  set('K6', facts.K6.off_accent.length
-    ? [`K6 found ${facts.K6.off_accent.length} chromatic colours outside the accent cluster`]
-    : []);
+  set('K6', [
+    ...(facts.K6.off_accent.length
+      ? [`K6 found ${facts.K6.off_accent.length} chromatic colours outside the accent cluster`] : []),
+    ...((facts.K6.task_banners ?? 0) <= 1
+      ? [] : [`K6 allows one tinted task banner, found ${facts.K6.task_banners}`]),
+    ...((facts.K6.task_banner_controls ?? []).length
+      ? [`K6 the task banner holds controls: ${facts.K6.task_banner_controls.join(', ')}`] : []),
+  ]);
 
   const k7Reasons = [];
   if (facts.K7.lint_pass === false) k7Reasons.push('K7 calm source lint did not pass');

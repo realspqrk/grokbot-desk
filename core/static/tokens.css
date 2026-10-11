@@ -3,7 +3,7 @@
  *
  * System: 1 neutral canvas, 1 accent hue (indigo, for the one primary action
  * and the focus ring), neutral greys, status hues only on small dots marked
- * data-rs-status. A report may replace the four accent tokens with its bot's
+ * data-rs-status and as the task banner's tint (one per kind). A report may replace the four accent tokens with its bot's
  * accent (contrast-checked per theme by core/identity.py; the
  * page applies them in a style[data-rs-accent] block). Type: 2 body sizes + 1 title size, 2 weights. Spacing only
  * through var(--space-*). Motion <= 200 ms and none with reduced motion.
@@ -104,6 +104,23 @@
   --rs-danger: #b3261e;
   --rs-on-danger: #ffffff;
 
+  /* --- task banner: one status tint per kind (not the accent; the only
+     large non-accent colour, see .rs-task in shell.css). Ink and muted text
+     on every tint >= 4.5:1, the edge >= 3:1 on paper and on its tint.
+     urgent = blocking, or due today or overdue. --- */
+  --rs-task-post-yourself-bg: #fdf1d8;
+  --rs-task-post-yourself-edge: #a35c00;
+  --rs-task-approve-bot-acts-bg: #e2f3e7;
+  --rs-task-approve-bot-acts-edge: #1b7340;
+  --rs-task-pick-bg: #efe8fb;
+  --rs-task-pick-edge: #6b3fc0;
+  --rs-task-fyi-bg: #f2f2f4;
+  --rs-task-fyi-edge: #77777c;
+  --rs-task-review-bg: #e0f1f6;
+  --rs-task-review-edge: #0a6a80;
+  --rs-task-urgent-bg: #fde6e4;
+  --rs-task-urgent-edge: #b3261e;
+
   --rs-shadow-1: 0 1px 2px #1c1c1e0f, 0 4px 16px #1c1c1e0d;
   --rs-shadow-2: 0 8px 32px #1c1c1e29;
   --rs-overlay: #1c1c1e59;
@@ -186,6 +203,18 @@
     --rs-status-danger: #ff6b5e;
     --rs-danger: #ff8a80;
     --rs-on-danger: #1c0b0a;
+    --rs-task-post-yourself-bg: #30260f;
+    --rs-task-post-yourself-edge: #f0b23a;
+    --rs-task-approve-bot-acts-bg: #142a1c;
+    --rs-task-approve-bot-acts-edge: #4cc27a;
+    --rs-task-pick-bg: #261f39;
+    --rs-task-pick-edge: #b39af5;
+    --rs-task-fyi-bg: #26262a;
+    --rs-task-fyi-edge: #8e8e96;
+    --rs-task-review-bg: #112a31;
+    --rs-task-review-edge: #4ec3dd;
+    --rs-task-urgent-bg: #361916;
+    --rs-task-urgent-edge: #ff7a6e;
     --rs-shadow-1: 0 1px 2px #00000066, 0 4px 16px #00000040;
     --rs-shadow-2: 0 8px 32px #000000a6;
     --rs-overlay: #000000a6;
@@ -263,6 +292,18 @@ html[data-theme="dark"] {
   --rs-status-danger: #ff6b5e;
   --rs-danger: #ff8a80;
   --rs-on-danger: #1c0b0a;
+  --rs-task-post-yourself-bg: #30260f;
+  --rs-task-post-yourself-edge: #f0b23a;
+  --rs-task-approve-bot-acts-bg: #142a1c;
+  --rs-task-approve-bot-acts-edge: #4cc27a;
+  --rs-task-pick-bg: #261f39;
+  --rs-task-pick-edge: #b39af5;
+  --rs-task-fyi-bg: #26262a;
+  --rs-task-fyi-edge: #8e8e96;
+  --rs-task-review-bg: #112a31;
+  --rs-task-review-edge: #4ec3dd;
+  --rs-task-urgent-bg: #361916;
+  --rs-task-urgent-edge: #ff7a6e;
   --rs-shadow-1: 0 1px 2px #00000066, 0 4px 16px #00000040;
   --rs-shadow-2: 0 8px 32px #000000a6;
   --rs-overlay: #000000a6;

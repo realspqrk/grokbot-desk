@@ -341,6 +341,150 @@
       "bg": "--rs-li-page",
       "min": 4.5,
       "use": "LinkedIn link card domain on page grey"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-task-post-yourself-bg",
+      "min": 4.5,
+      "use": "task banner text and the focus ring of its details toggle (post_yourself)"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-task-post-yourself-bg",
+      "min": 4.5,
+      "use": "task banner meta and decided text (post_yourself)"
+    },
+    {
+      "fg": "--rs-task-post-yourself-edge",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "task banner edge on the page (post_yourself, non-text)"
+    },
+    {
+      "fg": "--rs-task-post-yourself-edge",
+      "bg": "--rs-task-post-yourself-bg",
+      "min": 3.0,
+      "use": "task banner edge on its tint (post_yourself, non-text)"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-task-approve-bot-acts-bg",
+      "min": 4.5,
+      "use": "task banner text and the focus ring of its details toggle (approve_bot_acts)"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-task-approve-bot-acts-bg",
+      "min": 4.5,
+      "use": "task banner meta and decided text (approve_bot_acts)"
+    },
+    {
+      "fg": "--rs-task-approve-bot-acts-edge",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "task banner edge on the page (approve_bot_acts, non-text)"
+    },
+    {
+      "fg": "--rs-task-approve-bot-acts-edge",
+      "bg": "--rs-task-approve-bot-acts-bg",
+      "min": 3.0,
+      "use": "task banner edge on its tint (approve_bot_acts, non-text)"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-task-pick-bg",
+      "min": 4.5,
+      "use": "task banner text and the focus ring of its details toggle (pick)"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-task-pick-bg",
+      "min": 4.5,
+      "use": "task banner meta and decided text (pick)"
+    },
+    {
+      "fg": "--rs-task-pick-edge",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "task banner edge on the page (pick, non-text)"
+    },
+    {
+      "fg": "--rs-task-pick-edge",
+      "bg": "--rs-task-pick-bg",
+      "min": 3.0,
+      "use": "task banner edge on its tint (pick, non-text)"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-task-fyi-bg",
+      "min": 4.5,
+      "use": "task banner text and the focus ring of its details toggle (fyi)"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-task-fyi-bg",
+      "min": 4.5,
+      "use": "task banner meta and decided text (fyi)"
+    },
+    {
+      "fg": "--rs-task-fyi-edge",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "task banner edge on the page (fyi, non-text)"
+    },
+    {
+      "fg": "--rs-task-fyi-edge",
+      "bg": "--rs-task-fyi-bg",
+      "min": 3.0,
+      "use": "task banner edge on its tint (fyi, non-text)"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-task-review-bg",
+      "min": 4.5,
+      "use": "task banner text and the focus ring of its details toggle (review)"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-task-review-bg",
+      "min": 4.5,
+      "use": "task banner meta and decided text (review)"
+    },
+    {
+      "fg": "--rs-task-review-edge",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "task banner edge on the page (review, non-text)"
+    },
+    {
+      "fg": "--rs-task-review-edge",
+      "bg": "--rs-task-review-bg",
+      "min": 3.0,
+      "use": "task banner edge on its tint (review, non-text)"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-task-urgent-bg",
+      "min": 4.5,
+      "use": "task banner text and the focus ring of its details toggle (urgent)"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-task-urgent-bg",
+      "min": 4.5,
+      "use": "task banner meta and decided text (urgent)"
+    },
+    {
+      "fg": "--rs-task-urgent-edge",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "task banner edge on the page (urgent, non-text)"
+    },
+    {
+      "fg": "--rs-task-urgent-edge",
+      "bg": "--rs-task-urgent-bg",
+      "min": 3.0,
+      "use": "task banner edge on its tint (urgent, non-text)"
     }
   ]
 }

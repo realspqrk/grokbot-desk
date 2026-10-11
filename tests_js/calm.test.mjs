@@ -1174,6 +1174,62 @@ describe('C16 calm synthetic pages', { skip }, () => {
       await foreign.context.close();
     }
   });
+
+  /* the C16 exception: the task banner's tint is a status colour per kind,
+     not the accent, and the only large non-accent colour allowed */
+  const taskBanner = (inner = '') => '<main><section data-rs-task style="padding:12px 16px;'
+    + 'border-left:4px solid #1b7340;background:#e2f3e7"><p>Approve, then the bot posts</p>'
+    + `<p>Check the text and the platforms.</p>${inner}</section>`;
+
+  test('the task banner tint passes K6', async () => {
+    const result = await judgeHtml(calmPage().replace('<main>', taskBanner()));
+    try {
+      assert.equal(result.facts.K6.task_banners, 1);
+      assert.deepEqual(result.facts.K6.off_accent, []);
+      assert.equal(result.judged.items.K6.pass, true, result.judged.items.K6.reasons.join('; '));
+    } finally {
+      await result.context.close();
+    }
+  });
+
+  test('the same tint outside the task banner fails K6', async () => {
+    const result = await judgeHtml(calmPage().replace('<main>', taskBanner().replace(' data-rs-task', '')));
+    try {
+      assert.equal(result.judged.items.K6.pass, false);
+    } finally {
+      await result.context.close();
+    }
+  });
+
+  test('a second tinted task banner fails K6', async () => {
+    const twice = taskBanner() + taskBanner().replace('<main>', '');
+    const result = await judgeHtml(calmPage().replace('<main>', twice));
+    try {
+      assert.equal(result.facts.K6.task_banners, 2);
+      assert.equal(result.judged.items.K6.pass, false);
+    } finally {
+      await result.context.close();
+    }
+  });
+
+  test('a button in the task banner fails K6; the details toggle of a long why passes', async () => {
+    const button = await judgeHtml(calmPage().replace('<main>', taskBanner('<button>Approve</button>')));
+    try {
+      assert.equal(button.judged.items.K6.pass, false);
+      assert.match(button.judged.items.K6.reasons.join(' '), /holds controls/u);
+    } finally {
+      await button.context.close();
+    }
+    const details = await judgeHtml(calmPage().replace(
+      '<main>',
+      taskBanner('<details><summary>More on why</summary><p>The rest.</p></details>'),
+    ));
+    try {
+      assert.equal(details.judged.items.K6.pass, true, details.judged.items.K6.reasons.join('; '));
+    } finally {
+      await details.context.close();
+    }
+  });
 });
 
 test('K10 social audit scope: the preview-post built-in and templates extending it', () => {

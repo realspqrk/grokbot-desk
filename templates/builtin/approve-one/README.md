@@ -9,7 +9,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 ## What the person sees
 
-- The `summary` first, then the key `facts` as label/value pairs and the `copy` values next to copy icons.
+- The `summary` first (as the why of the task banner above the title, unless the payload brings its own `task.why` or the summary has a link), then the key `facts` as label/value pairs and the `copy` values next to copy icons.
 - Right below: one segmented choice, `Approve` / `Reject` (plus `Request changes` with `allow_changes`). Nothing is preselected; the primary stays disabled with `Please approve or reject` until a choice is made.
 - The primary names what will be sent: the payload's `approve_label` (default `Approve`), `Send rejection` or `Send request`. Ctrl+Enter sends too.
 - `Add note` (shown on hover and keyboard focus) opens an optional note for Approve or Reject. Picking `Request changes` opens the same field as a required comment (`What should change?`); click, Enter or Space on it moves the focus there, the arrow keys only change the choice. While the comment is empty the primary is disabled and the status reads `Please write a comment to request changes`.
@@ -38,7 +38,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | Field | Rule |
 |---|---|
 | `summary` | required, 1–600, plain text (newlines kept). An http(s) address in the text becomes a link |
-| `actor` | optional `bot` (default), `user` or `none`. `user`: Done ✓ / Skip (`done` / `skipped`). `none`: Got it / Request changes (`acknowledged` / `request_changes`). The bot never acts on `user` or `none` |
+| `actor` | optional `bot` (default), `user` or `none`. `user`: Posted ✓ / Skip (`done` / `skipped`). `none`: only Got it, sent at once (`acknowledged`). The bot never acts on `user` or `none`. A payload `task.kind` sets it when left out (`post_yourself` = `user`, `fyi` = `none`) |
 | `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. For a bot decision, `post` labels the primary Approve & post, `send` labels it Approve & send, any other verb labels it Approve & continue |
 | `approve_label` | optional, 1–24; overrides `action` and the default Approve once Approve is picked |
 | `allow_changes` | optional boolean, default `false`; offers `Request changes` |

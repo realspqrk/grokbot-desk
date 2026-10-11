@@ -2,6 +2,30 @@
 
 ## 1.0.0-beta.2 (unreleased)
 
+- Task banner: every report opens with a tinted banner above its title that
+  says what to do and who acts next, one line of steps, at most three
+  sentences of why (the rest folded) and the effort and due date (`~3 min`,
+  `due today 15:00`). A decided report keeps it, neutral, saying what
+  happened. One calm colour per kind; red only for `blocking` or a due date
+  that is today or past. The banner holds no buttons. The calm checker
+  allows its tint as the one status colour besides the accent.
+- New optional payload field `task`: `{kind, steps, eta_min, due, why}`
+  with `kind` one of `post_yourself`, `approve_bot_acts`, `pick`, `fyi`,
+  `review`, `blocking`. Without it the kind is derived from the template and
+  its `actor`, so existing payloads work unchanged. A kind sets the matching
+  actor when `data` leaves it out and is rejected with a pointer when `data`
+  contradicts it.
+- Buttons follow the kind, from one table for every built-in: `Posted ✓` /
+  `Skip` when you post it yourself, `Approve & post` / `send` / `continue`
+  when the bot acts, `Choose`, `Got it` alone for information (no Request
+  changes, no Discard), `Looks good` / `Changes` for a review. `approve-one`
+  and `review-doc` with `actor: "user"` now read `Posted ✓` instead of
+  `Done ✓`. `preview-post` posting yourself offers `Skip` instead of
+  `Request changes`, and the primary stays disabled until a platform is
+  ticked (`Confirm` is gone; a mix reads `Approve & post`). Templates get
+  `RS.task` and `RS.cta(value)`.
+- With no report on screen while some wait, the window lists them (`Waiting
+  for you`): bot, title and the kind of task; a row opens its report.
 - `wait` ends at the run's expiry plus 2 minutes at the latest and exits
   7 when no result was written by then. `--until-expiry` waits up to that
   point (for a background waiter) and excludes `--timeout`. A run record
@@ -24,7 +48,7 @@
 - Labels say who acts next. `decide-list` items take an optional `actor`
   (`bot` or `user`, default `bot`) and an optional `url`. User items use
   Posted ✓ / Skip / Later (`done` / `skipped` / `later`); when every item
-  is a user item the footer reads Done. `approve-one` and `review-doc` take
+  is a user item the footer reads Posted ✓ (Done when nothing was posted). `approve-one` and `review-doc` take
   an optional `actor` (`bot`, `user` or `none`, default `bot`) and an
   optional `action` verb. Existing payloads keep today's results.
 - Links in item text, review-doc Markdown, pick-option text and `url`

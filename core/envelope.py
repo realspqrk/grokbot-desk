@@ -6,6 +6,7 @@ from datetime import timedelta, timezone
 
 from .jsonutil import JSONBoundaryError, loads
 from .schema import SchemaError, validate
+from .tasks import TaskError, apply_kind, validate_task
 from .timeutil import to_vienna, vienna_now
 
 
@@ -17,6 +18,7 @@ BOT_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 FIELDS = {
     "schema", "template", "version", "run_id", "bot", "title", "created",
     "expires_minutes", "notify", "data", "identity", "dedupe_key", "dedupe_hours",
+    "task",
 }
 DEDUPE_KEY_RE = re.compile(r"^[\x21-\x7e][\x20-\x7e]{0,119}$")
 # A created stamp this far ahead of the clock is a wrong offset or clock: it
@@ -124,7 +126,16 @@ def validate_payload(payload, registry, used_ids=(), warnings=None):
         validate(payload["data"], schema, "/data")
     except SchemaError as error:
         raise EnvelopeError(error.pointer, error.message) from error
+    data = payload["data"]
+    if "task" in payload:
+        try:
+            validate_task(payload["task"])
+            data = apply_kind(template.extends or template.id, data, payload["task"]["kind"])
+            validate(data, schema, "/data")
+        except (TaskError, SchemaError) as error:
+            raise EnvelopeError(error.pointer, error.message) from error
     result = dict(payload)
+    result["data"] = data
     if clamped is not None:
         result["created"] = clamped
     result["run_id"] = run_id

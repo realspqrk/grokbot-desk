@@ -35,7 +35,7 @@ Pick this template when the person chooses **one** of a few alternatives. For a 
 | Field | Rule |
 |---|---|
 | `question` | required, 1–200 characters, plain text |
-| `context` | optional, 1–600 characters: constraints, what the agent already checked |
+| `context` | optional, 1–600 characters: constraints, what the agent already checked. Shown as the why of the task banner unless the payload brings its own `task.why` or the text has a link |
 | `options` | required, 2–4 items, shown in this order |
 | `options[].id` | `^[a-z0-9][a-z0-9_-]{0,31}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/options/1/id` |
 | `options[].name` | 1–48 characters; also used in the primary label |

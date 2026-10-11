@@ -61,7 +61,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   /** One open run on the server (no strip), then the page for it. */
   async function open(id, name, opts = {}) {
     await server.clearRuns();
-    const run = server.show(opts.data || fixture(id, name), { template: id, bot: 'example-bot', title: `${id} ${name}` });
+    const run = server.show(opts.data || fixture(id, name), { template: id, bot: 'example-bot', title: `${id} ${name}`, ...(opts.envelope || {}) });
     const ctx = await browser.newContext({
       viewport: opts.viewport || { width: 1500, height: 1000 }, deviceScaleFactor: 1,
       colorScheme: opts.colorScheme || 'light', reducedMotion: 'reduce',
@@ -127,12 +127,10 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
           const { ctx, page, log } = await open(id, name, { colorScheme });
           try {
             const data = fixture(id, name);
-            const manual = id === 'preview-post' && (data.platforms || []).some((item) => item && item.mode === 'manual');
-            if (manual) {
-              assert.equal(await page.isDisabled('#rs-submit'), false, `${name}: unticked manual platforms can be reported as skipped`);
-              assert.equal(await page.textContent('#rs-submit-label'), de.footer_done, name);
-            } else {
-              assert.equal(await page.isDisabled('#rs-submit'), true, `${name}: nothing is decided at rest`);
+            assert.equal(await page.isDisabled('#rs-submit'), true, `${name}: nothing is decided at rest`);
+            if (id === 'preview-post') {
+              const selfPost = data.platforms.every((item) => item && item.mode === 'manual');
+              assert.equal(await page.textContent('#rs-submit-label'), selfPost ? de.posted : de.approve_post, name);
             }
             if (name === 'golden' || name === valid[1]) assert.deepEqual(await seriousViolations(page), [], `${name} ${colorScheme}`);
             assert.deepEqual(log.errors, [], `${name} ${colorScheme}`);
@@ -216,9 +214,14 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   test('shell: opening a disclosure that turns the fade on keeps the held focus ring clear; closing does not scroll', async () => {
     const data = fixture('approve-one', 'golden');
     data.points = data.points.slice(0, 2);
+    /* the fade mechanics at a known height: the summary stays in the report
+       (the banner gets its own why) and the banner is taken out */
+    const envelope = { task: { kind: 'approve_bot_acts', why: 'Staging passed.' } };
+    const withoutBanner = (page) => page.evaluate(() => { document.getElementById('rs-task').hidden = true; });
     for (const colorScheme of ['light', 'dark']) {
-      const { ctx, page, log } = await open('approve-one', 'golden', { data, colorScheme, viewport: { width: 1280, height: 720 } });
+      const { ctx, page, log } = await open('approve-one', 'golden', { data, envelope, colorScheme, viewport: { width: 1280, height: 720 } });
       try {
+        await withoutBanner(page);
         await tabToSummary(page);
         const fits = await held(page);
         assert.equal(fits.more, false, `${colorScheme}: the closed report fits`);
@@ -239,8 +242,9 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     }
     /* more already follows (a test spacer below the report): toggling the
        focused disclosure never scrolls */
-    const { ctx, page } = await open('approve-one', 'golden', { data, viewport: { width: 1280, height: 720 } });
+    const { ctx, page } = await open('approve-one', 'golden', { data, envelope, viewport: { width: 1280, height: 720 } });
     try {
+      await withoutBanner(page);
       await page.evaluate(() => { const s = document.createElement('div'); s.style.height = '400px'; document.querySelector('.rs-tpl').appendChild(s); });
       await tabToSummary(page);
       const before = await held(page);
@@ -307,7 +311,8 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     const data = fixture('decide-list', 'golden');
     const { ctx, page } = await open('decide-list', 'golden');
     try {
-      assert.equal(await page.textContent('[data-dl="intro"]'), data.intro);
+      assert.equal(await page.textContent('#rs-task .rs-task__why'), data.intro, 'the intro is the task banner\'s why');
+      assert.equal(await page.locator('[data-dl="intro"]').count(), 0, 'and is not repeated in the report');
       assert.equal(await page.locator('.dl-card').count(), 1, 'only the current card is in the document');
       const first = data.items[0];
       const card = await page.$eval('.dl-item[data-current]', (c) => ({
@@ -546,9 +551,9 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       /* Tab order on the manual panel: the copies, then "Mark as posted" */
       const order = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
       assert.deepEqual(order, ['x-text', 'x-hashtags', 'x-comment', 'x-image', 'reveal-x', 'approve-x']);
-      assert.equal(await label(page), de.footer_done, 'nothing ticked yet, a manual platform is reported as skipped');
-      assert.equal(await page.textContent('#rs-status'), de.report_skips);
-      assert.equal(await page.isDisabled('#rs-submit'), false);
+      assert.equal(await label(page), de.approve_post, 'the bot posts the auto platforms: the primary says so');
+      assert.equal(await page.textContent('#rs-status'), de.select_platform_manual);
+      assert.equal(await page.isDisabled('#rs-submit'), true, 'nothing ticked yet');
       const mediaId = await page.$eval('#panel-x [data-copy-id="x-image"]', (el) => el.getAttribute('media'));
       assert.match(mediaId, /^m_/, 'a media id, never a path');
       await page.click('[data-copy-id="x-image"] .rs-copy__btn');
@@ -565,7 +570,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await page.$('#panel-linkedin [data-pp="manual-note"]'), null, 'auto keeps today\'s panel');
       assert.equal(await page.$('#panel-linkedin [data-copy-id="linkedin-image"]'), null);
       await page.check('#approve-linkedin');
-      assert.equal(await label(page), de.confirm_decision);
+      assert.equal(await label(page), de.approve_post, 'the bot posts LinkedIn');
       await page.click('#tab-x');
       await page.uncheck('#approve-x');
       assert.equal(await label(page), de.approve_post);
@@ -942,10 +947,11 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     } finally { await plain.ctx.close(); }
     const handOnly = await open('preview-post', 'golden', { data: { ...data, platforms: [{ platform: 'x', mode: 'manual' }] } });
     try {
-      assert.equal(await label(handOnly.page), de.footer_done);
-      assert.equal(await handOnly.page.textContent('#rs-status'), de.report_skips);
-      assert.equal(await handOnly.page.isDisabled('#rs-submit'), false);
+      assert.equal(await label(handOnly.page), de.posted);
+      assert.equal(await handOnly.page.textContent('#rs-status'), de.select_platform_manual);
+      assert.equal(await handOnly.page.isDisabled('#rs-submit'), true);
       await handOnly.page.check('#approve-x');
+      assert.equal(await label(handOnly.page), de.posted);
       await handOnly.page.keyboard.press('Control+Enter');
       assert.deepEqual(await submitted(handOnly.page, handOnly.run), {
         decision: 'approve', platforms: [], comment: '',
@@ -957,7 +963,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   test('decide-list: user items use Posted, Skip and Later, and Open post calls /open-url', async () => {
     const { ctx, page, log, run } = await open('decide-list', 'edge-replies');
     try {
-      assert.equal(await page.textContent('#rs-submit-label'), de.footer_done);
+      assert.equal(await page.textContent('#rs-submit-label'), de.posted);
       const labels = await page.$$eval('[data-current] rs-action-row button', (buttons) => buttons.map((b) => b.textContent));
       assert.deepEqual(labels, [de.posted, de.skip, de.later]);
       const href = await page.getAttribute('[data-current] .dl-url a.rs-ext', 'href');
@@ -983,7 +989,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('preview-post: skipping every manual platform reports skips and reads Done', async () => {
+  test('preview-post: posting yourself, Skip reports every platform as skipped; a mixed report waits for a tick', async () => {
     const data = fixture('preview-post', 'golden');
     const cases = [
       {
@@ -999,28 +1005,28 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
           linkedin: { mode: 'manual', decision: 'skipped' },
         },
       },
-      {
-        name: 'mixed',
-        platforms: [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'auto' }],
-        per_platform: {
-          x: { mode: 'manual', decision: 'skipped' },
-          linkedin: { mode: 'auto', decision: 'not_approved' },
-        },
-      },
     ];
     for (const item of cases) {
       const opened = await open('preview-post', 'golden', { data: { ...data, platforms: item.platforms } });
       try {
-        assert.equal(await label(opened.page), de.footer_done, item.name);
-        assert.notEqual(await label(opened.page), de.posted, item.name);
-        assert.equal(await opened.page.textContent('#rs-status'), de.report_skips, item.name);
-        assert.equal(await opened.page.isDisabled('#rs-submit'), false, item.name);
-        await opened.page.keyboard.press('Control+Enter');
+        assert.equal(await label(opened.page), de.posted, item.name);
+        assert.equal(await opened.page.isDisabled('#rs-submit'), true, item.name);
+        assert.equal(await opened.page.textContent('#rs-alt'), de.skip, item.name);
+        await opened.page.click('#rs-alt');
         assert.deepEqual(await submitted(opened.page, opened.run), {
           decision: 'approve', platforms: [], comment: '', per_platform: item.per_platform,
         }, item.name);
       } finally { await opened.ctx.close(); }
     }
+    const mixed = await open('preview-post', 'golden', {
+      data: { ...data, platforms: [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'auto' }] },
+    });
+    try {
+      assert.equal(await label(mixed.page), de.approve_post);
+      assert.equal(await mixed.page.isDisabled('#rs-submit'), true);
+      assert.equal(await mixed.page.textContent('#rs-status'), de.select_platform_manual);
+      assert.equal(await mixed.page.textContent('#rs-alt'), de.request_changes);
+    } finally { await mixed.ctx.close(); }
   });
 
   async function calmCounts(page) {

@@ -678,6 +678,90 @@
     el.bot.hidden = false;
   }
 
+  // ------------------------------------------------------ task banner --
+  /* Above the title of every report: what to do and who acts next, so a
+     person who was interrupted can act within seconds. One line for the
+     task (by kind), one for the steps, at most three sentences of why (the
+     rest folded in a details), effort and due date as quiet meta. The kind
+     and the why come from the server (core/tasks.py), the wording from
+     RS_TASKS (tasks.js).
+     C16 exception: the banner tint is a status colour per kind, not the
+     accent, and the only large non-accent colour on the page; red only for
+     blocking or a due date that is today or past. The banner holds no
+     buttons, at most the details toggle, so one primary action and at most
+     3 buttons per item still hold (K1, K2, K6 in tools/calm.mjs). A decided
+     report keeps the banner, neutral, saying what happened. */
+  var TASKS = window.RS_TASKS;
+  var viennaDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit' });
+  var viennaClock = new Intl.DateTimeFormat(LOCALE, { timeZone: 'Europe/Vienna', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+  function taskOf(run) {
+    var task = run && run.task;
+    return task && typeof task === 'object' && typeof task.kind === 'string' ? task : { kind: 'review', base: 'review' };
+  }
+
+  /* "due today 15:00", "due Oct 15 15:00", "overdue since 09:00"; urgent
+     when the day is today (Vienna) or the moment has passed */
+  function dueInfo(due, now) {
+    if (typeof due !== 'string' || !due) return null;
+    var dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(due);
+    var moment = toDate(due);
+    if (isNaN(moment.getTime())) return null;
+    var today = viennaDay.format(now);
+    var day = dateOnly ? due : viennaDay.format(moment);
+    var clock = dateOnly ? '' : viennaClock.format(moment);
+    var past = dateOnly ? day < today : moment.getTime() < now.getTime();
+    var text;
+    if (past) text = t('task_overdue', { when: [day === today ? '' : date(day), clock].filter(Boolean).join(' ') });
+    else if (day === today) text = clock ? t('task_due_today', { time: clock }) : t('task_due_today_date');
+    else text = clock ? t('task_due_on', { date: date(day), time: clock }) : t('due', { date: date(day) });
+    return { text: text, urgent: past || day === today };
+  }
+
+  function taskTone(task, due) {
+    return task.kind === 'blocking' || (due && due.urgent) ? 'urgent' : TASKS.baseOf(task);
+  }
+
+  function textNode(tag, cls, text) {
+    var node = document.createElement(tag);
+    node.className = cls;
+    node.textContent = text;
+    return node;
+  }
+
+  function renderTask(run) {
+    var box = el.taskInner;
+    box.textContent = '';
+    if (!run) {
+      el.task.hidden = true;
+      return;
+    }
+    var task = taskOf(run);
+    var decided = !!run.state && run.state !== 'open';
+    var due = decided ? null : dueInfo(task.due, new Date());
+    el.task.setAttribute('data-kind', task.kind);
+    el.task.setAttribute('data-tone', decided ? 'quiet' : taskTone(task, due));
+    el.task.setAttribute('data-state', decided ? 'decided' : 'open');
+    var line = document.createElement('p');
+    line.className = 'rs-task__line';
+    line.appendChild(textNode('span', 'rs-task__what', t(TASKS.lineKey(task, run.state))));
+    if (!decided) line.appendChild(textNode('span', 'rs-task__steps', task.steps || t(TASKS.stepsKey(task))));
+    var meta = [];
+    if (!decided && task.eta_min) meta.push(t('task_eta', { n: number(task.eta_min) }));
+    if (due) meta.push(due.text);
+    if (meta.length) line.appendChild(textNode('span', 'rs-task__meta', meta.join(' ' + t('sep') + ' ')));
+    box.appendChild(line);
+    if (task.why) box.appendChild(textNode('p', 'rs-task__why', task.why));
+    if (task.why_more) {
+      var more = document.createElement('details');
+      more.className = 'rs-task__more';
+      more.appendChild(textNode('summary', '', t('task_why_more')));
+      more.appendChild(textNode('p', '', task.why_more));
+      box.appendChild(more);
+    }
+    el.task.hidden = false;
+  }
+
   // ------------------------------------------------------------ strip --
   /* P8d: the window is a pop-up for one decision at a time. With 2+ open
      reports a slim strip above the header shows each one's avatar with its
@@ -1009,8 +1093,13 @@
     var a = state.active;
     var open = !!(a && a.state === 'open');
     var busy = activeBusy();
+    var task = a ? taskOf(a) : null;
     el.submit.disabled = !open || state.result === null || busy;
     el.discard.disabled = !open || busy;
+    /* the CTA table per kind (tasks.js): information only offers just its
+       primary; blocking emphasises the underlying kind's primary */
+    el.discard.hidden = !!(task && !TASKS.CTA[TASKS.baseOf(task)].discard);
+    el.submit.toggleAttribute('data-rs-emphasis', !!(open && task && task.kind === 'blocking'));
     el.submitLabel.textContent = state.submitLabel || t('submit');
     /* the alternative button exists only while a template offers one */
     var alt = state.alternative;
@@ -1215,6 +1304,7 @@
     var operation = state.operations[state.active.run_id];
     if (operation) restoreDecisionState(decisionRoot(), operation.snapshot);
     state.active.state = kind;
+    renderTask(state.active);
     closeDiscardFor(state.active.run_id);
     setBanner(kind);
     lockTemplate();
@@ -1250,8 +1340,19 @@
 
   function scopedApi(run, templateGen) {
     function live() { return templateGen === state.templateGen; }
+    var task = taskOf(run);
+    var base = TASKS.baseOf(task);
     return {
       data: run.data,
+      /* the task kind and, when the banner shows a template field as the
+         why, which one (the template then leaves it out) */
+      task: { kind: task.kind, base: base, verb: task.verb || 'continue', why_from: task.why_from || null },
+      /* the label of a decision value for this kind (tasks.js CTA table);
+         opts.item for a per-item choice */
+      cta: function (value, opts) {
+        var key = TASKS.labelKey(base, value, { item: !!(opts && opts.item), verb: task.verb });
+        return key ? t(key) : '';
+      },
       run: {
         run_id: run.run_id, template: run.template, title: run.title, bot: run.bot,
         bot_display: run.bot_display, created: run.created, created_display: run.created_display,
@@ -1375,6 +1476,7 @@
 
     el.title.textContent = run.title;
     renderBot(run);
+    renderTask(run);
     el.meta.textContent = '';
     var bot = document.createElement('span');
     var created = document.createElement('span');
@@ -1467,17 +1569,65 @@
     state.listeners = [];
     el.title.textContent = '';
     renderBot(null);
+    renderTask(null);
     el.meta.textContent = '';
+    var focusedId = document.activeElement && el.mount.contains(document.activeElement)
+      ? document.activeElement.getAttribute('data-run-id') : null;
     el.mount.textContent = '';
-    var p = document.createElement('p');
-    p.className = 'rs-empty';
-    p.textContent = t('no_runs');
-    el.mount.appendChild(p);
+    var waiting = openRuns();
+    if (waiting.length) el.mount.appendChild(renderOverview(waiting, focusedId));
+    else el.mount.appendChild(textNode('p', 'rs-empty', t('no_runs')));
     watchFold(null);
     renderBar();
     renderStrip();
     updateTitle();
     setReady(true);
+    if (focusedId) {
+      var again = el.mount.querySelector('[data-run-id="' + CSS.escape(focusedId) + '"]');
+      if (again) again.focus();
+    }
+  }
+
+  /* no report shown while some wait: what waits, from which bot, and what
+     kind of task each one is; a row opens its report */
+  function renderOverview(runs, focusedId) {
+    var section = document.createElement('section');
+    section.className = 'rs-overview';
+    section.setAttribute('data-rs-overview', '');
+    section.appendChild(textNode('h2', 'rs-overview__heading', t('overview_title')));
+    var list = document.createElement('ul');
+    list.className = 'rs-overview__list';
+    runs.forEach(function (run) {
+      var task = taskOf(run);
+      var item = document.createElement('li');
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'rs-overview__item';
+      button.setAttribute('data-run-id', run.run_id);
+      button.setAttribute('data-kind', task.kind);
+      button.appendChild(avatarBox(identityOf(run)));
+      var text = document.createElement('span');
+      text.className = 'rs-overview__text';
+      text.appendChild(textNode('span', 'rs-overview__bot', identityOf(run).name));
+      text.appendChild(textNode('span', 'rs-overview__title', run.title));
+      button.appendChild(text);
+      var kind = document.createElement('span');
+      kind.className = 'rs-overview__kind';
+      kind.setAttribute('data-tone', taskTone(task, null));
+      var dot = document.createElement('span');
+      dot.className = 'rs-dot';
+      dot.setAttribute('data-rs-status', '');
+      dot.setAttribute('aria-hidden', 'true');
+      kind.appendChild(dot);
+      kind.appendChild(document.createTextNode(t(TASKS.kindKey(task))));
+      button.appendChild(kind);
+      button.setAttribute('aria-label', t('overview_item', { bot: identityOf(run).name, title: run.title, kind: t(TASKS.kindKey(task)) }));
+      button.addEventListener('click', function () { activate(run.run_id, { focusTitle: true }); });
+      item.appendChild(button);
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    return section;
   }
 
   // ----------------------------------------------------- bursts -----
@@ -1603,7 +1753,7 @@
       noteArrivals(fresh, idle ? oldest.run_id : null);
       if (idle) { activate(oldest.run_id); return; }
     }
-    if (!a && !state.pending && !runs.length) { showEmpty(); return; }
+    if (!a && !state.pending) { showEmpty(); return; }
     if (a && a.state !== 'open') setBanner(a.state);
     renderStrip();
     updateTitle();
@@ -1812,6 +1962,8 @@
       bot: document.getElementById('rs-bot'),
       botAvatar: document.getElementById('rs-bot-avatar'),
       botName: document.getElementById('rs-bot-name'),
+      task: document.getElementById('rs-task'),
+      taskInner: document.getElementById('rs-task-inner'),
       theme: document.getElementById('rs-theme'),
       mount: document.getElementById('rs-mount'),
       bar: document.getElementById('rs-submitbar'),

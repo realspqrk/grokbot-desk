@@ -56,19 +56,20 @@ button, input, textarea, select { font: inherit; color: inherit; }
   overflow: hidden;
 }
 
-/* strip, header, report, footer: fixed rows, so a hidden strip leaves an
-   empty first row and the fold fade below keeps its row */
+/* strip, task banner, header, report, footer: fixed rows, so a hidden strip
+   leaves an empty first row and the fold fade below keeps its row */
 .rs-main {
   position: relative;
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
 }
 .rs-strip { grid-row: 1; }
-.rs-header { grid-row: 2; }
-.rs-mount { grid-row: 3; }
-.rs-submitbar { grid-row: 4; }
+.rs-task { grid-row: 2; }
+.rs-header { grid-row: 3; }
+.rs-mount { grid-row: 4; }
+.rs-submitbar { grid-row: 5; }
 
 /* the fold fade: the column's last lines at the bottom of the mount's row
    (above the submit bar, or the window edge in a read-only view) fade into
@@ -77,7 +78,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-main:has(> .rs-mount[data-rs-more])::after {
   content: "";
   position: absolute;
-  grid-row: 3 / 4;
+  grid-row: 4 / 5;
   inset-inline: 0;
   bottom: 0;
   justify-self: center;
@@ -87,8 +88,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
-/* strip, header, mount and footer centre one column track (no auto margins, K7a) */
+/* strip, banner, header, mount and footer centre one column track (no auto margins, K7a) */
 .rs-strip,
+.rs-task,
 .rs-header,
 .rs-mount,
 .rs-submitbar {
@@ -97,6 +99,61 @@ button, input, textarea, select { font: inherit; color: inherit; }
   justify-content: center;
 }
 .rs-column { min-width: 0; }
+
+/* -------------------------------------------------------- task banner -- */
+/* What to do and who acts next, above the title of every report. The tint
+   is a status colour, one per kind (tokens.css --rs-task-*), not the accent:
+   it is the only large non-accent colour on the page (the C16 exception,
+   checked by tools/calm.mjs). Red only for blocking or a due date that is
+   today or past. It holds no buttons, at most the details toggle of a long
+   why. A decided report keeps it, neutral and muted. */
+.rs-task { padding: var(--space-3) var(--space-6) 0; }
+.rs-task:not([hidden]) + .rs-header { padding-top: var(--space-2); }
+
+.rs-task {
+  --rs-task-bg: var(--rs-task-fyi-bg);
+  --rs-task-edge: var(--rs-task-fyi-edge);
+}
+.rs-task[data-tone="post_yourself"] { --rs-task-bg: var(--rs-task-post-yourself-bg); --rs-task-edge: var(--rs-task-post-yourself-edge); }
+.rs-task[data-tone="approve_bot_acts"] { --rs-task-bg: var(--rs-task-approve-bot-acts-bg); --rs-task-edge: var(--rs-task-approve-bot-acts-edge); }
+.rs-task[data-tone="pick"] { --rs-task-bg: var(--rs-task-pick-bg); --rs-task-edge: var(--rs-task-pick-edge); }
+.rs-task[data-tone="review"] { --rs-task-bg: var(--rs-task-review-bg); --rs-task-edge: var(--rs-task-review-edge); }
+.rs-task[data-tone="urgent"] { --rs-task-bg: var(--rs-task-urgent-bg); --rs-task-edge: var(--rs-task-urgent-edge); }
+
+.rs-task__inner {
+  display: grid;
+  gap: var(--space-0-5);
+  padding: var(--space-2) var(--space-4);
+  border-left: var(--space-1) solid var(--rs-task-edge);
+  border-radius: var(--rs-r-md);
+  background: var(--rs-task-bg);
+  line-height: var(--rs-lh-tight);
+}
+.rs-task__inner > * { max-width: var(--rs-measure); }
+.rs-task__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.rs-task__what { font-weight: var(--rs-fw-strong); }
+.rs-task__meta { color: var(--rs-muted); font-size: var(--rs-fs-sm); white-space: nowrap; }
+.rs-task__steps { font-size: var(--rs-fs-sm); }
+.rs-task__more > summary {
+  width: fit-content;
+  color: var(--rs-muted);
+  font-size: var(--rs-fs-sm);
+  cursor: pointer;
+}
+.rs-task__more > summary:hover { color: var(--rs-ink); }
+.rs-task__more > summary:focus-visible { outline-color: var(--rs-ink); }
+.rs-task__more > p { padding-top: var(--space-0-5); }
+.rs-task[data-state="decided"] .rs-task__what { color: var(--rs-muted); font-weight: var(--rs-fw-normal); }
+.rs-task[data-state="decided"] .rs-task__why { color: var(--rs-muted); }
+
+/* blocking: the underlying kind's primary, emphasised by a ring in the
+   accent it already has (no second colour) */
+.rs-btn--primary[data-rs-emphasis] { box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper), 0 0 0 var(--space-1) var(--rs-accent); }
 
 /* ------------------------------------------------------------- header -- */
 
@@ -354,6 +411,44 @@ button, input, textarea, select { font: inherit; color: inherit; }
   place-items: center;
   color: var(--rs-muted);
 }
+
+/* no report shown while some wait: one quiet row per report (avatar, bot,
+   title, the task kind behind a small status dot) */
+.rs-overview { display: grid; gap: var(--space-3); padding-top: var(--space-5); }
+.rs-overview__heading { color: var(--rs-muted); font-size: var(--rs-fs-sm); font-weight: var(--rs-fw-normal); }
+.rs-overview__list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); }
+.rs-overview__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--rs-r-md);
+  background: transparent;
+  color: var(--rs-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.rs-overview__item:hover { background: var(--rs-hover); }
+.rs-overview__text { flex: 1; min-width: 0; display: grid; line-height: var(--rs-lh-tight); }
+.rs-overview__bot { font-weight: var(--rs-fw-strong); }
+.rs-overview__title { color: var(--rs-muted); overflow-wrap: anywhere; }
+.rs-overview__kind {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--rs-muted);
+  font-size: var(--rs-fs-sm);
+}
+.rs-overview__kind > .rs-dot { background: var(--rs-task-edge); }
+.rs-overview__kind[data-tone="post_yourself"] { --rs-task-edge: var(--rs-task-post-yourself-edge); }
+.rs-overview__kind[data-tone="approve_bot_acts"] { --rs-task-edge: var(--rs-task-approve-bot-acts-edge); }
+.rs-overview__kind[data-tone="pick"] { --rs-task-edge: var(--rs-task-pick-edge); }
+.rs-overview__kind[data-tone="fyi"] { --rs-task-edge: var(--rs-task-fyi-edge); }
+.rs-overview__kind[data-tone="review"] { --rs-task-edge: var(--rs-task-review-edge); }
+.rs-overview__kind[data-tone="urgent"] { --rs-task-edge: var(--rs-task-urgent-edge); }
 
 .rs-banner {
   display: flex;

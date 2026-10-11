@@ -114,7 +114,7 @@ function bindLinkToolbar(prose) {
 }
 
 /* ---------------------------------------------------------------- intro -- */
-if (data.intro) RS.fillText(part('intro'), data.intro);
+if (data.intro && RS.task.why_from !== 'intro') RS.fillText(part('intro'), data.intro);
 else part('intro').remove();
 if (source.some(function (w) { return !!w.kind; })) root.querySelector('.dl').setAttribute('data-dl-kinds', '');
 
@@ -349,8 +349,12 @@ function update(save) {
   var value = collect();
   if (save) RS.draft.set(value);
   var openItems = items.filter(function (it) { return !it.choice.value; });
-  var allUser = items.length > 0 && items.every(function (it) { return isUser(it.w); });
-  RS.setSubmitLabel(allUser ? RS.t('footer_done') : null);
+  /* the primary names the kind's main path (RS.cta) while it still holds:
+     something posted yourself, or something the bot carries out */
+  var main = RS.task.base === 'post_yourself' ? 'done' : 'approve';
+  var picked = items.filter(function (it) { return it.choice.value; });
+  var onMain = !picked.length || picked.some(function (it) { return it.choice.value === main; });
+  RS.setSubmitLabel(onMain ? RS.cta(main) : RS.t(main === 'done' ? 'footer_done' : 'submit'));
   if (openItems.length) {
     RS.setResult(null);
     var shortStatus = RS.t('items_open_short', { n: RS.number(openItems.length) });

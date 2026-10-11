@@ -13,6 +13,7 @@
   <script id="rs-boot" type="application/json">%%RS_BOOT%%</script>
   <script src="/static/twitter-text-v3-data.js"></script>
   <script src="/static/count.js"></script>
+  <script src="/static/tasks.js"></script>
   <script src="/static/rs.js"></script>
   <script src="/static/components.js"></script>
 </head>
@@ -25,6 +26,10 @@
           <p class="rs-strip__count" id="rs-strip-count"></p>
         </div>
       </nav>
+
+      <section class="rs-task" id="rs-task" data-rs-task data-rs-t-aria-label="task_label" hidden>
+        <div class="rs-column rs-task__inner" id="rs-task-inner"></div>
+      </section>
 
       <header class="rs-header">
         <div class="rs-column rs-header__inner">

@@ -7,21 +7,17 @@
    The core primary names what will be sent (the payload's approve label,
    "Send rejection", "Send request"). A note is optional behind "Add note";
    "Request changes" opens the same field as a required comment. What is
-   visible is what is sent: a hidden note is never part of the result. */
+   visible is what is sent: a hidden note is never part of the result.
+
+   The task kind says who acts next and so which buttons exist (RS.cta,
+   the shell's table): the bot acts once approved (Approve & verb, Reject,
+   optional Request changes), the user acts and reports back (Posted, Skip),
+   or it is information only (just Got it, no choice and no note). */
 var data = RS.data;
-var actor = data.actor === 'user' || data.actor === 'none' ? data.actor : 'bot';
-function botApproveLabel() {
-  if (data.approve_label) return data.approve_label;
-  if (data.action === 'post') return RS.t('approve_post');
-  if (data.action === 'send') return RS.t('approve_send');
-  if (data.action) return RS.t('approve_continue');
-  return RS.t('choice_approve');
+var actor = RS.task.base === 'post_yourself' ? 'user' : RS.task.base === 'fyi' ? 'none' : 'bot';
+function label(value) {
+  return value === 'approve' && data.approve_label ? data.approve_label : RS.cta(value);
 }
-var LABELS = actor === 'user'
-  ? { done: 'done_check', skipped: 'skip', request_changes: 'request_changes' }
-  : actor === 'none'
-    ? { acknowledged: 'got_it', request_changes: 'request_changes_ask' }
-    : { approve: 'choice_approve', reject: 'choice_reject', request_changes: 'request_changes' };
 var STATES = { ok: 'ok', warn: 'warn', fail: 'danger' };
 var CHECK_TEXT = { ok: 'check_ok', warn: 'check_warn', fail: 'check_fail' };
 /* A copy value wider than this, or with a line break, gets its own quoted line. */
@@ -44,7 +40,8 @@ function lineCount(text) {
 }
 
 /* ---- what it is about: summary, facts, copies ---- */
-RS.fillText(part('summary'), data.summary);
+if (RS.task.why_from === 'summary') part('summary').remove();
+else RS.fillText(part('summary'), data.summary);
 
 var facts = data.facts || [];
 if (facts.length) {
@@ -125,15 +122,19 @@ var box = part('comment-box');
 var noteOpen = part('note-open');
 var noteShown = false;
 var values = actor === 'user' ? ['done', 'skipped']
-  : actor === 'none' ? ['acknowledged', 'request_changes']
+  : actor === 'none' ? []
   : ['approve', 'reject'];
-if (actor !== 'none' && data.allow_changes === true) values.push('request_changes');
-choice.setAttribute('label', RS.t('decision_label'));
-choice.options = values.map(function (v) {
-  return { value: v, label: v === 'approve' ? botApproveLabel() : RS.t(LABELS[v]) };
-});
+if (actor === 'bot' && data.allow_changes === true) values.push('request_changes');
+if (values.length) {
+  choice.setAttribute('label', RS.t('decision_label'));
+  choice.options = values.map(function (v) { return { value: v, label: label(v) }; });
+} else {
+  part('decide').remove();
+  box.remove();
+}
 
 function render() {
+  if (!values.length) return;
   var changes = choice.value === 'request_changes';
   box.hidden = !(noteShown || changes);
   noteOpen.hidden = !box.hidden;
@@ -142,10 +143,16 @@ function render() {
 }
 
 function update(save) {
+  if (!values.length) {
+    RS.setSubmitLabel(label('acknowledged'));
+    RS.setResult({ decision: 'acknowledged', comment: '' });
+    RS.setStatus(null);
+    return;
+  }
   var decision = choice.value || null;
   if (save && RS.run.state === 'open') RS.draft.set({ decision: decision, comment: comment.value, note: noteShown });
   if (!decision) {
-    RS.setSubmitLabel(null);
+    RS.setSubmitLabel(label(values[0]));
     RS.setResult(null);
     RS.setStatus(RS.t('decision_pick'));
     return;
@@ -157,13 +164,7 @@ function update(save) {
     RS.setStatus(has ? null : RS.t('comment_required'));
     return;
   }
-  var primary = decision === 'approve' ? botApproveLabel()
-    : decision === 'reject' ? RS.t('send_rejection')
-    : decision === 'done' ? RS.t('done_check')
-    : decision === 'skipped' ? RS.t('skip')
-    : decision === 'acknowledged' ? RS.t('got_it')
-    : RS.t('choice_approve');
-  RS.setSubmitLabel(primary);
+  RS.setSubmitLabel(decision === 'reject' ? RS.t('send_rejection') : label(decision));
   RS.setResult({ decision: decision, comment: box.hidden ? '' : comment.value });
   RS.setStatus(null);
 }
@@ -195,7 +196,7 @@ if (draft && typeof draft === 'object') {
 }
 render();
 update(false);
-if (draft && !sent) {
+if (draft && !sent && values.length) {
   if (choice.value === 'request_changes' || (noteShown && !choice.value)) comment.focus();
   else {
     var checked = choice.buttons.filter(function (b) { return b.getAttribute('aria-checked') === 'true'; })[0];
