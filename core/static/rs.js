@@ -172,7 +172,7 @@
     templateGen: 0,    // rendered-template lifetime; stale template calls are ignored
     gone: {},          // run id -> true once this page decided it (before SSE says so)
     done: null,        // null, 'closing' or 'kept': the calm done state after the last decision
-    order: [],         // open run ids in arrival order (slice C: arrivals append)
+    order: [],         // open run ids in arrival order (arrivals append)
     groups: [],        // bot ids in first-seen order while they have open runs
     burst: null        // { ids, bots, timer, started }: arrivals not announced yet
   };
@@ -685,7 +685,7 @@
      underlined, and "n of m open". It is one Tab stop (roving tabindex):
      Left/Right/Home/End switch along it, Ctrl+1..9 from anywhere. Decided
      reports leave the strip; with one open report there is none (K3). */
-  /* Slice C: open reports in a stable order. The server lists newest first
+  /* Open reports in a stable order. The server lists newest first
      by the bot-supplied creation time; the page keeps its own arrival order
      instead (a bot's clock cannot move an entry) and groups it by bot: the
      bots in the order they first showed up, each bot's reports in arrival
@@ -1450,7 +1450,7 @@
   }
 
   // ----------------------------------------------------- bursts -----
-  /* Slice C: reports from several bots often come in a burst. Each arrival
+  /* Reports from several bots often come in a burst. Each arrival
      is collected; once the burst has been quiet for BURST_SETTLE_MS (or has
      run for BURST_MAX_MS) one polite announcement says what came ("5 new
      reports from 2 bots"); a single arrival names its report; a single
@@ -1525,7 +1525,7 @@
       showEmpty();
       return;
     }
-    /* switching rule (spec 2.8, slice C): an open report on screen always
+    /* switching rule (spec 2.8): an open report on screen always
        stays, touched or not; an arrival becomes active only when nothing
        open is shown (empty, or the shown report is decided or gone) and no
        other report is loading. The oldest arrival goes first; the rest wait

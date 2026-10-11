@@ -14,7 +14,7 @@ import round5Corpus from './fixtures/twitter-text-round5.mjs';
 const PORT = Number(process.env.RS_E2E_PORT || 18900);
 if (PORT === 18742) throw new Error('refusing the product port');
 const ORIGIN = `http://127.0.0.1:${PORT}`;
-// slice C: the strip has one entry per bot, so a test that switches between
+// the strip has one entry per bot, so a test that switches between
 // two reports by their strip entries gives the second one its own bot
 const SECOND_BOT = 'example-second-bot';
 const STARTER = path.join(ROOT, 'templates/builtin/_starter');
@@ -1049,7 +1049,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await activeId(page), a.run_id);
       await page.waitForFunction(() => document.title === 'Bericht A · Operations Agent', null, { timeout: 3000 });
 
-      // slice C: A stays even untouched; B waits in the strip with its "new"
+      // A stays even untouched; B waits in the strip with its "new"
       // dot, the title gets "● "
       const b = server.show(golden, { bot: SECOND_BOT, identity: { name: 'Second Agent' }, title: 'Bericht B', created: iso(t0 + 60000) });
       await page.waitForSelector(`.rs-strip__run[data-run-id="${b.run_id}"] .rs-strip__dot[data-new]`);

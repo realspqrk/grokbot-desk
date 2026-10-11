@@ -365,7 +365,7 @@ def command_show(args, base, port):
     if not args.no_window and not settled:
         try:
             if result.get("window_alive"):
-                # slice C: --focus raises the window once per burst, as the
+                # --focus raises the window once per burst, as the
                 # server's answer says (an older server sends no "attention")
                 if args.focus and result.get("attention", True):
                     focus_window(

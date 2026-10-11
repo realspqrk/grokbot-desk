@@ -1,4 +1,4 @@
-// Slice C: calm multi-bot bursts (served, headless browser). Several bots post
+// Calm multi-bot bursts (served, headless browser). Several bots post
 // reports in quick succession; the pop-up stays one calm window:
 // - the report on screen is never replaced by an arrival (open = it stays);
 //   an arrival becomes active only when nothing open is shown,
@@ -31,7 +31,7 @@ const SOCIAL = { bot: 'example-social-bot', identity: { name: 'Social Agent', av
 const isoAt = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
 const BURST_MS = 600;
 
-describe('slice C: multi-bot burst (served, headless browser)', { skip }, () => {
+describe('multi-bot burst (served, headless browser)', { skip }, () => {
   let server;
   let browser;
 
@@ -93,7 +93,7 @@ describe('slice C: multi-bot burst (served, headless browser)', { skip }, () => 
     const { ctx, page, errors } = await open(`run=${first.run_id}`);
     try {
       await activeIs(page, first.run_id);
-      // untouched on purpose: before slice C an untouched report was replaced
+      // untouched on purpose: in 1.0.0-beta.1 an untouched report was replaced
       const rest = [
         push(SOCIAL, 'Social 1'), push(INBOX, 'Inbox 2'), push(SOCIAL, 'Social 2'),
         push(INBOX, 'Inbox 3'), push(SOCIAL, 'Social 3'),

@@ -280,7 +280,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper);
 }
 .rs-strip__dot[data-new] { background: var(--rs-ink); }
-/* slice C: one avatar per bot; with more than one open report a quiet count
+/* one avatar per bot; with more than one open report a quiet count
    (ink on paper, never the accent: C16/K1) sits at its top right */
 .rs-strip__badge {
   position: absolute;

@@ -768,7 +768,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         alive = self.server.hub.probe_window()
         self.server.broadcast_runs(payload["run_id"], "open")
-        # slice C: every push counts toward the burst, also one that finds no
+        # every push counts toward the burst, also one that finds no
         # window: the window launched for it is that burst's bring-forward
         due = self.server.attention_due() and alive
         if due:

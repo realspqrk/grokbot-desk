@@ -1689,7 +1689,7 @@ async function calmScene(browser, server, testCase, scene) {
   await cancelOpen(server);
   const identities = scene.identities || [];
   const runs = [];
-  /* slice C: the strip has one entry per bot. Identity scenes stand for
+  /* the strip has one entry per bot. Identity scenes stand for
      several bots, so each foreign run gets its own bot id (the shown run,
      the last one, keeps the template's); plain scenes are one bot with
      several reports (one avatar with a count). */

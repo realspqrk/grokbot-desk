@@ -28,7 +28,7 @@ def test_strip_and_done_strings_in_both_tables():
         "strip_count": {"n", "m"},
         "strip_count_all": {"m"},
         "strip_item": {"bot", "title"},
-        # slice C: one strip entry per bot, one announcement per burst
+        # one strip entry per bot, one announcement per burst
         "strip_group": {"bot", "n"},
         "burst_arrived": {"n", "k"},
         "burst_arrived_bot": {"n", "bot"},

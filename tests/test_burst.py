@@ -1,4 +1,4 @@
-"""Slice C: a burst of reports from several bots opens exactly one window."""
+"""A burst of reports from several bots opens exactly one window."""
 import io
 import json
 import threading

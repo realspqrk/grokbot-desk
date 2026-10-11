@@ -44,7 +44,7 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
   });
   beforeEach(async () => { if (server) await server.clearRuns(); });
 
-  /** n open runs, oldest first (= arrival and strip order, slice C). */
+  /** n open runs, oldest first (= arrival and strip order). */
   function showRuns(n) {
     const now = Date.now();
     return BOTS.slice(0, n).map((b, i) => server.show(golden, {
