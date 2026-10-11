@@ -227,29 +227,35 @@ function coverageReport(expectedCases, executedCases) {
 }
 
 function resolveTemplatePaths(data, dir) {
-  const text = JSON.stringify(data);
+  let text = JSON.stringify(data);
   if (!text.includes('%RS_TEMPLATE%')) return data;
+  /* fixtures spell template paths Windows-style (%RS_TEMPLATE%\fixtures\…);
+     on macOS/Linux the separators must be slashes once the token is an
+     absolute POSIX folder */
+  if (path.sep === '/') {
+    text = text.replace(/%RS_TEMPLATE%((?:\\\\[^"\\]+)+)/gu, (match, rest) => `%RS_TEMPLATE%${rest.split('\\\\').join('/')}`);
+  }
   return JSON.parse(
     text.split('%RS_TEMPLATE%').join(JSON.stringify(dir).slice(1, -1)),
   );
 }
 
-function registrationEnvelope(testCase, identity = null) {
+function registrationEnvelope(testCase, identity = null, botSuffix = '') {
   const namespace = testCase.manifest.namespace;
   return {
     template: testCase.manifest.id,
     version: testCase.manifest.version,
-    bot: namespace === 'global' ? MEASUREMENT_BOT_ID : namespace,
+    bot: (namespace === 'global' ? MEASUREMENT_BOT_ID : namespace) + botSuffix,
     title: testCase.manifest.title_de,
     created: TIME_BASELINE.default.created,
     ...(identity ? { identity } : {}),
   };
 }
 
-async function show(server, testCase, identity = null) {
+async function show(server, testCase, identity = null, botSuffix = '') {
   const run = server.show(
     resolveTemplatePaths(testCase.data, testCase.dir),
-    registrationEnvelope(testCase, identity),
+    registrationEnvelope(testCase, identity, botSuffix),
   );
   await server.assertOpen(run.run_id, `${testCase.manifest.id}/${testCase.fixture}`);
   return run;
@@ -826,7 +832,7 @@ async function waitForTabAuditReady(page, options = {}) {
           '.rs-strip__run,.rs-rail__run,[data-run-id]',
         );
         return entries.length === Math.min(expected, 12);
-      }, options.expectedOpenRuns, { timeout: 0 });
+      }, Number.isInteger(options.expectedStripEntries) ? options.expectedStripEntries : options.expectedOpenRuns, { timeout: 0 });
     }
     await page.evaluate(async () => {
       const signature = () => [...document.querySelectorAll(
@@ -1683,9 +1689,16 @@ async function calmScene(browser, server, testCase, scene) {
   await cancelOpen(server);
   const identities = scene.identities || [];
   const runs = [];
+  /* slice C: the strip has one entry per bot. Identity scenes stand for
+     several bots, so each foreign run gets its own bot id (the shown run,
+     the last one, keeps the template's); plain scenes are one bot with
+     several reports (one avatar with a count). */
+  const last = scene.openRuns - 1;
   for (let index = 0; index < scene.openRuns; index += 1) {
-    runs.push(await show(server, testCase, identities[index] || null));
+    const suffix = identities.length && index < last ? `-${index + 1}` : '';
+    runs.push(await show(server, testCase, identities[index] || null, suffix));
   }
+  const stripEntries = identities.length ? scene.openRuns : Math.min(scene.openRuns, 1);
   const active = runs.at(-1);
   const opened = await openPage(browser, server, active.run_id, {
     colorScheme: scene.theme,
@@ -1745,6 +1758,7 @@ async function calmScene(browser, server, testCase, scene) {
     try {
       const tab = await tabAudit(opened.page, {
         expectedOpenRuns: scene.openRuns,
+        expectedStripEntries: stripEntries,
       });
       const verifiedRovingGroups = tab.groups.map((group) => group.identity);
       const recounted = await calmRestingFacts(
