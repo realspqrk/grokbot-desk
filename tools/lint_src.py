@@ -264,18 +264,35 @@ def _scan_calm(root):
     return findings
 
 
+# A local virtualenv or node_modules (both gitignored) holds third-party
+# code, not ours: never lint it, never count its modules as local.
+ENVIRONMENT_DIRS = {".git", "__pycache__", ".venv", "venv", "env", "ENV", "node_modules"}
+
+
+def _in_environment(relative):
+    return any(part in ENVIRONMENT_DIRS for part in relative.parts)
+
+
 def scan_repo(root, *, calm=False):
     root = Path(root)
     findings = []
-    local_modules = {path.name for path in root.iterdir() if path.is_dir()}
-    local_modules.update(path.stem for path in root.rglob("*.py"))
+    local_modules = {
+        path.name for path in root.iterdir()
+        if path.is_dir() and path.name not in ENVIRONMENT_DIRS
+    }
+    local_modules.update(
+        path.stem for path in root.rglob("*.py")
+        if not _in_environment(path.relative_to(root))
+    )
     for path in sorted(root.rglob("*.py")):
         relative = path.relative_to(root)
-        if relative.parts[:2] == ("tools", "probes") or any(part in {".git", "__pycache__"} for part in relative.parts):
+        if relative.parts[:2] == ("tools", "probes") or _in_environment(relative):
             continue
         findings.extend(_scan_python(path, relative, local_modules))
     for path in sorted(root.rglob("package.json")):
         relative = path.relative_to(root)
+        if _in_environment(relative):
+            continue
         try:
             package = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
@@ -288,7 +305,7 @@ def scan_repo(root, *, calm=False):
     for suffix in ("*.cmd", "*.bat", "*.ps1", "*.sh"):
         for path in sorted(root.rglob(suffix)):
             relative = path.relative_to(root)
-            if relative.parts[:2] == ("tools", "probes"):
+            if relative.parts[:2] == ("tools", "probes") or _in_environment(relative):
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace").lower()

@@ -20,6 +20,22 @@ def test_lint_allows_pytest_only_in_tests(tmp_path):
     assert scan_repo(tmp_path) == []
 
 
+def test_lint_skips_a_local_virtualenv_and_node_modules(tmp_path):
+    """A developer's .venv or node_modules in the clone is third-party code:
+    it neither fails the lint nor makes its packages count as local."""
+    site = tmp_path / ".venv" / "lib" / "python3.12" / "site-packages"
+    (site / "requests").mkdir(parents=True)
+    (site / "requests" / "__init__.py").write_text("import urllib3\n", encoding="utf-8")
+    (site / "activate.sh").write_text("pip" + " install x\n", encoding="utf-8")
+    package = tmp_path / "node_modules" / "some-package"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text('{"dependencies": {"x": "1"}}', encoding="utf-8")
+    assert scan_repo(tmp_path) == []
+
+    (tmp_path / "bad.py").write_text("import requests\n", encoding="utf-8")
+    assert {item["rule"] for item in scan_repo(tmp_path)} == {"C15a"}
+
+
 def test_calm_lint_is_opt_in_and_rejects_raw_spacing_and_multiple_primaries(tmp_path):
     core = tmp_path / "core" / "static"
     template = tmp_path / "templates" / "global" / "sample"
