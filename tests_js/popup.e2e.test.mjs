@@ -445,17 +445,19 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
 
   test('fix1: a new report cancels the close at once, before its detail has loaded', async () => {
     const [run] = showRuns(1);
-    const { ctx, page } = await openPopup(`?client=test&run=${run.run_id}&autoclose=1&close_ms=700`);
+    // The close delay must outlast showing the next report (a CLI process,
+    // slow on a busy Windows runner) so that report arrives within it.
+    const { ctx, page } = await openPopup(`?client=test&run=${run.run_id}&autoclose=1&close_ms=2500`);
     try {
       await decide(page);
       await page.waitForSelector('.rs-banner[data-done]');
       // the new report's detail answers only after the close delay
       await page.route('**/api/run/*', async (route) => {
-        await new Promise((r) => setTimeout(r, 1200));
+        await new Promise((r) => setTimeout(r, 3500));
         try { await route.continue(); } catch { /* page gone */ }
       });
       const next = server.show(golden, { bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(2800);
       assert.equal(page.isClosed(), false, 'the arrival stops the close while its detail loads');
       await activeIs(page, next.run_id);
       assert.equal(await page.getAttribute('html', 'data-rs-done'), null);
