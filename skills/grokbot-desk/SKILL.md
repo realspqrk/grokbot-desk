@@ -66,7 +66,7 @@ Pick a built-in before writing your own:
    Use the current time with its offset for `created`. Make the `title` say what is decided, and keep the body consistent with it. The intro or title must say what Approve means in this case (and what Reject and Defer mean, if it is not obvious). A link or file reference is information, never an action: label it plainly, e.g. "Open PDF".
 
 2. Show it: `python report_shell.py show decide-list --data payload.json`
-   It returns one JSON line containing `run_id`, `url` and `result_path`. It opens the window if needed; an existing window receives the report quietly. Use `--focus` only when the user asked to bring it forward. Several open reports share one window with an avatar strip on top.
+   It returns one JSON line containing `run_id`, `url` and `result_path`. It opens the window if needed; an existing window receives the report quietly. Use `--focus` only when the user asked to bring it forward. Several open reports share one window with an avatar strip on top, one avatar per bot with a count. A new report never replaces the one the user is reading, and a burst of reports is announced once; there is no need to space out several `show` calls or to add `--focus` for them.
    Then run `python report_shell.py status` and check `window_alive`. If it is `false` (or `up` is `false`), no window is waiting: do not tell the user there is one. Read the warning `show` printed; if your runtime ends child processes when a command finishes, ask the user to start `python report_shell.py serve` in a terminal that stays open, then run `show` again.
 
 3. Tell the user in chat that a decision is waiting, then wait for it:

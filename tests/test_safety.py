@@ -748,7 +748,7 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
         streams.remove(dead)
         # The dead peer's stream clears the pending launch on the server's
         # thread, after the client already saw its first event; wait for that
-        # (well inside the pending launch's 5 s deadline, so expiry can't pass
+        # (well inside the pending launch's deadline, so expiry can't pass
         # this) and for the peer to be gone before opening again.
         deadline = time.monotonic() + 3
         while (

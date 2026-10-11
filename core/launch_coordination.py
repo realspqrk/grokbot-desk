@@ -5,6 +5,13 @@ import secrets
 import time
 from pathlib import Path
 
+# How long a launched window may take before its page connects. The page
+# ends the pending launch as soon as it connects; until then (or this
+# deadline) no further launch starts. A fresh browser profile's first start,
+# notably on macOS, can take well over 5 s: a shorter deadline let a report
+# arriving meanwhile launch a second window into the same profile.
+LAUNCH_PENDING_SECONDS = 20
+
 
 def launch_lock_path(base):
     return Path(base) / "window-launch.lock"
@@ -110,7 +117,7 @@ def mark_launch_pending(base):
     temporary = path.with_suffix(".pending.tmp")
     temporary.write_text(
         json.dumps(
-            {"generation": generation, "deadline": time.time() + 5},
+            {"generation": generation, "deadline": time.time() + LAUNCH_PENDING_SECONDS},
             separators=(",", ":"),
         ),
         encoding="ascii",
@@ -129,7 +136,7 @@ def clear_launch_pending(base, generation):
         return False
     except PermissionError:
         # Windows: a page's stream is reading it right now; a later clear
-        # (or its 5 s deadline) ends it
+        # (or its LAUNCH_PENDING_SECONDS deadline) ends it
         return False
     return True
 
