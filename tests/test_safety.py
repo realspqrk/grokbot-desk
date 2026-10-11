@@ -723,6 +723,12 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
         live.shutdown(socket.SHUT_RDWR)
         live.close()
         streams.remove(live)
+        # The server sees the closed peer only once its FIN has arrived on
+        # the server's socket; on macOS that can take a moment after close()
+        # returns. Probe until it is gone, within a bounded wait.
+        deadline = time.monotonic() + 3
+        while server.hub.probe_window() and time.monotonic() < deadline:
+            time.sleep(.01)
         assert server.hub.probe_window() is False
 
         test_peer = connect_sse("2" * 32, test=True)
