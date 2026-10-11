@@ -953,7 +953,9 @@ def test_show_twice_with_the_same_dedupe_key_does_not_open_a_second_report(tmp_p
         "version": 1,
         "bot": "automation-agent",
         "title": "Weekly review",
-        "created": "2026-10-11T09:00:00+02:00",
+        # A fixed stamp would expire the first report after a few hours and
+        # turn the second show into a new report.
+        "created": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
         "dedupe_key": "weekly-review",
         "data": {"message": "Hello"},
     }
