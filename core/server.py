@@ -768,14 +768,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         alive = self.server.hub.probe_window()
         self.server.broadcast_runs(payload["run_id"], "open")
-        if alive and self.server.attention_due():
+        # slice C: every push counts toward the burst, also one that finds no
+        # window: the window launched for it is that burst's bring-forward
+        due = self.server.attention_due() and alive
+        if due:
             state = _read_state(self.server.data_dir)
             request_attention(
                 _browser_identity(state), self.server.window_title
             )
-        self._push_answer(payload["run_id"], alive, warnings)
+        self._push_answer(payload["run_id"], alive, warnings, attention=due)
 
-    def _push_answer(self, run_id, alive, warnings, deduped=False):
+    def _push_answer(self, run_id, alive, warnings, deduped=False, attention=False):
         result_path = self.server.runs.results_dir / f"{run_id}.json"
         answer = {
             "run_id": run_id,
@@ -783,6 +786,9 @@ class Handler(BaseHTTPRequestHandler):
             "result_path": str(result_path),
             "window_alive": alive,
             "window_title": self.server.window_title,
+            # whether this push may bring the window forward (once per
+            # burst): `show --focus` follows it instead of raising per push
+            "attention": bool(attention),
         }
         if deduped:
             answer["deduped"] = True
