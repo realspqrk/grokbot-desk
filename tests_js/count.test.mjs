@@ -49,9 +49,17 @@ function timedWorkerCount(text, timeout = 2000) {
     const { parentPort, workerData } = require('node:worker_threads');
     const { performance } = require('node:perf_hooks');
     const count = require(workerData.module).count;
-    const started = performance.now();
-    const result = count(workerData.text, 'x');
-    parentPort.postMessage({ result, elapsed: performance.now() - started });
+    // The bound guards against super-linear matching, not against a busy
+    // runner: warm up once (JIT, regex compile), then keep the fastest of
+    // three runs. A backtracking blow-up stays slow on every run.
+    let result = count(workerData.text, 'x');
+    let elapsed = Infinity;
+    for (let i = 0; i < 3; i += 1) {
+      const started = performance.now();
+      result = count(workerData.text, 'x');
+      elapsed = Math.min(elapsed, performance.now() - started);
+    }
+    parentPort.postMessage({ result, elapsed });
   `;
   const module = require.resolve('../core/static/count.js');
   return new Promise((resolve, reject) => {
