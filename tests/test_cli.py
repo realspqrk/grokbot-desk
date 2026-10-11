@@ -230,7 +230,7 @@ def test_server_start_timeout_is_configurable_and_bounded(monkeypatch):
     assert cli_module._server_start_timeout_seconds() == 15
 
     monkeypatch.setenv("RS_SERVER_START_TIMEOUT_MS", "0")
-    assert cli_module._server_start_timeout_seconds() == 3
+    assert cli_module._server_start_timeout_seconds() == 10
 
     monkeypatch.setenv("RS_SERVER_START_TIMEOUT_MS", "999999")
     assert cli_module._server_start_timeout_seconds() == 120
@@ -1157,7 +1157,8 @@ def test_cli_output_is_ascii_under_cp1252_and_preserves_unicode_json(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.isascii()
-    assert json.loads(result.stdout) == expected
+    # the CLI names the data dir that answered; the stored file is unchanged
+    assert json.loads(result.stdout) == dict(expected, data_dir=str(data_dir.resolve()))
 
     missing = subprocess.run(
         [
@@ -1223,3 +1224,78 @@ def test_show_accepts_one_utf8_bom_from_file_and_stdin(
         assert json.loads(from_stdin.stdout)["run_id"]
     finally:
         cli(env, port, "stop")
+
+
+def _slow_cold_server(base, port, *, listen_after, answer_after, write_state=True):
+    """A stand-in for a cold start: listens after listen_after seconds,
+    writes state.json, and only answers /hello answer_after seconds later."""
+    import http.server
+
+    class Hello(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            time.sleep(max(0, ready_at - time.monotonic()))
+            body = json.dumps({"runner": RUNNER_ID}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    holder = {}
+    ready_at = time.monotonic() + listen_after + answer_after
+
+    def run():
+        time.sleep(listen_after)
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Hello)
+        holder["server"] = server
+        if write_state:
+            (Path(base) / "state.json").write_text(json.dumps({"port": port, "pid": os.getpid()}))
+        server.serve_forever(poll_interval=.05)
+
+    def launch(script, launch_port, data_dir):
+        threading.Thread(target=run, daemon=True).start()
+        return 4242
+
+    return holder, launch
+
+
+@pytest.mark.parametrize("listen_after,answer_after", [(0.9, 0.4), (0.2, 1.4)])
+def test_cold_start_is_never_mistaken_for_a_foreign_process(
+    tmp_path, monkeypatch, listen_after, answer_after
+):
+    """Regression: the first show after a cold start exited 4 with 'port is
+    held by a foreign process' while the holder was the server that same show
+    had just spawned (it listened, or answered, only as the start timeout
+    ran out)."""
+    port = free_port()
+    holder, launch = _slow_cold_server(
+        tmp_path, port, listen_after=listen_after, answer_after=answer_after
+    )
+    monkeypatch.setattr(cli_module, "launch_server", launch)
+    monkeypatch.setattr(cli_module, "_server_start_timeout_seconds", lambda: 1.0)
+    try:
+        assert cli_module._ensure_server(tmp_path, port)["runner"] == RUNNER_ID
+    finally:
+        if "server" in holder:
+            holder["server"].shutdown()
+            holder["server"].server_close()
+
+
+def test_a_port_taken_without_our_state_is_still_foreign(tmp_path, monkeypatch):
+    port = free_port()
+    holder, launch = _slow_cold_server(
+        tmp_path, port, listen_after=0.1, answer_after=60, write_state=False
+    )
+    monkeypatch.setattr(cli_module, "launch_server", launch)
+    monkeypatch.setattr(cli_module, "_server_start_timeout_seconds", lambda: 1.0)
+    monkeypatch.setattr(cli_module, "_hello", lambda port, timeout=.35: None)
+    try:
+        with pytest.raises(RuntimeError, match="foreign process"):
+            cli_module._ensure_server(tmp_path, port)
+    finally:
+        time.sleep(.2)
+        if "server" in holder:
+            holder["server"].shutdown()
+            holder["server"].server_close()

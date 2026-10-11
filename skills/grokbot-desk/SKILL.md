@@ -34,7 +34,7 @@ Pick a built-in before writing your own:
 | `pick-option` | Compare 2 to 4 options and pick one. |
 | `decide-list` | Approve, reject or defer up to 5 items, one by one. |
 | `review-doc` | Review a draft or report; approve or request changes. |
-| `preview-post` | Preview one social post per platform and approve it. |
+| `preview-post` | Preview one social post per platform and approve it; per platform `auto` (you post it) or `manual` (the user posts it). |
 
 `python report_shell.py templates` lists what is installed. For a built-in's fields and examples, read `templates/builtin/<id>/schema.json`, `result.schema.json`, and `fixtures/golden.json`. `docs/GUIDE.md` describes the template contract. Use `new <namespace>/<id>` only when no built-in fits.
 
@@ -75,6 +75,14 @@ Pick a built-in before writing your own:
    Act only on what the result says. `cancelled` or `expired` means: do nothing, and ask in chat if it still matters.
 
 If `show` fails, read its error. Correct the payload field named in the error; `doctor` checks registry/setup warnings. `check <template>` checks the template and requires the development tools described above. Try once more after fixing the cause; do not retry in a loop.
+
+## Social posts: who posts where
+
+In `preview-post`, give each platform a `mode`: `{"platform": "linkedin", "mode": "auto"}` means you post it after the user approves; `{"platform": "x", "mode": "manual"}` means the user posts it by hand (the window shows copy buttons for the text, hashtags, comment and image, and the user marks it as posted). A plain id such as `"linkedin"` means `auto`.
+
+- Decide the mode per platform from your own instructions and experience: who actually posts where. If you cannot post to a platform, or the user posts there themselves, mark it `manual`.
+- Post only what the result lists in `platforms`: those are the `auto` platforms the user approved (`per_platform.<p>.decision` is `approved`).
+- Never post a platform marked `manual`, even when the user marked it as posted (`posted_manually`): record that it is done. `not_approved` means do nothing; `changes_requested` carries the user's `note`.
 
 ## Your identity
 

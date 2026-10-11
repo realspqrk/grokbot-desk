@@ -13,7 +13,14 @@
    submitted result on a decided report. Instagram's image state only blocks
    a NEW approval on an open form; it never unticks a restored or sent one.
    An approved Instagram whose image is not (yet) loaded holds Send with a
-   status line instead of silently sending fewer platforms. */
+   status line instead of silently sending fewer platforms.
+
+   Mode per platform (payload: a plain id is auto; {platform, mode}):
+   auto, the bot posts after "Approve & post"; manual, the reviewer posts it
+   by hand: copies first (text, hashtags, comment, image, folder), the note
+   "You post this yourself." and "Mark as posted". The result lists only
+   auto approvals in `platforms` (what the bot may post) and every platform
+   with its mode and decision in `per_platform`. */
 var data = RS.data;
 var ORDER = ['x', 'linkedin', 'instagram', 'facebook'];
 var NAMES = {
@@ -21,7 +28,14 @@ var NAMES = {
   instagram: RS.t('platform_instagram'), facebook: RS.t('platform_facebook')
 };
 var flags = data.flag || [];
-var platforms = data.platforms.slice();
+var entries = data.platforms.map(function (e) {
+  return typeof e === 'string' ? { platform: e, mode: 'auto' } : { platform: e.platform, mode: e.mode || 'auto' };
+});
+var platforms = entries.map(function (e) { return e.platform; });
+var modes = {};
+entries.forEach(function (e) { modes[e.platform] = e.mode; });
+function manual(p) { return modes[p] === 'manual'; }
+var anyManual = platforms.some(manual);
 var tags = data.hashtags || [];
 var tagLine = tags.map(function (h) { return '#' + h; }).join(' ');
 var append = (data.hashtag_mode || 'append') === 'append' && tags.length > 0;
@@ -92,6 +106,13 @@ platforms.forEach(function (p) {
   tab.setAttribute('data-platform', p);
   var label = document.createElement('span');
   label.textContent = name;
+  if (manual(p)) {
+    /* the mode, quietly, as part of the name: "X · manual" */
+    var modeText = document.createElement('span');
+    modeText.className = 'pp__mode';
+    modeText.textContent = ' · ' + RS.t('mode_manual');
+    label.appendChild(modeText);
+  }
   tab.appendChild(label);
   var tick = document.createElement('span');
   tick.className = 'pp__state';
@@ -165,6 +186,31 @@ platforms.forEach(function (p) {
     copyComment.remove();
   }
 
+  /* Manual: the reviewer posts by hand, so copying comes first (in the DOM,
+     hence the Tab order, as on screen), with the image as a picture and its
+     folder. Auto keeps today's panel. */
+  var manualNote = part('manual-note', col);
+  var copyImage = part('copy-image', col);
+  var revealButton = part('reveal', col);
+  col.setAttribute('data-mode', modes[p]);
+  if (manual(p)) {
+    manualNote.textContent = RS.t('manual_note');
+    if (image) {
+      copyImage.setAttribute('label', RS.t('copy_image'));
+      copyImage.setAttribute('media', image.path);
+      part('reveal-label', revealButton).textContent = RS.t('reveal');
+      revealButton.addEventListener('click', function () { RS.reveal(image.path); });
+    } else {
+      copyImage.remove();
+      revealButton.remove();
+    }
+    manualNote.parentNode.insertBefore(col.querySelector('.pp__copies'), manualNote.nextSibling);
+  } else {
+    manualNote.remove();
+    copyImage.remove();
+    revealButton.remove();
+  }
+
   /* Lints and blocking: over the limit (incl. more than 30 Instagram
      hashtags) and Instagram without an image block approving. */
   var badges = part('badges', col);
@@ -190,7 +236,7 @@ platforms.forEach(function (p) {
   });
 
   var input = part('approve', col);
-  part('approve-label', col).textContent = RS.t('approve_for', { platform: name });
+  part('approve-label', col).textContent = RS.t(manual(p) ? 'mark_posted_on' : 'approve_for', { platform: name });
   var reason = part('blocked', col);
   if (blocked) {
     part('blocked-text', reason).textContent = blocked;
@@ -319,6 +365,34 @@ function renderTicks() {
   });
 }
 
+/* Per platform: its mode and what was decided; a change request applies to
+   every platform with the comment as its note. */
+function perPlatform(list, note) {
+  var out = {};
+  platforms.forEach(function (p) {
+    var entry = { mode: modes[p] };
+    if (note !== undefined) {
+      entry.decision = 'changes_requested';
+      entry.note = note;
+    } else if (list.indexOf(p) >= 0) {
+      entry.decision = manual(p) ? 'posted_manually' : 'approved';
+    } else {
+      entry.decision = 'not_approved';
+    }
+    out[p] = entry;
+  });
+  return out;
+}
+
+/* The primary names what happens: "Approve & post" (the bot posts),
+   "Mark as posted" (the reviewer did), "Confirm" for both at once. */
+function submitLabel(list) {
+  var ticked = list.length ? list : platforms;
+  var auto = ticked.some(function (p) { return !manual(p); });
+  var hand = list.length ? list.some(manual) : !auto;
+  return RS.t(auto && hand ? 'confirm_decision' : hand ? 'mark_posted' : 'approve_post');
+}
+
 function saveSelection() { if (RS.run.state === 'open') update(true); }
 
 function update(save) {
@@ -329,12 +403,15 @@ function update(save) {
     var text = comment.value.trim();
     RS.setSubmitLabel(RS.t('send_request'));
     RS.setAlternative(null);
-    RS.setResult(text ? { decision: 'request_changes', platforms: [], comment: comment.value } : null);
+    RS.setResult(text ? {
+      decision: 'request_changes', platforms: [], comment: comment.value,
+      per_platform: perPlatform(list, comment.value)
+    } : null);
     RS.setStatus(text ? null : RS.t('comment_required'));
     return;
   }
   /* an approval never carries the (hidden) change-request text */
-  RS.setSubmitLabel(RS.t('approve'));
+  RS.setSubmitLabel(submitLabel(list));
   RS.setAlternative(RS.t('request_changes'), function () { setRequesting(true, true); });
   var waiting = list.filter(function (p) { return !confirmed(p); })[0];
   if (waiting) {
@@ -343,9 +420,13 @@ function update(save) {
       { platform: NAMES[waiting] }));
     return;
   }
-  RS.setResult(list.length ? { decision: 'approve', platforms: list, comment: '' } : null);
-  if (list.length) RS.setStatus(RS.t('approve_count', { n: list.length, total: platforms.length }));
-  else RS.setStatus(RS.t('select_platform'));
+  /* only auto approvals are the bot's to post; a manual one never is */
+  RS.setResult(list.length ? {
+    decision: 'approve', platforms: list.filter(function (p) { return !manual(p); }), comment: '',
+    per_platform: perPlatform(list)
+  } : null);
+  if (list.length) RS.setStatus(RS.t(anyManual ? 'decided_count' : 'approve_count', { n: list.length, total: platforms.length }));
+  else RS.setStatus(RS.t(anyManual ? 'select_platform_manual' : 'select_platform'));
 }
 
 function setRequesting(on, focus) {
@@ -358,7 +439,16 @@ part('request-cancel').addEventListener('click', function () { setRequesting(fal
 
 /* restore a draft (reload) or show what a submitted report sent */
 var sent = RS.run.state === 'submitted' ? RS.run.result : null;
-var draft = sent ? { approve: sent.platforms || [], comment: sent.comment || '', requesting: sent.decision === 'request_changes' }
+/* a sent result ticks what it decided: per_platform when present (approved
+   or posted by hand), else its platforms */
+function sentTicks(result) {
+  if (!result.per_platform) return result.platforms || [];
+  return platforms.filter(function (p) {
+    var entry = result.per_platform[p];
+    return !!entry && (entry.decision === 'approved' || entry.decision === 'posted_manually');
+  });
+}
+var draft = sent ? { approve: sentTicks(sent), comment: sent.comment || '', requesting: sent.decision === 'request_changes' }
   : (RS.run.state === 'open' ? RS.draft.get() : null);
 if (draft) {
   /* a sent result is shown as sent; a draft never revives a fixed block */

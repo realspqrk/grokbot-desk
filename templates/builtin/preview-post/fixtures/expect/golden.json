@@ -77,17 +77,14 @@
       "press": "Tab"
     },
     {
+      "repeat": 6,
       "press": "Tab"
     },
     {
       "press": "Space"
     },
     {
-      "repeat": 3,
-      "press": "Tab"
-    },
-    {
-      "repeat": 4,
+      "repeat": 6,
       "press": "Shift+Tab"
     },
     {
@@ -144,11 +141,28 @@
   "result": {
     "decision": "approve",
     "platforms": [
-      "x",
       "linkedin",
       "instagram",
       "facebook"
     ],
-    "comment": ""
+    "comment": "",
+    "per_platform": {
+      "x": {
+        "mode": "manual",
+        "decision": "posted_manually"
+      },
+      "linkedin": {
+        "mode": "auto",
+        "decision": "approved"
+      },
+      "instagram": {
+        "mode": "auto",
+        "decision": "approved"
+      },
+      "facebook": {
+        "mode": "auto",
+        "decision": "approved"
+      }
+    }
   }
 }

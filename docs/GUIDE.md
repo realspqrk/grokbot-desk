@@ -94,7 +94,7 @@ German is the default; set `RS_LANG=en` before starting the server to select Eng
   - The payload holds an absolute Windows path on `<host>` in a field the template's `schema.json` marks with `"x-rs-media": true`.
   - At `show` the path must resolve (after realpath) under one of the media roots in `config.json` `media_roots` (in `<data dir>`). Defaults are the user's Downloads folder and `<data dir>/media`; add any shared-drive folder explicitly to `config.json` `media_roots`.
   - Allowed: `.png .jpg .jpeg .webp .gif`, at most 20 MB, the file must exist. Relative paths, `..`, UNC paths and paths outside the roots are rejected with exit code 2.
-  - The page never sees the path, only a random media id: `RS.media(id)` for `img.src`, `RS.reveal(id)` for `Im Ordner zeigen`.
+  - The page never sees the path, only a random media id: `RS.media(id)` for `img.src`, `RS.reveal(id)` for `Im Ordner zeigen`, `RS.copyImage(id)` (or `<rs-copy media="<id>">`) to put the image on the clipboard as a picture (macOS: PNG, JPEG, GIF, WebP; Windows: PNG, JPEG, GIF).
   - A bot on another machine copies the image to `<host>` first (section A, step 1: drop folder) and puts the `<host>` path into the payload. Never a path that exists only on the bot's machine.
 
 ## 7. Accessibility
@@ -136,7 +136,7 @@ Pick a built-in before writing one:
 |---|---|
 | approve, reject or defer several items | `decide-list` |
 | one yes/no decision, optionally request changes | `approve-one` |
-| preview and approve a social post | `preview-post` |
+| preview and approve a social post (per platform `auto`: the bot posts it, or `manual`: the user posts it from copy buttons) | `preview-post` |
 | review a document or report | `review-doc` |
 | compare 2–4 options and pick one | `pick-option` |
 
@@ -157,7 +157,7 @@ Run `py -3 report_shell.py templates` (or `templates --json`) to see what is ins
 | `template.json` | exactly the fields `id` (= folder name), `namespace` (= the namespace argument passed to `new`, stored as metadata; the folder remains `<data dir>/templates/<name>`), `version` (integer, payloads must send the same), `title_de`, `description`, `components` (only `rs-card`, `rs-action-row`, `rs-copy`, `rs-badge`, `rs-counter`, `rs-post-frame`, `rs-confirm`), `strings` (every `de.json` key used) |
 | `template.html` | a partial: no `<html>`, `<head>`, `<body>`, `<script>`, `<link>`, `<style>`; no literal text; no `on*=` handlers; custom elements only from the list above |
 | `template.css` | `var(--rs-*)` tokens only, spacing only `var(--space-*)`, `0` or `1px`; no `#hex`, `rgb(`, `hsl(`; no URLs |
-| `template.js` | the body of `function (RS, root)`; RS API only (`RS.data`, `RS.run`, `RS.t`, `RS.time`, `RS.date`, `RS.number`, `RS.count`, `RS.copy`, `RS.toast`, `RS.media`, `RS.reveal`, `RS.icon`, `RS.setResult`, `RS.setStatus`, `RS.setSubmitLabel`, `RS.setAlternative`, `RS.focusAlternative`, `RS.addMenuItem`, `RS.addMenuMeta`, `RS.onChange`, `RS.draft`, `RS.submit`; see the helper notes below the table); never `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `new Function`, `import()`, `navigator.clipboard`; no literal UI strings; block comments only |
+| `template.js` | the body of `function (RS, root)`; RS API only (`RS.data`, `RS.run`, `RS.t`, `RS.time`, `RS.date`, `RS.number`, `RS.count`, `RS.copy`, `RS.copyImage`, `RS.toast`, `RS.media`, `RS.reveal`, `RS.icon`, `RS.setResult`, `RS.setStatus`, `RS.setSubmitLabel`, `RS.setAlternative`, `RS.focusAlternative`, `RS.addMenuItem`, `RS.addMenuMeta`, `RS.onChange`, `RS.draft`, `RS.submit`; see the helper notes below the table); never `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `new Function`, `import()`, `navigator.clipboard`; no literal UI strings; block comments only |
 | `schema.json`, `result.schema.json` | only `type, properties, required, additionalProperties, items, minItems, maxItems, uniqueItems, enum, const, minLength, maxLength, pattern, minimum, maximum, oneOf, default, description, x-rs-*`. `"x-rs-unique-key": "<property>"` on an array of objects rejects an item whose `<property>` repeats an earlier item's (e.g. option ids; finding `/data/options/1/id`); `"x-rs-media": true` marks an image path (section 6) |
 | `fixtures\` | `golden.json`, at least 2 `edge-*.json`, at least 2 `invalid-*.json` (each must be rejected) |
 | `fixtures\expect\golden.json` | `copies` (by `data-copy-id`), `counters` (by `data-counter-id`), `flow` (mouse steps), `keyboard` (keys only), `result` (the exact result `data`) |

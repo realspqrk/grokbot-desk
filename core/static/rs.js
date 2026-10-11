@@ -277,6 +277,20 @@
     }, function () { return { ok: false }; });
   }
   function copy(text) { return copyFor(activeRunId(), text); }
+  /* An image as a picture (kind 'image') or a media file's path as text
+     (kind 'path', e.g. a video to upload by hand), by media id. */
+  function copyMediaFor(runId, mediaId, kind) {
+    if (!runId) return Promise.resolve({ ok: false });
+    if (state.activeId === runId) markTouched();
+    var route = kind === 'path' ? '/copy-path' : '/copy-image';
+    return post(route, { run_id: runId, media_id: String(mediaId) }).then(function (r) {
+      if (r.ok) return { ok: true };
+      if (r.status === 423) return { ok: false, busy: true };
+      return { ok: false, status: r.status };
+    }, function () { return { ok: false }; });
+  }
+  function copyImage(mediaId) { return copyMediaFor(activeRunId(), mediaId, 'image'); }
+  function copyPath(mediaId) { return copyMediaFor(activeRunId(), mediaId, 'path'); }
 
   function revealFor(runId, mediaId) {
     if (!runId) return Promise.resolve({ ok: false });
@@ -982,6 +996,12 @@
       copy: function (text) {
         return live() ? copyFor(run.run_id, text) : Promise.resolve({ ok: false, stale: true });
       },
+      copyImage: function (mediaId) {
+        return live() ? copyMediaFor(run.run_id, mediaId, 'image') : Promise.resolve({ ok: false, stale: true });
+      },
+      copyPath: function (mediaId) {
+        return live() ? copyMediaFor(run.run_id, mediaId, 'path') : Promise.resolve({ ok: false, stale: true });
+      },
       toast: function (text, tone) { if (live()) toast(text, tone); },
       media: media,
       reveal: function (mediaId) {
@@ -1497,6 +1517,8 @@
     number: number,
     count: count,
     copy: copy,
+    copyImage: copyImage,
+    copyPath: copyPath,
     toast: toast,
     media: media,
     reveal: reveal,

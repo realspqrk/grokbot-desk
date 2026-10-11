@@ -41,7 +41,12 @@ const TEMPLATES = {
   'preview-post': {
     dir: 'templates/builtin/preview-post',
     draft: (page) => page.check('#approve-x'),
-    sent: () => ({ decision: 'request_changes', platforms: [], comment: 'AUTHORITATIVE' }),
+    sent: () => ({
+      decision: 'request_changes', platforms: [], comment: 'AUTHORITATIVE',
+      per_platform: Object.fromEntries(['x', 'linkedin', 'instagram', 'facebook'].map((p) => [p, {
+        mode: p === 'x' ? 'manual' : 'auto', decision: 'changes_requested', note: 'AUTHORITATIVE',
+      }])),
+    }),
     field: '#pp-comment',
     /* move from X to another platform tab */
     async read(page) {

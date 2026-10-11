@@ -29,6 +29,7 @@ default_data_dir = _backend.default_data_dir
 launch_server = _backend.launch_server
 launch_window = _backend.launch_window
 write_clipboard = _backend.write_clipboard
+write_clipboard_image = _backend.write_clipboard_image
 request_attention = _backend.request_attention
 focus_window = _backend.focus_window
 reveal_file = _backend.reveal_file

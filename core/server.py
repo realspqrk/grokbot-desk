@@ -5,6 +5,7 @@ import queue
 import re
 import secrets
 import select
+import shutil
 import socket
 import socketserver
 import threading
@@ -23,7 +24,7 @@ from .launch_coordination import (
     clear_launch_pending_coordinated,
     pending_launch_generation,
 )
-from .media import MediaError, open_validated_media
+from .media import IMAGE_EXTENSIONS, MediaError, open_validated_media
 from .page import build_page
 from .paths import ensure_layout, load_config
 from .platform import (
@@ -37,6 +38,7 @@ from .platform import (
     reveal_file,
     utf16_units,
     write_clipboard,
+    write_clipboard_image,
 )
 from .platform_types import LaunchResult
 from .product import RUNNER_ID
@@ -50,6 +52,10 @@ CSP = (
     "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
     "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
 )
+# pushes closer together than this are one burst (one attention request)
+ATTENTION_QUIET_S = 30
+MEDIA_RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
+MEDIA_CHUNK = 256 * 1024
 STATIC_TYPES = {
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -282,7 +288,18 @@ class ReportHTTPServer(ThreadingHTTPServer):
         self.idle_since = (
             self.last_activity if self.runs.open_count() == 0 else None
         )
+        self._attention_lock = threading.Lock()
+        self._last_push_at = None
         super().__init__(address, handler)
+
+    def attention_due(self, now=None):
+        """Bring the window forward once per burst of pushes, not per push:
+        only when the previous push is ATTENTION_QUIET_S seconds back."""
+        now = time.monotonic() if now is None else now
+        with self._attention_lock:
+            due = self._last_push_at is None or now - self._last_push_at >= ATTENTION_QUIET_S
+            self._last_push_at = now
+            return due
 
     def touch(self):
         self.last_activity = time.monotonic()
@@ -300,9 +317,11 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
-    def _headers(self, status, content_type="application/json; charset=utf-8", length=None, cache="no-store"):
+    def _headers(self, status, content_type="application/json; charset=utf-8", length=None, cache="no-store", extra=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        for name, value in (extra or {}).items():
+            self.send_header(name, value)
         self.send_header("Cache-Control", cache)
         self.send_header("Content-Security-Policy", CSP)
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -450,13 +469,11 @@ class Handler(BaseHTTPRequestHandler):
                 with open_validated_media(
                     entry, self.server.runs.media_roots(media_id)
                 ) as (handle, _):
-                    body = handle.read()
+                    self._send_media(handle, entry.content_type)
             except MediaError:
                 self._log_invalid_media(media_id)
                 self._json(404, {"error": "invalid_media"})
                 return
-            self._headers(200, entry.content_type, len(body))
-            self.wfile.write(body)
         elif path.startswith("/avatar/"):
             sha = path.removeprefix("/avatar/")
             avatar = self.server.runs.avatars.get(sha) if AVATAR_RE.fullmatch(sha) else None
@@ -478,6 +495,40 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         else:
             self._json(404, {"error": "not_found"})
+
+    def _send_media(self, handle, content_type):
+        """The validated handle, whole or one byte range (a video seeks with
+        Range: bytes=a-b), streamed in chunks rather than read at once."""
+        size = os.fstat(handle.fileno()).st_size
+        start, end, status = 0, size - 1, 200
+        extra = {"Accept-Ranges": "bytes"}
+        wanted = MEDIA_RANGE_RE.fullmatch(self.headers.get("Range") or "")
+        if wanted and size:
+            first, last = wanted.groups()
+            if first:
+                start = int(first)
+                end = min(int(last), size - 1) if last else size - 1
+            elif last:
+                start = max(size - int(last), 0)
+            if start > end or start >= size:
+                self._headers(416, content_type, 0, extra={"Content-Range": f"bytes */{size}"})
+                return
+            status = 206
+            extra["Content-Range"] = f"bytes {start}-{end}/{size}"
+        length = max(end - start + 1, 0)
+        self._headers(status, content_type, length, extra=extra)
+        handle.seek(start)
+        remaining = length
+        try:
+            while remaining > 0:
+                chunk = handle.read(min(MEDIA_CHUNK, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # the player moved on (seek, pause): not an error
+            self.close_connection = True
 
     def _events(self, test_client, sid, app_token=None, previous=None):
         self.send_response(200)
@@ -638,6 +689,14 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 self.server.action_log.write(value["run_id"], "choice", safe_detail)
                 self._json(200, {"ok": True})
+        elif path == "/copy-image":
+            if not self._action_body(value, {"run_id": str, "media_id": str}):
+                return
+            self._copy_image(value)
+        elif path == "/copy-path":
+            if not self._action_body(value, {"run_id": str, "media_id": str}):
+                return
+            self._copy_path(value)
         elif path == "/reveal":
             if not self._action_body(value, {"run_id": str, "media_id": str}):
                 return
@@ -670,40 +729,61 @@ class Handler(BaseHTTPRequestHandler):
     def _push(self, raw, value):
         explicit_run_id = isinstance(value, dict) and "run_id" in value
         attempts = 1 if explicit_run_id else GENERATED_RUN_ID_ATTEMPTS
+        warnings = []
+        duplicate = None
         try:
             for attempt in range(attempts):
                 used_ids = self.server.runs.ids() if explicit_run_id else ()
+                warnings.clear()
                 payload = validate_payload_bytes(
-                    raw, self.server.registry, used_ids
+                    raw, self.server.registry, used_ids, warnings
                 )
                 notify = payload.get("notify", {}).get("webhook_url")
                 if notify:
                     validate_webhook_url(notify, self.server.config)
-                try:
-                    self.server.runs.register(payload)
-                except RunIdAlreadyUsed:
-                    if attempt == attempts - 1:
-                        raise
-                else:
-                    break
+                # one lock for look-up and registration: two pushes of the
+                # same dedupe_key at once still make one run
+                with self.server.runs._lock:
+                    duplicate = self.server.runs.find_duplicate(payload)
+                    if duplicate is not None:
+                        break
+                    try:
+                        self.server.runs.register(payload)
+                    except RunIdAlreadyUsed:
+                        if attempt == attempts - 1:
+                            raise
+                    else:
+                        break
         except (EnvelopeError, MediaError, ValueError) as error:
             self._json(400, {"error": str(error), "pointer": getattr(error, "pointer", "")})
             return
+        if duplicate is not None:
+            self._push_answer(duplicate, self.server.hub.probe_window(), warnings, deduped=True)
+            return
         alive = self.server.hub.probe_window()
         self.server.broadcast_runs(payload["run_id"], "open")
-        if alive:
+        if alive and self.server.attention_due():
             state = _read_state(self.server.data_dir)
             request_attention(
                 _browser_identity(state), self.server.window_title
             )
-        result_path = self.server.runs.results_dir / f"{payload['run_id']}.json"
-        self._json(200, {
-            "run_id": payload["run_id"],
-            "url": f"http://127.0.0.1:{self.server.port}/?run={payload['run_id']}",
+        self._push_answer(payload["run_id"], alive, warnings)
+
+    def _push_answer(self, run_id, alive, warnings, deduped=False):
+        result_path = self.server.runs.results_dir / f"{run_id}.json"
+        answer = {
+            "run_id": run_id,
+            "url": f"http://127.0.0.1:{self.server.port}/?run={run_id}",
             "result_path": str(result_path),
             "window_alive": alive,
             "window_title": self.server.window_title,
-        })
+        }
+        if deduped:
+            answer["deduped"] = True
+            answer["state"] = self.server.runs.detail(run_id)["state"]
+        if warnings:
+            answer["warnings"] = list(warnings)
+        self._json(200, answer)
 
     def _copy(self, value):
         text = value.get("text")
@@ -729,6 +809,92 @@ class Handler(BaseHTTPRequestHandler):
             self._json(500, {"error": "clipboard_failed"})
             return
         self.server.action_log.write(run_id, "copy", {"text": text})
+        self._json(200, {"ok": True})
+
+    def _copy_path(self, value):
+        """Copies the file path of one media of the run (e.g. a video to
+        upload by hand) as text; the path goes to the clipboard, never to the
+        page."""
+        run_id, media_id = value["run_id"], value["media_id"]
+        entry = self.server.runs.media.get(media_id)
+        if not entry or not self.server.runs.has_media(run_id, media_id):
+            self._json(404, {"error": "unknown_media"})
+            return
+        try:
+            with open_validated_media(
+                entry, self.server.runs.media_roots(media_id)
+            ) as (_, final_path):
+                text = str(final_path)
+        except MediaError:
+            self._log_invalid_media(media_id, run_id)
+            self._json(400, {"error": "invalid_media", "pointer": "/media_id"})
+            return
+        try:
+            write_clipboard(text)
+        except ClipboardBusy:
+            self._json(423, {"error": "clipboard_busy"})
+            return
+        except ClipboardUnavailable:
+            self._json(503, {"error": "clipboard_unavailable"})
+            return
+        except ClipboardTimeout:
+            self._json(504, {"error": "clipboard_timeout"})
+            return
+        except ClipboardError:
+            self._json(500, {"error": "clipboard_failed"})
+            return
+        self.server.action_log.write(run_id, "copy_path", {"media_id": media_id})
+        self._json(200, {"ok": True})
+
+    def _copy_image(self, value):
+        """Copies one image of the run (a media id it was shown with) to the
+        clipboard as a picture; the path never leaves the server."""
+        run_id, media_id = value["run_id"], value["media_id"]
+        entry = self.server.runs.media.get(media_id)
+        if not entry or not self.server.runs.has_media(run_id, media_id):
+            self._json(404, {"error": "unknown_media"})
+            return
+        # The native clipboard tool reads a private snapshot of the validated
+        # handle's bytes, never the original path: a file or folder swapped
+        # after validation cannot reach the clipboard.
+        snapshot_dir = self.server.data_dir / "tmp"
+        try:
+            with open_validated_media(
+                entry, self.server.runs.media_roots(media_id)
+            ) as (handle, final_path):
+                if final_path.suffix.lower() not in IMAGE_EXTENSIONS:
+                    self._json(400, {"error": "not_an_image", "pointer": "/media_id"})
+                    return
+                snapshot_dir.mkdir(parents=True, exist_ok=True)
+                snapshot = snapshot_dir / (
+                    f"clip-{secrets.token_hex(8)}{final_path.suffix.lower()}"
+                )
+                with open(snapshot, "xb") as copy:
+                    shutil.copyfileobj(handle, copy)
+        except MediaError:
+            self._log_invalid_media(media_id, run_id)
+            self._json(400, {"error": "invalid_media", "pointer": "/media_id"})
+            return
+        try:
+            write_clipboard_image(snapshot)
+        except ClipboardBusy:
+            self._json(423, {"error": "clipboard_busy"})
+            return
+        except ClipboardUnavailable:
+            self._json(503, {"error": "clipboard_unavailable"})
+            return
+        except ClipboardTimeout:
+            self._json(504, {"error": "clipboard_timeout"})
+            return
+        except ClipboardError:
+            self._json(500, {"error": "clipboard_failed"})
+            return
+        finally:
+            try:
+                snapshot.unlink()
+            except OSError:
+                pass
+        self.server.action_log.write(run_id, "copy_image", {"media_id": media_id})
         self._json(200, {"ok": True})
 
     def _decide(self, value, status):

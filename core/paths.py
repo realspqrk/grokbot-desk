@@ -16,6 +16,44 @@ def data_dir():
     return default_data_dir(PRODUCT_NAME)
 
 
+def data_dir_report(base=None):
+    """The data dir in use, where it came from, and any other candidate that
+    holds data (a legacy folder that is not in use, for example)."""
+    base = Path(base or data_dir())
+    if os.environ.get("RS_DATA_DIR"):
+        source = "RS_DATA_DIR"
+    elif base.name == "spqrk-report-shell":
+        source = "legacy"
+    else:
+        source = "default"
+    others = []
+    for candidate in legacy_data_dirs():
+        try:
+            if candidate.resolve() != base.resolve() and (candidate / "results").is_dir():
+                others.append(str(candidate))
+        except OSError:
+            continue
+    report = {
+        "data_dir": str(base),
+        "source": source,
+        "runs": str(base / "runs"),
+        "results": str(base / "results"),
+        "log": str(base / "log"),
+        "config": str(base / "config.json"),
+    }
+    if others:
+        report["unused_data_dirs"] = others
+    return report
+
+
+def legacy_data_dirs():
+    """Folders an older install may have used (Windows only)."""
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return []
+    return [Path(local) / "spqrk-report-shell", Path(local) / PRODUCT_NAME]
+
+
 def ensure_layout(base=None):
     base = Path(base or data_dir())
     base.mkdir(mode=0o700, parents=True, exist_ok=True)

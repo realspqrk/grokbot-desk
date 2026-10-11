@@ -64,3 +64,9 @@
 .pp__badges:empty { display: none; }
 .pp__copies { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
 .pp__comment .rs-copy__value { font-size: var(--rs-fs-sm); }
+
+/* ---- mode: manual is named quietly in its tab; the panel starts with the
+   note and the copies (the reviewer posts by hand) ---- */
+.pp__mode { color: var(--rs-muted); font-weight: var(--rs-fw-normal); }
+.pp__manual { color: var(--rs-muted); }
+.pp__reveal { align-self: flex-start; }

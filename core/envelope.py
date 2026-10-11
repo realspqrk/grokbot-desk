@@ -16,8 +16,12 @@ RUN_ID_RE = re.compile(
 BOT_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 FIELDS = {
     "schema", "template", "version", "run_id", "bot", "title", "created",
-    "expires_minutes", "notify", "data", "identity",
+    "expires_minutes", "notify", "data", "identity", "dedupe_key", "dedupe_hours",
 }
+DEDUPE_KEY_RE = re.compile(r"^[\x21-\x7e][\x20-\x7e]{0,119}$")
+# A created stamp this far ahead of the clock is a wrong offset or clock: it
+# is clamped to now (the result's duration_s would read 0 otherwise).
+MAX_CREATED_AHEAD = timedelta(minutes=2)
 
 
 class EnvelopeError(ValueError):
@@ -35,7 +39,7 @@ def generate_run_id(bot="report"):
     return f"{now:%Y%m%d-%H%M%S}-{tag}-{secrets.token_hex(6)}"
 
 
-def validate_payload_bytes(raw, registry, used_ids=()):
+def validate_payload_bytes(raw, registry, used_ids=(), warnings=None):
     if len(raw) > MAX_PAYLOAD:
         raise EnvelopeError("", "payload exceeds 2 MB")
     try:
@@ -46,10 +50,10 @@ def validate_payload_bytes(raw, registry, used_ids=()):
         ) from error
     except (UnicodeDecodeError, ValueError) as error:
         raise EnvelopeError("", f"invalid JSON: {error}") from error
-    return validate_payload(payload, registry, used_ids)
+    return validate_payload(payload, registry, used_ids, warnings)
 
 
-def validate_payload(payload, registry, used_ids=()):
+def validate_payload(payload, registry, used_ids=(), warnings=None):
     if not isinstance(payload, dict):
         raise EnvelopeError("", "payload must be an object")
     for field in payload:
@@ -75,6 +79,16 @@ def validate_payload(payload, registry, used_ids=()):
         created = to_vienna(payload["created"])
     except (TypeError, ValueError, OverflowError) as error:
         raise EnvelopeError("/created", "must be ISO 8601 with an offset") from error
+    if "dedupe_key" in payload and (
+        not isinstance(payload["dedupe_key"], str)
+        or not DEDUPE_KEY_RE.fullmatch(payload["dedupe_key"])
+    ):
+        raise EnvelopeError("/dedupe_key", "must be 1-120 printable ASCII characters")
+    dedupe_hours = payload.get("dedupe_hours", 24)
+    if type(dedupe_hours) is not int or not 1 <= dedupe_hours <= 168:
+        raise EnvelopeError("/dedupe_hours", "must be an integer from 1 to 168")
+    if "dedupe_hours" in payload and "dedupe_key" not in payload:
+        raise EnvelopeError("/dedupe_hours", "needs dedupe_key")
     expires = payload.get("expires_minutes", 240)
     if type(expires) is not int or not 5 <= expires <= 10080:
         raise EnvelopeError("/expires_minutes", "must be an integer from 5 to 10080")
@@ -82,6 +96,16 @@ def validate_payload(payload, registry, used_ids=()):
         to_vienna(created.astimezone(timezone.utc) + timedelta(minutes=expires))
     except (ValueError, OverflowError) as error:
         raise EnvelopeError("/expires_minutes", "expiry is outside the supported timestamp range") from error
+    now = vienna_now()
+    clamped = None
+    if created.astimezone(timezone.utc) - now.astimezone(timezone.utc) > MAX_CREATED_AHEAD:
+        clamped = now.isoformat(timespec="seconds")
+        if warnings is not None:
+            warnings.append(
+                f"/created: {payload['created']} is more than 2 minutes in the future "
+                f"(check the UTC offset); clamped to {clamped}"
+            )
+        created = now
     run_id = (
         payload["run_id"]
         if "run_id" in payload
@@ -101,6 +125,8 @@ def validate_payload(payload, registry, used_ids=()):
     except SchemaError as error:
         raise EnvelopeError(error.pointer, error.message) from error
     result = dict(payload)
+    if clamped is not None:
+        result["created"] = clamped
     result["run_id"] = run_id
     result["expires_minutes"] = expires
     return result

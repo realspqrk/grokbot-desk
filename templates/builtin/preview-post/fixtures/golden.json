@@ -21,10 +21,20 @@
     "ratio": "1.91:1"
   },
   "platforms": [
-    "x",
-    "linkedin",
-    "instagram",
-    "facebook"
+    {
+      "platform": "x",
+      "mode": "manual"
+    },
+    {
+      "platform": "linkedin",
+      "mode": "auto"
+    },
+    {
+      "platform": "instagram"
+    },
+    {
+      "platform": "facebook"
+    }
   ],
-  "notes": "Autumn menu post for all four channels. The menu link is in the first comment."
+  "notes": "Autumn menu post for all four channels. You post X yourself; I post the rest after your approval. The menu link is in the first comment."
 }

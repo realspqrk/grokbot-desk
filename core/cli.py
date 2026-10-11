@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import timezone
 from pathlib import Path
 
 from . import __version__
@@ -26,7 +27,7 @@ from .launch_coordination import (
     try_acquire_launch_lock,
 )
 from .media import MediaError, replace_media
-from .paths import ROOT, data_dir, ensure_layout, load_config, selected_port
+from .paths import ROOT, data_dir, data_dir_report, ensure_layout, load_config, selected_port
 from .platform import (
     BrowserLaunchError,
     BrowserNotFound,
@@ -38,7 +39,7 @@ from .platform_types import LaunchResult, WindowLaunchStatus
 from .product import PRODUCT_NAME, RUNNER_ID
 from .registry import ID_RE, RegistryError, scan_registry
 from .server import run_server
-from .timeutil import iso_now
+from .timeutil import iso_now, to_vienna
 from .webhook import validate_webhook_url
 
 
@@ -62,7 +63,7 @@ def _http_timeout(default):
     return min(value, 60.0) if math.isfinite(value) and value > 0 else default
 
 
-def _server_start_timeout_seconds(default=3):
+def _server_start_timeout_seconds(default=10):
     raw = os.environ.get("RS_SERVER_START_TIMEOUT_MS")
     if raw is None:
         return default
@@ -179,22 +180,49 @@ def _launch_window_once(base, url, config):
         release_launch_lock(base, descriptor)
 
 
+def _started_by_us(base, port, launched_at):
+    """state.json for this port written since this show spawned the server.
+
+    The spawned pid is not compared: a venv launcher on Windows (and a
+    pythonw shim) re-spawns the real interpreter under another pid."""
+    path = Path(base) / "state.json"
+    try:
+        written = path.stat().st_mtime
+    except OSError:
+        return False
+    return _state(base).get("port") == port and written >= launched_at - 1
+
+
 def _ensure_server(base, port):
     hello = _hello(port)
     if hello:
         return hello
     if _port_open(port):
         raise RuntimeError("port is held by a foreign process")
+    launched_at = time.time()
     launch_server(ROOT / "report_shell.py", port, base)
     startup_timeout = _server_start_timeout_seconds()
+    # A cold start (first run, virus scan, cold disk) can take seconds before
+    # the new server listens and more before it answers. A listening port is
+    # only foreign when no state.json of ours appeared for it: the server
+    # binds first and writes state.json right after.
     deadline = time.monotonic() + startup_timeout
     while time.monotonic() < deadline:
-        hello = _hello(port)
+        hello = _hello(port, timeout=1)
         if hello:
             return hello
-        if _port_open(port) and not (Path(base) / "state.json").exists():
-            break
         time.sleep(.05)
+    if _started_by_us(base, port, launched_at):
+        # ours, listening but still busy: one more grace period to answer
+        grace = time.monotonic() + startup_timeout
+        while time.monotonic() < grace:
+            hello = _hello(port, timeout=1)
+            if hello:
+                return hello
+            time.sleep(.1)
+        raise RuntimeError(
+            f"server started but did not answer within {2 * startup_timeout:g} seconds"
+        )
     if _port_open(port):
         raise RuntimeError("port is held by a foreign process")
     raise RuntimeError(
@@ -237,7 +265,7 @@ def _csrf(port):
     return json_loads(page[start:page.index("</script>", start)])["csrf"]
 
 
-def _load_show_payload(args, template, registry, used_ids=()):
+def _load_show_payload(args, template, registry, used_ids=(), warnings=None):
     if args.data == "-":
         raw = sys.stdin.buffer.read(MAX_PAYLOAD + 1)
     else:
@@ -271,6 +299,7 @@ def _load_show_payload(args, template, registry, used_ids=()):
         json_dumps(payload, ensure_ascii=False).encode("utf-8"),
         registry,
         used_ids if explicit_run_id else (),
+        warnings,
     )
     if not explicit_run_id:
         validated.pop("run_id")
@@ -290,7 +319,8 @@ def command_show(args, base, port):
             for folder in ("runs", "results")
             for path in (Path(base) / folder).glob("*.json")
         }
-        payload = _load_show_payload(args, template, registry, used_ids)
+        warnings = []
+        payload = _load_show_payload(args, template, registry, used_ids, warnings)
         config = load_config(base)
         notify = payload.get("notify", {}).get("webhook_url")
         if notify:
@@ -331,7 +361,8 @@ def command_show(args, base, port):
         return error(str(exc), 4)
     except (RuntimeError, OSError, KeyError, urllib.error.URLError) as exc:
         return error(str(exc), 4)
-    if not args.no_window:
+    settled = result.get("deduped") and result.get("state") != "open"
+    if not args.no_window and not settled:
         try:
             if result.get("window_alive"):
                 if args.focus:
@@ -347,7 +378,15 @@ def command_show(args, base, port):
                 )
         except (BrowserNotFound, BrowserLaunchError) as exc:
             return error(str(exc).removeprefix("report-shell: "), 3)
-    output({key: result[key] for key in ("run_id", "url", "result_path")})
+    answer = {key: result[key] for key in ("run_id", "url", "result_path")}
+    if result.get("deduped"):
+        answer["deduped"] = True
+        answer["state"] = result.get("state")
+    warnings = warnings + [w for w in result.get("warnings", []) if w not in warnings]
+    if warnings:
+        answer["warnings"] = warnings
+    answer["data_dir"] = str(Path(base))
+    output(answer)
     return 0
 
 
@@ -362,15 +401,75 @@ def command_wait(args, base):
             return error(f"timeout waiting for run: {args.run_id}", 5)
         time.sleep(.2)
     value = json_loads(result_path.read_text(encoding="utf-8"))
-    output({"status": value["status"], "result_path": str(result_path)})
+    output({"status": value["status"], "result_path": str(result_path), "data_dir": str(Path(base))})
     return 0
 
 
 def command_result(args, base):
     path = Path(base) / "results" / f"{args.run_id}.json"
     if not path.is_file():
-        return error(f"unknown run or result not ready: {args.run_id}", 6)
-    output(json_loads(path.read_bytes()))
+        return error(
+            f"unknown run or result not ready: {args.run_id} (data dir {Path(base)})", 6
+        )
+    value = json_loads(path.read_bytes())
+    if isinstance(value, dict):
+        # CLI output only: which data dir answered (the file is unchanged)
+        value["data_dir"] = str(Path(base))
+    output(value)
+    return 0
+
+
+def _decided_after(value, since):
+    try:
+        return to_vienna(value["decided"]).astimezone(timezone.utc) > since
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _results_since(base, since, bot=None):
+    items = []
+    for path in (Path(base) / "results").glob("*.json"):
+        try:
+            value = json_loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(value, dict) or not _decided_after(value, since):
+            continue
+        if bot and value.get("bot") != bot:
+            continue
+        items.append({
+            "run_id": value.get("run_id"),
+            "bot": value.get("bot"),
+            "template": value.get("template"),
+            "status": value.get("status"),
+            "decided": value.get("decided"),
+            "result_path": str(path),
+        })
+    items.sort(key=lambda item: (to_vienna(item["decided"]).astimezone(timezone.utc), item["run_id"] or ""))
+    return items
+
+
+def command_results(args, base):
+    """Results decided after --since, oldest first; with --wait the command
+    blocks up to that many seconds until at least one arrives. A bot keeps the
+    newest `decided` it saw as its cursor for the next call."""
+    try:
+        since = to_vienna(args.since).astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return error("--since must be ISO 8601 with an offset", 2)
+    deadline = time.monotonic() + max(0.0, min(args.wait, 3600.0))
+    while True:
+        items = _results_since(base, since, args.bot)
+        if items or time.monotonic() >= deadline:
+            break
+        time.sleep(.5)
+    output({"data_dir": str(Path(base)), "results": items})
+    return 0
+
+
+def command_paths(base):
+    """The data directory in use and why, so a bot never guesses it."""
+    output(data_dir_report(base))
     return 0
 
 
@@ -383,9 +482,13 @@ def command_status(base, port):
             "pid": hello["pid"],
             "open_runs": hello.get("open_runs", 0),
             "window_alive": hello.get("window_alive", False),
+            "data_dir": str(Path(base)),
         })
     else:
-        output({"up": False, "port": port, "pid": None, "open_runs": 0, "window_alive": False})
+        output({
+            "up": False, "port": port, "pid": None, "open_runs": 0,
+            "window_alive": False, "data_dir": str(Path(base)),
+        })
     return 0
 
 
@@ -581,6 +684,11 @@ def build_parser():
     wait.add_argument("--timeout", type=float, default=0)
     result = commands.add_parser("result")
     result.add_argument("run_id")
+    results = commands.add_parser("results")
+    results.add_argument("--since", required=True)
+    results.add_argument("--bot")
+    results.add_argument("--wait", type=float, default=0)
+    commands.add_parser("paths")
     commands.add_parser("status")
     commands.add_parser("open")
     cancel = commands.add_parser("cancel")
@@ -639,6 +747,10 @@ def main(argv=None):
         return command_wait(args, base)
     if args.command == "result":
         return command_result(args, base)
+    if args.command == "results":
+        return command_results(args, base)
+    if args.command == "paths":
+        return command_paths(base)
     if args.command == "status":
         return command_status(base, port)
     if args.command == "open":

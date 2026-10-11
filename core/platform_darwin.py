@@ -257,6 +257,51 @@ def write_clipboard(text):
         raise ClipboardError("clipboard did not preserve the submitted text")
 
 
+# An image goes onto the pasteboard as PNG plus TIFF, read by AppKit itself
+# (PNG, JPEG, GIF and WebP), so a paste into a browser composer or a
+# document gets the picture. The path travels as an argument, never as
+# script text.
+_IMAGE_CLIPBOARD_SCRIPT = """
+ObjC.import('AppKit');
+function run(argv) {
+  var image = $.NSImage.alloc.initWithContentsOfFile(argv[0]);
+  if (!image || image.isNil()) throw new Error('unreadable image');
+  var tiff = image.TIFFRepresentation;
+  var png = $.NSBitmapImageRep.imageRepWithData(tiff)
+    .representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $());
+  var board = $.NSPasteboard.generalPasteboard;
+  board.clearContents;
+  board.declareTypesOwner($([$.NSPasteboardTypePNG, $.NSPasteboardTypeTIFF]), $());
+  if (!board.setDataForType(png, $.NSPasteboardTypePNG)) throw new Error('png');
+  if (!board.setDataForType(tiff, $.NSPasteboardTypeTIFF)) throw new Error('tiff');
+  return 'ok';
+}
+"""
+_IMAGE_CLIPBOARD_TIMEOUT = 10
+
+
+def write_clipboard_image(path):
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/osascript", "-l", "JavaScript",
+                "-e", _IMAGE_CLIPBOARD_SCRIPT, str(Path(path)),
+            ],
+            capture_output=True,
+            shell=False,
+            timeout=_IMAGE_CLIPBOARD_TIMEOUT,
+            env=_clipboard_environment(),
+        )
+    except OSError as error:
+        raise ClipboardUnavailable("osascript is unavailable") from error
+    except subprocess.TimeoutExpired as error:
+        raise ClipboardTimeout("image clipboard timed out") from error
+    if result.returncode:
+        raise ClipboardError(
+            f"image clipboard failed with status {result.returncode}"
+        )
+
+
 def request_attention(browser_identity, title):
     return False
 

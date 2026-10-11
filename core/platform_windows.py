@@ -14,6 +14,9 @@ from .platform_types import (
     BrowserIdentity,
     BrowserNotFound,
     ClipboardBusy,
+    ClipboardError,
+    ClipboardTimeout,
+    ClipboardUnavailable,
     LaunchResult,
     PathIdentityError,
     ReparseEscape,
@@ -44,7 +47,21 @@ def default_data_dir(product_name):
     local = Path(local)
     current = local / product_name
     legacy = local / "spqrk-report-shell"
-    return legacy if not current.exists() and legacy.is_dir() else current
+    # A legacy folder in use stays in use until the new one holds runs of its
+    # own: an empty grokbot-desk folder (made by a look, a tool or a test)
+    # must not silently hide the open reports and results.
+    if legacy.is_dir() and not _holds_runs(current) and (
+        not current.exists() or _holds_runs(legacy)
+    ):
+        return legacy
+    return current
+
+
+def _holds_runs(base):
+    try:
+        return any((base / "runs").glob("*.json")) or any((base / "results").glob("*.json"))
+    except OSError:
+        return False
 
 
 def _registry_app_path(executable):
@@ -330,6 +347,52 @@ def write_clipboard(text, tries=5, delay=.05):
     finally:
         if hwnd:
             user32.DestroyWindow(hwnd)
+
+
+# Windows: GDI+ decodes the image (PNG, JPEG, GIF; not WebP) and the
+# clipboard gets a bitmap, which browsers and Office paste as a picture.
+# PowerShell runs in STA as the clipboard requires; the path travels in the
+# environment, never as script text.
+_IMAGE_CLIPBOARD_SCRIPT = (
+    "$ErrorActionPreference = 'Stop'; "
+    "Add-Type -AssemblyName System.Windows.Forms, System.Drawing; "
+    "$image = [System.Drawing.Image]::FromFile($env:RS_CLIPBOARD_IMAGE); "
+    "try { [System.Windows.Forms.Clipboard]::SetImage($image) } "
+    "finally { $image.Dispose() }"
+)
+_IMAGE_CLIPBOARD_TIMEOUT = 15
+
+
+def _powershell():
+    root = os.environ.get("SystemRoot") or r"C:\Windows"
+    return str(
+        Path(root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    )
+
+
+def write_clipboard_image(path):
+    env = dict(os.environ)
+    env["RS_CLIPBOARD_IMAGE"] = str(Path(path))
+    try:
+        result = subprocess.run(
+            [
+                _powershell(), "-NoProfile", "-NonInteractive", "-STA",
+                "-ExecutionPolicy", "Bypass", "-Command", _IMAGE_CLIPBOARD_SCRIPT,
+            ],
+            capture_output=True,
+            shell=False,
+            timeout=_IMAGE_CLIPBOARD_TIMEOUT,
+            env=env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError as error:
+        raise ClipboardUnavailable("PowerShell is unavailable") from error
+    except subprocess.TimeoutExpired as error:
+        raise ClipboardTimeout("image clipboard timed out") from error
+    if result.returncode:
+        raise ClipboardError(
+            f"image clipboard failed with status {result.returncode}"
+        )
 
 
 def reveal_file(path):

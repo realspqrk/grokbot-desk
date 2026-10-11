@@ -221,6 +221,35 @@ class RunStore:
             os.fsync(handle.fileno())
         os.replace(temporary, target)
 
+    def find_duplicate(self, payload):
+        """An earlier run of the same bot with the same dedupe_key that is
+        still open, or was submitted or dismissed within dedupe_hours (an
+        expired run was never answered, so it does not count)."""
+        key = payload.get("dedupe_key")
+        if not key:
+            return None
+        hours = payload.get("dedupe_hours", 24)
+        since = vienna_now().astimezone(timezone.utc) - timedelta(hours=hours)
+        with self._lock:
+            best = None
+            for run_id, record in self._runs.items():
+                earlier = record["payload"]
+                if earlier.get("dedupe_key") != key or earlier["bot"] != payload["bot"]:
+                    continue
+                if record["state"] == "open":
+                    return run_id
+                if record["state"] not in ("submitted", "cancelled"):
+                    continue
+                try:
+                    decided = to_vienna(loads(
+                        (self.results_dir / f"{run_id}.json").read_text(encoding="utf-8")
+                    )["decided"]).astimezone(timezone.utc)
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+                if decided >= since and (best is None or decided > best[1]):
+                    best = (run_id, decided)
+            return best[0] if best else None
+
     def register(self, payload):
         with self._lock:
             run_id = payload["run_id"]
@@ -474,6 +503,10 @@ class RunStore:
             if record is not None
             else list(self.config.get("media_roots", []))
         )
+
+    def has_media(self, run_id, media_id):
+        record = self._runs.get(run_id)
+        return record is not None and media_id in record.get("media", {})
 
     def media_run_id(self, media_id):
         for run_id, record in self._runs.items():

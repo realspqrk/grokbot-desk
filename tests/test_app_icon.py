@@ -1,4 +1,4 @@
-"""App icon, web manifest and release version (1.0.0-beta.1)."""
+"""App icon, web manifest and release version (1.0.0-beta.2)."""
 import http.client
 import json
 import re
@@ -177,7 +177,7 @@ def test_served_page_carries_the_icon_links(server):
 
 
 def test_version_has_one_source_and_pyproject_matches():
-    assert __version__ == "1.0.0-beta.1"
+    assert __version__ == "1.0.0-beta.2"
     assert VERSION == 1
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["version"] == __version__
@@ -188,7 +188,7 @@ def test_version_flag_prints_product_and_version(capsys):
     with pytest.raises(SystemExit) as exit_info:
         build_parser().parse_args(["--version"])
     assert exit_info.value.code == 0
-    assert capsys.readouterr().out == "grokbot-desk 1.0.0-beta.1\n"
+    assert capsys.readouterr().out == "grokbot-desk 1.0.0-beta.2\n"
 
 
 def test_report_shell_script_prints_the_version():
@@ -197,7 +197,7 @@ def test_report_shell_script_prints_the_version():
         capture_output=True, text=True, timeout=30, cwd=ROOT,
     )
     assert result.returncode == 0
-    assert result.stdout.strip() == "grokbot-desk 1.0.0-beta.1"
+    assert result.stdout.strip() == "grokbot-desk 1.0.0-beta.2"
 
 
 def test_hello_reports_the_version(server):

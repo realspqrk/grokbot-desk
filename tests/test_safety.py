@@ -838,7 +838,7 @@ def test_guarded_action_routes_reject_non_object_json_bodies(server_process):
         "X-RS-CSRF": csrf,
         "Content-Type": "application/json",
     }
-    for route in ("/submit", "/cancel", "/read", "/log", "/reveal", "/copy"):
+    for route in ("/submit", "/cancel", "/read", "/log", "/reveal", "/copy", "/copy-image"):
         status, body = request(port, "POST", route, b"[]", headers)
         assert status == 400, route
         assert json.loads(body)["pointer"] == "/"
@@ -1807,3 +1807,83 @@ def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
         assert lookups == []
     finally:
         server.server_close()
+
+
+def test_copy_image_copies_only_a_media_of_that_run(tmp_path):
+    """/copy-image puts one image of the run on the clipboard as a picture:
+    by media id, revalidated like /reveal, never for another run's media,
+    and the page never learns the path."""
+    root = Path(__file__).resolve().parents[1]
+    data_dir = ensure_layout(tmp_path / "data")
+    server = ReportHTTPServer(
+        ("127.0.0.1", 0), Handler, data_dir,
+        scan_registry(root / "templates"), load_config(data_dir),
+    )
+    server.port = server.server_port
+    golden = json.loads(
+        (root / "templates" / "builtin" / "preview-post" / "fixtures" / "golden.json")
+        .read_text(encoding="utf-8")
+    )
+    post = dict(valid_payload(), template="preview-post", data=golden)
+    detail = server.runs.register(validate_payload(post, server.registry))
+    other = server.runs.register(validate_payload(valid_payload(), server.registry))
+    run_id = detail["run_id"]
+    media_id = server.runs._runs[run_id]["payload"]["data"]["image"]["path"]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    headers = {
+        "Host": f"127.0.0.1:{server.port}",
+        "Origin": f"http://127.0.0.1:{server.port}",
+        "X-RS-CSRF": server.csrf,
+        "Content-Type": "application/json",
+    }
+
+    def copy_image(body):
+        return request(server.port, "POST", "/copy-image", json.dumps(body).encode(), headers)
+
+    try:
+        seen = {}
+
+        def capture(path):
+            seen["path"], seen["bytes"] = Path(path), Path(path).read_bytes()
+
+        original = (
+            root / "templates" / "builtin" / "preview-post" / "fixtures" / "media" / "loaves.jpg"
+        ).read_bytes()
+        with patch("core.server.write_clipboard_image", side_effect=capture) as write:
+            status, body = copy_image({"run_id": run_id, "media_id": media_id})
+            assert (status, json.loads(body)) == (200, {"ok": True})
+            # a private snapshot of the validated handle, removed afterwards:
+            # a file swapped after validation never reaches the clipboard
+            copied = seen["path"]
+            assert copied.parent == data_dir / "tmp" and copied.suffix == ".jpg"
+            assert seen["bytes"] == original and not copied.exists()
+            assert str(copied) not in body.decode()
+            write.reset_mock()
+            for wrong in (
+                {"run_id": other["run_id"], "media_id": media_id},
+                {"run_id": run_id, "media_id": "m_unknown"},
+            ):
+                status, body = copy_image(wrong)
+                assert (status, json.loads(body)["error"]) == (404, "unknown_media"), wrong
+            status, body = copy_image({"run_id": run_id, "media_id": media_id, "path": "/x"})
+            assert status == 400
+            write.assert_not_called()
+        with patch(
+            "core.server.write_clipboard_image",
+            side_effect=platform_windows.ClipboardError("no"),
+        ):
+            status, body = copy_image({"run_id": run_id, "media_id": media_id})
+            assert (status, json.loads(body)) == (500, {"error": "clipboard_failed"})
+        events = [
+            json.loads(line)
+            for path in (data_dir / "log").glob("*.jsonl")
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        logged = [event for event in events if event["event"] == "copy_image"]
+        assert [event["detail"] for event in logged] == [{"media_id": media_id}]
+    finally:
+        server.stopping.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

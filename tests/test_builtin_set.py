@@ -235,13 +235,81 @@ def _composed(data, platform):
     return unicodedata.normalize("NFC", text)
 
 
+def _platform_ids(data):
+    return [item if isinstance(item, str) else item["platform"] for item in data["platforms"]]
+
+
 def test_preview_post_copies_are_the_composed_strings():
     for name in FIXTURES["preview-post"]["expect"]:
         data = fixture("preview-post", name)
         copies = expect("preview-post", name)["copies"]
-        for platform in data["platforms"]:
+        for platform in _platform_ids(data):
             assert copies[f"{platform}-text"] == _composed(data, platform), (name, platform)
         assert len(copies) == len(data["platforms"]) * (1 + bool(data["hashtags"]) + bool(data.get("first_comment")))
+
+
+def test_preview_post_mode_is_per_platform_and_plain_ids_stay_auto():
+    """A plain id (every payload before modes) is still valid and means auto;
+    objects carry {platform, mode}; one form per list, no repeats."""
+    payload = schema("preview-post")
+    golden = fixture("preview-post", "golden")
+    assert golden["platforms"][:2] == [
+        {"platform": "x", "mode": "manual"}, {"platform": "linkedin", "mode": "auto"},
+    ], "the golden is a mixed example"
+    validate(golden, payload)
+    plain = dict(golden, platforms=["x", "linkedin", "instagram", "facebook"])
+    validate(plain, payload)
+    validate(dict(golden, platforms=[{"platform": "x"}]), payload)
+    for platforms, pointer in (
+        ([{"platform": "x"}, {"platform": "x", "mode": "manual"}], "/platforms/1/platform"),
+        ([{"platform": "x", "mode": "later"}], "/platforms/0/mode"),
+        ([{"platform": "x", "posted": True}], "/platforms/0/posted"),
+        (["x", {"platform": "linkedin"}], "/platforms/1"),
+        ([], "/platforms"),
+    ):
+        with pytest.raises(SchemaError) as caught:
+            validate(dict(golden, platforms=platforms), payload)
+        assert caught.value.pointer == pointer, platforms
+
+
+def test_preview_post_result_names_mode_and_decision_per_platform():
+    result = schema("preview-post", "result.schema.json")
+    both = {
+        "x": {"mode": "manual", "decision": "posted_manually"},
+        "linkedin": {"mode": "auto", "decision": "approved"},
+    }
+    validate({"decision": "approve", "platforms": ["linkedin"], "comment": "", "per_platform": both}, result)
+    # everything posted by hand: nothing left for the bot to post
+    validate({
+        "decision": "approve", "platforms": [], "comment": "",
+        "per_platform": {"x": {"mode": "manual", "decision": "posted_manually"}},
+    }, result)
+    validate({
+        "decision": "request_changes", "platforms": [], "comment": "Shorter, please",
+        "per_platform": {
+            "x": {"mode": "manual", "decision": "changes_requested", "note": "Shorter, please"},
+        },
+    }, result)
+    for bad in (
+        {"decision": "approve", "platforms": ["x"], "comment": ""},
+        {"decision": "approve", "platforms": [], "comment": "",
+         "per_platform": {"x": {"mode": "manual", "decision": "posted"}}},
+        {"decision": "approve", "platforms": [], "comment": "",
+         "per_platform": {"x": {"decision": "approved"}}},
+    ):
+        with pytest.raises(SchemaError):
+            validate(bad, result)
+    assert expect("preview-post", "golden")["result"] == {
+        "decision": "approve",
+        "platforms": ["linkedin", "instagram", "facebook"],
+        "comment": "",
+        "per_platform": {
+            "x": {"mode": "manual", "decision": "posted_manually"},
+            "linkedin": {"mode": "auto", "decision": "approved"},
+            "instagram": {"mode": "auto", "decision": "approved"},
+            "facebook": {"mode": "auto", "decision": "approved"},
+        },
+    }, "the bot posts only auto + approved; X was posted by hand"
 
 
 def test_preview_post_x_limit_is_281_on_x_and_the_base_text_fits():

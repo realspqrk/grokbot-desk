@@ -34,8 +34,41 @@ from .platform import (
 from .schema import SchemaError, validate
 
 
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+VIDEO_EXTENSIONS = {".mp4", ".webm"}
+ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 MAX_MEDIA_SIZE = 20 * 1024 * 1024
+# A post video (X allows 512 MB) is served in ranges, never read whole.
+MAX_VIDEO_SIZE = 200 * 1024 * 1024
+# x-rs-media: true marks an image path; "video" marks a video path.
+MEDIA_KINDS = {True: IMAGE_EXTENSIONS, "video": VIDEO_EXTENSIONS}
+CONTENT_TYPES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".webp": "image/webp", ".gif": "image/gif",
+    ".mp4": "video/mp4", ".webm": "video/webm",
+}
+
+
+def max_size(path):
+    return MAX_VIDEO_SIZE if Path(path).suffix.lower() in VIDEO_EXTENSIONS else MAX_MEDIA_SIZE
+
+
+def _check_file(path, size, kind=None):
+    """Extension (of the kind, when given) and the size limit for it."""
+    suffix = Path(path).suffix.lower()
+    allowed = MEDIA_KINDS.get(kind, ALLOWED_EXTENSIONS) if kind is not None else ALLOWED_EXTENSIONS
+    if suffix not in allowed:
+        raise MediaError("media extension is not allowed")
+    if size > max_size(path):
+        raise MediaError(
+            "media file exceeds 200 MB" if suffix in VIDEO_EXTENSIONS else "media file exceeds 20 MB"
+        )
+
+
+def content_type(path):
+    return CONTENT_TYPES.get(Path(path).suffix.lower()) or (
+        mimetypes.guess_type(Path(path).name)[0] or "application/octet-stream"
+    )
 # A path may start with this exact token; it expands to the template's own
 # folder, which is then the only media root for that path (read-only).
 TEMPLATE_TOKEN = "%RS_TEMPLATE%"
@@ -87,13 +120,10 @@ def _open_pinned_media(entry):
             raise MediaError("media path is outside configured roots")
         if entry.root_identity is not None and root_identity != tuple(entry.root_identity):
             raise MediaError("media path is outside configured roots")
-        if final_path.suffix.lower() not in ALLOWED_EXTENSIONS:
-            raise MediaError("media extension is not allowed")
         file_stat = os.fstat(handle.fileno())
         if not stat.S_ISREG(file_stat.st_mode):
             raise MediaError("media path is not a regular file")
-        if file_stat.st_size > MAX_MEDIA_SIZE:
-            raise MediaError("media file exceeds 20 MB")
+        _check_file(final_path, file_stat.st_size)
         yield handle, final_path
     except OSError as error:
         raise MediaError("media file could not be validated") from error
@@ -123,13 +153,10 @@ def open_validated_media(entry, roots):
                 continue
         if not any(_is_relative_to(final_path, root) for root in allowed_roots):
             raise MediaError("media path is outside configured roots")
-        if final_path.suffix.lower() not in ALLOWED_EXTENSIONS:
-            raise MediaError("media extension is not allowed")
         file_stat = os.fstat(handle.fileno())
         if not stat.S_ISREG(file_stat.st_mode):
             raise MediaError("media path is not a regular file")
-        if file_stat.st_size > MAX_MEDIA_SIZE:
-            raise MediaError("media file exceeds 20 MB")
+        _check_file(final_path, file_stat.st_size)
         yield handle, final_path
     except OSError as error:
         raise MediaError("media file could not be validated") from error
@@ -180,7 +207,7 @@ def _path_under_configured_root(path, roots):
     return False
 
 
-def _require_resolved_root(supplied, roots, label):
+def _require_resolved_root(supplied, roots, label, kind=True):
     """Authorize supplied against roots after a link-following resolve.
 
     Returns (resolved path, resolved roots). Missing files and paths outside
@@ -198,10 +225,7 @@ def _require_resolved_root(supplied, roots, label):
             continue
     if not any(_is_relative_to(resolved, root) for root in allowed_roots):
         raise MediaError("media path is outside configured roots")
-    if resolved.suffix.lower() not in ALLOWED_EXTENSIONS:
-        raise MediaError("media extension is not allowed")
-    if resolved.stat().st_size > MAX_MEDIA_SIZE:
-        raise MediaError("media file exceeds 20 MB")
+    _check_file(resolved, resolved.stat().st_size, kind)
     return resolved, allowed_roots
 
 
@@ -225,7 +249,7 @@ def _expand_template_token(value, template_root):
     return str(Path(template_root).joinpath(*parts))
 
 
-def _register_contained_parts(template_root, parts, template_identity, missing_label):
+def _register_contained_parts(template_root, parts, template_identity, missing_label, kind=True):
     try:
         handle, root_final, root_identity, file_identity = open_contained(
             Path(template_root), parts, template_identity
@@ -244,35 +268,32 @@ def _register_contained_parts(template_root, parts, template_identity, missing_l
             raise MediaError("media path is outside configured roots")
         if not stat.S_ISREG(file_stat.st_mode):
             raise MediaError("media path is not a regular file")
-        if final_path.suffix.lower() not in ALLOWED_EXTENSIONS:
-            raise MediaError("media extension is not allowed")
-        if file_stat.st_size > MAX_MEDIA_SIZE:
-            raise MediaError("media file exceeds 20 MB")
+        _check_file(final_path, file_stat.st_size, kind)
     return MediaEntry(
         "m_" + secrets.token_hex(16),
         final_path,
-        mimetypes.guess_type(final_path.name)[0] or "application/octet-stream",
+        content_type(final_path),
         (root_final,),
         file_identity,
         root_identity,
     )
 
 
-def _register_template_media(value, template_root, template_identity):
+def _register_template_media(value, template_root, template_identity, kind=True):
     parts = _template_relative_parts(value, template_root)
     return _register_contained_parts(
-        template_root, parts, template_identity, value
+        template_root, parts, template_identity, value, kind
     )
 
 
-def register_media(value, roots, template_root=None, *, template_identity=None):
+def register_media(value, roots, template_root=None, *, template_identity=None, kind=True):
     if not isinstance(value, str) or not value:
         raise MediaError("media path must be a non-empty string")
     if value.startswith(TEMPLATE_TOKEN):
         # template_root is the registry canonical path. It is not resolved
         # again: a junction swapped in at that path would otherwise become
         # both the file and the allowed root.
-        return _register_template_media(value, template_root, template_identity)
+        return _register_template_media(value, template_root, template_identity, kind)
     windows = PureWindowsPath(value)
     if windows.anchor.startswith("\\\\") or value.startswith(("\\\\", "//")):
         raise MediaError("UNC media paths are forbidden")
@@ -292,11 +313,11 @@ def register_media(value, roots, template_root=None, *, template_identity=None):
         )
     if lexical_parts is not None:
         if not _path_under_configured_root(supplied, roots):
-            _require_resolved_root(supplied, roots, value)
+            _require_resolved_root(supplied, roots, value, kind)
         return _register_contained_parts(
-            template_root, lexical_parts, template_identity, value
+            template_root, lexical_parts, template_identity, value, kind
         )
-    resolved, allowed_roots = _require_resolved_root(supplied, roots, value)
+    resolved, allowed_roots = _require_resolved_root(supplied, roots, value, kind)
     # A path that is not lexically inside the template can still resolve
     # into it. Pin that file too: reload rejects an unpinned template path.
     # Forged token records still have no pins and stay rejected.
@@ -304,12 +325,12 @@ def register_media(value, roots, template_root=None, *, template_identity=None):
         parts = _relative_parts_inside(resolved, template_root)
         if parts is not None:
             return _register_contained_parts(
-                template_root, parts, template_identity, resolved
+                template_root, parts, template_identity, resolved, kind
             )
     return MediaEntry(
         "m_" + secrets.token_hex(16),
         resolved,
-        mimetypes.guess_type(resolved.name)[0] or "application/octet-stream",
+        content_type(resolved),
         tuple(allowed_roots),
     )
 
@@ -329,9 +350,14 @@ def _schema_layers(value, schemas):
 
 def _replace_media(value, schemas, roots, media, template_root=None, template_identity=None):
     layers = _schema_layers(value, schemas)
-    if any(schema.get("x-rs-media") is True for schema in layers):
+    kinds = [
+        schema["x-rs-media"] for schema in layers
+        if schema.get("x-rs-media") is True or schema.get("x-rs-media") == "video"
+    ]
+    if kinds:
         entry = register_media(
-            value, roots, template_root, template_identity=template_identity
+            value, roots, template_root, template_identity=template_identity,
+            kind=kinds[0],
         )
         media[entry.media_id] = entry
         return entry.media_id

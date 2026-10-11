@@ -13,7 +13,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Platforms: Windows | macOS (experimental)](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%28experimental%29-lightgrey.svg)](#platforms)
-[![Version: 1.0.0-beta.1](https://img.shields.io/badge/version-1.0.0--beta.1-blue.svg)](CHANGELOG.md)
+[![Version: 1.0.0-beta.2](https://img.shields.io/badge/version-1.0.0--beta.2-blue.svg)](CHANGELOG.md)
 
 </div>
 
@@ -35,7 +35,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 
 Chat is awful for discussing serious work. When a bot needs your decision, a calm window pops up instead: the bot sends JSON, you decide, the bot reads your decision as JSON. Everything stays on your computer.
 
-**Status:** 1.0.0-beta.1. Windows is supported; macOS is a beta.
+**Status:** 1.0.0-beta.2. Windows is supported; macOS is a beta.
 
 ## What you see
 
@@ -192,7 +192,7 @@ Five built-in templates:
 | `pick-option` | Compare 2 to 4 options side by side and pick one. A note is optional. |
 | `decide-list` | Approve, reject, or defer up to 5 items, one at a time. |
 | `approve-one` | One yes/no decision, with an optional request for changes. |
-| `preview-post` | Preview one social post (X, LinkedIn, Instagram, Facebook) and approve it per platform, or request changes. |
+| `preview-post` | Preview one social post (X, LinkedIn, Instagram, Facebook) and approve it per platform, or request changes. Per platform `auto` (the bot posts after your approval) or `manual` (you post it yourself from copy buttons for text, hashtags and image, then mark it as posted). |
 
 Run `python report_shell.py templates` to list what is installed. If none of these fits, `python report_shell.py new example/my-template` writes a template into your data directory, and `python report_shell.py check my-template` checks it. See the [template guide](docs/GUIDE.md).
 

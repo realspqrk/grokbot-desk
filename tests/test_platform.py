@@ -333,6 +333,32 @@ def test_windows_data_dir_selection(
     )
 
 
+@pytest.mark.parametrize(
+    ("current_runs", "legacy_runs", "expected_name"),
+    [
+        (False, True, "spqrk-report-shell"),
+        (True, True, "grokbot-desk"),
+        (True, False, "grokbot-desk"),
+    ],
+    ids=["empty-new-folder-keeps-legacy", "new-with-runs-wins", "new-only"],
+)
+def test_windows_data_dir_an_empty_new_folder_never_hides_legacy_runs(
+    tmp_path, monkeypatch, current_runs, legacy_runs, expected_name
+):
+    """Incident: an empty grokbot-desk folder appeared next to the legacy
+    folder in use; the reports looked gone and a bot pushed them again."""
+    from core import platform_windows
+
+    monkeypatch.delenv("RS_DATA_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    for name, has_runs in (("grokbot-desk", current_runs), ("spqrk-report-shell", legacy_runs)):
+        (tmp_path / name / "runs").mkdir(parents=True)
+        if has_runs:
+            (tmp_path / name / "runs" / "20261011-093000-bot-0123456789ab.json").write_text("{}")
+
+    assert platform_windows.default_data_dir("grokbot-desk") == tmp_path / expected_name
+
+
 def test_windows_data_dir_override_wins(tmp_path, monkeypatch):
     from core import platform_windows
 
@@ -1029,3 +1055,85 @@ def test_darwin_open_fallback_oserror_is_a_bounded_facade_error(
     expected = "chrome app window" if fallback == "bundle" else "default browser"
     with pytest.raises(BrowserLaunchError, match=expected):
         platform_darwin.launch_window("http://127.0.0.1:18921/", tmp_path, {})
+
+
+def test_darwin_image_clipboard_passes_the_path_as_an_argument(monkeypatch, tmp_path):
+    from core import platform_darwin
+
+    calls = []
+    monkeypatch.setattr(
+        platform_darwin.subprocess,
+        "run",
+        lambda args, **kwargs: calls.append((args, kwargs))
+        or SimpleNamespace(returncode=0, stdout=b"ok", stderr=b""),
+    )
+    path = tmp_path / "it's a \"name\".png"
+    platform_darwin.write_clipboard_image(path)
+    args, options = calls[0]
+    assert args[:4] == ["/usr/bin/osascript", "-l", "JavaScript", "-e"]
+    assert args[-1] == str(path), "the path is an argument, never script text"
+    assert str(path) not in args[4]
+    assert "NSPasteboardTypePNG" in args[4] and "NSPasteboardTypeTIFF" in args[4]
+    assert options["shell"] is False and options["timeout"] > 0
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        (FileNotFoundError(), "ClipboardUnavailable"),
+        (subprocess.TimeoutExpired("osascript", 1), "ClipboardTimeout"),
+        (SimpleNamespace(returncode=1, stdout=b"", stderr=b"unreadable image"), "ClipboardError"),
+    ],
+)
+def test_darwin_image_clipboard_maps_failures(monkeypatch, tmp_path, outcome, expected):
+    from core import platform_darwin
+
+    def run(*args, **kwargs):
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(platform_darwin.subprocess, "run", run)
+    with pytest.raises(getattr(platform_darwin, expected)):
+        platform_darwin.write_clipboard_image(tmp_path / "a.png")
+
+
+def test_windows_image_clipboard_passes_the_path_in_the_environment(monkeypatch, tmp_path):
+    from core import platform_windows
+
+    calls = []
+    monkeypatch.setenv("SystemRoot", str(tmp_path / "Windows"))
+    monkeypatch.setattr(
+        platform_windows.subprocess,
+        "run",
+        lambda args, **kwargs: calls.append((args, kwargs))
+        or SimpleNamespace(returncode=0, stdout=b"", stderr=b""),
+    )
+    path = tmp_path / "it's; $(evil).jpg"
+    platform_windows.write_clipboard_image(path)
+    args, options = calls[0]
+    assert Path(args[0]) == tmp_path / "Windows" / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    assert "-STA" in args and "-NoProfile" in args
+    assert all(str(path) not in arg for arg in args), "never script text"
+    assert options["env"]["RS_CLIPBOARD_IMAGE"] == str(path)
+    assert "SetImage" in args[-1]
+    assert options["shell"] is False and options["timeout"] > 0
+
+
+def test_windows_image_clipboard_maps_failures(monkeypatch, tmp_path):
+    from core import platform_windows
+
+    monkeypatch.setattr(
+        platform_windows.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=b"", stderr=b"x"),
+    )
+    with pytest.raises(platform_windows.ClipboardError):
+        platform_windows.write_clipboard_image(tmp_path / "a.webp")
+    monkeypatch.setattr(
+        platform_windows.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("powershell", 1)),
+    )
+    with pytest.raises(platform_windows.ClipboardTimeout):
+        platform_windows.write_clipboard_image(tmp_path / "a.png")

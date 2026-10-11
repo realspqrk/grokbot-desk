@@ -13,17 +13,55 @@ ROOT = Path(__file__).resolve().parents[2]
 FIX = ROOT / "templates" / "builtin" / "preview-post" / "fixtures"
 EXP = FIX / "expect"
 LIMITS = {"x": 280, "linkedin": 3000, "instagram": 2200, "facebook": 63206}
-# One platform tab at a time: overflow menu, tab, approve, the panel's three
-# copy icons, back to the tablist, ArrowRight to the next tab; on the last tab
-# on through discard and the alternative to the submit button.
-GOLDEN_KEYBOARD_PATH = [
-    {"repeat": 2, "press": "Tab"},
-    *[step for _ in range(3) for step in (
-        {"press": "Tab"}, {"press": "Space"}, {"repeat": 3, "press": "Tab"},
-        {"repeat": 4, "press": "Shift+Tab"}, {"press": "ArrowRight"},
-    )],
-    {"press": "Tab"}, {"press": "Space"}, {"repeat": 6, "press": "Tab"}, {"press": "Enter"},
-]
+# One platform tab at a time: overflow menu, then per tab. Auto: approve, the
+# panel's three copy icons, back to the tablist, ArrowRight to the next tab.
+# Manual (copies first): the three copy icons, copy image and its folder, then
+# "Mark as posted" and back. On the last (auto) tab on through discard and the
+# alternative to the submit button.
+AUTO_TAB = (
+    {"press": "Tab"}, {"press": "Space"}, {"repeat": 3, "press": "Tab"},
+    {"repeat": 4, "press": "Shift+Tab"}, {"press": "ArrowRight"},
+)
+MANUAL_TAB = (
+    {"repeat": 6, "press": "Tab"}, {"press": "Space"},
+    {"repeat": 6, "press": "Shift+Tab"}, {"press": "ArrowRight"},
+)
+
+
+def entries(data):
+    """The payload platforms as (id, mode): a plain id is auto."""
+    return [
+        (item, "auto") if isinstance(item, str) else (item["platform"], item.get("mode", "auto"))
+        for item in data["platforms"]
+    ]
+
+
+def ids(data):
+    return [platform for platform, _ in entries(data)]
+
+
+def keyboard_path(data):
+    tabs = entries(data)
+    assert tabs[-1][1] == "auto"
+    return [
+        {"repeat": 2, "press": "Tab"},
+        *[step for _, mode in tabs[:-1] for step in (MANUAL_TAB if mode == "manual" else AUTO_TAB)],
+        {"press": "Tab"}, {"press": "Space"}, {"repeat": 6, "press": "Tab"}, {"press": "Enter"},
+    ]
+
+
+def approved_result(data):
+    """Every platform ticked: auto ones are the bot's to post, manual ones were
+    posted by hand and never reach `platforms`."""
+    return {
+        "decision": "approve",
+        "platforms": [p for p, mode in entries(data) if mode == "auto"],
+        "comment": "",
+        "per_platform": {
+            p: {"mode": mode, "decision": "posted_manually" if mode == "manual" else "approved"}
+            for p, mode in entries(data)
+        },
+    }
 
 
 def load(name):
@@ -39,7 +77,7 @@ def composed(data, p):
 
 def copies(data):
     out = {}
-    for p in data["platforms"]:
+    for p in ids(data):
         out[f"{p}-text"] = composed(data, p)
         if data.get("hashtags"):
             out[f"{p}-hashtags"] = " ".join("#" + h for h in data["hashtags"])
@@ -50,7 +88,7 @@ def copies(data):
 
 def counters(data):
     out = {}
-    for p in data["platforms"]:
+    for p in ids(data):
         text = composed(data, p)
         assert text.isascii() and "://" not in text and ".example" not in text, p
         out[p] = {"count": len(text), "limit": LIMITS[p], "over": len(text) > LIMITS[p]}
@@ -72,11 +110,11 @@ write("golden.json", {
     "copies": copies(golden),
     "counters": counters(golden),
     "flow": [
-        *[{"click": f"#{kind}-{p}"} for p in golden["platforms"] for kind in ("tab", "approve")][1:],
+        *[{"click": f"#{kind}-{p}"} for p in ids(golden) for kind in ("tab", "approve")][1:],
         {"press": "Control+Enter"},
     ],
-    "keyboard": GOLDEN_KEYBOARD_PATH,
-    "result": {"decision": "approve", "platforms": golden["platforms"], "comment": ""},
+    "keyboard": keyboard_path(golden),
+    "result": approved_result(golden),
 })
 limit = load("edge-x-limit")
 write("edge-x-limit.json", {"copies": copies(limit), "counters": counters(limit)})

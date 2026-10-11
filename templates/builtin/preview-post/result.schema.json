@@ -1,24 +1,307 @@
 {
-  "description": "approve: the platforms the reviewer released (each was approvable: within its limit, Instagram with an image). request_changes: a comment is required and no platform is released.",
+  "description": "approve: platforms lists the auto platforms the reviewer released for the bot to post (each was approvable: within its limit, Instagram with an image); manual platforms the reviewer posted by hand are never in it. per_platform names every payload platform with its mode and decision (approved, posted_manually, not_approved). request_changes: a comment is required, no platform is released and every platform is changes_requested with the comment as its note.",
   "oneOf": [
     {
       "type": "object",
-      "required": ["decision", "platforms", "comment"],
+      "required": [
+        "decision",
+        "platforms",
+        "comment",
+        "per_platform"
+      ],
       "additionalProperties": false,
       "properties": {
-        "decision": {"const": "approve"},
-        "platforms": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": {"enum": ["x", "linkedin", "instagram", "facebook"]}},
-        "comment": {"type": "string", "maxLength": 2000}
+        "decision": {
+          "const": "approve"
+        },
+        "platforms": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "x",
+              "linkedin",
+              "instagram",
+              "facebook"
+            ]
+          }
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "per_platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "One entry per payload platform: its mode and what was decided. Post only auto + approved; a manual platform is never posted by the bot.",
+          "properties": {
+            "x": {
+              "type": "object",
+              "required": [
+                "mode",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ]
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "posted_manually",
+                    "not_approved",
+                    "changes_requested"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            },
+            "linkedin": {
+              "type": "object",
+              "required": [
+                "mode",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ]
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "posted_manually",
+                    "not_approved",
+                    "changes_requested"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            },
+            "instagram": {
+              "type": "object",
+              "required": [
+                "mode",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ]
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "posted_manually",
+                    "not_approved",
+                    "changes_requested"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            },
+            "facebook": {
+              "type": "object",
+              "required": [
+                "mode",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ]
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "posted_manually",
+                    "not_approved",
+                    "changes_requested"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            }
+          }
+        }
       }
     },
     {
       "type": "object",
-      "required": ["decision", "platforms", "comment"],
+      "required": [
+        "decision",
+        "platforms",
+        "comment",
+        "per_platform"
+      ],
       "additionalProperties": false,
       "properties": {
-        "decision": {"const": "request_changes"},
-        "platforms": {"type": "array", "maxItems": 0},
-        "comment": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"}
+        "decision": {
+          "const": "request_changes"
+        },
+        "platforms": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "comment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "\\S"
+        },
+        "per_platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "One entry per payload platform: its mode and what was decided. Post only auto + approved; a manual platform is never posted by the bot.",
+          "properties": {
+            "x": {
+              "type": "object",
+              "required": [
+                "mode",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ]
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "posted_manually",
+                    "not_approved",
+                    "changes_requested"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            },
+            "linkedin": {
+              "type": "object",
+              "required": [
+                "mode",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ]
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "posted_manually",
+                    "not_approved",
+                    "changes_requested"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            },
+            "instagram": {
+              "type": "object",
+              "required": [
+                "mode",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ]
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "posted_manually",
+                    "not_approved",
+                    "changes_requested"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            },
+            "facebook": {
+              "type": "object",
+              "required": [
+                "mode",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ]
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "posted_manually",
+                    "not_approved",
+                    "changes_requested"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            }
+          }
+        }
       }
     }
   ]

@@ -3,7 +3,7 @@
   "namespace": "global",
   "version": 1,
   "title_de": "Post-Vorschau",
-  "description": "Built-in (calm): realistic X, LinkedIn, Instagram and Facebook previews of one post draft, one platform at a time. Tabs with approval ticks, one large preview with the platform's own fold label, counters, lints and copy icons; approve per platform (primary) or request changes with a comment (footer alternative).",
+  "description": "Built-in (calm): realistic X, LinkedIn, Instagram and Facebook previews of one post draft, one platform at a time. Tabs with approval ticks, one large preview with the platform's own fold label, counters, lints and copy icons. Per platform mode: auto (the bot posts after Approve & post) or manual (the reviewer posts by hand: copies first, including the image, then Mark as posted). Request changes with a comment is the footer alternative.",
   "components": [
     "rs-post-frame",
     "rs-counter",
@@ -42,6 +42,15 @@
     "meta_persona",
     "meta_post_id",
     "blocked",
-    "copy"
+    "copy",
+    "approve_post",
+    "mark_posted",
+    "mark_posted_on",
+    "confirm_decision",
+    "manual_note",
+    "mode_manual",
+    "copy_image",
+    "decided_count",
+    "select_platform_manual"
   ]
 }

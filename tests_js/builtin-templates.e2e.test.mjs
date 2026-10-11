@@ -1,8 +1,8 @@
 // Browser tests for the shipped built-ins decide-list, approve-one and
 // preview-post on the real served shell: isolated server on the worker's
 // port range with a temp RS_DATA_DIR, headless Edge 1500x1000, German table.
-// /copy is always fulfilled by page.route (the posted body is checked), so
-// the real clipboard is never touched.
+// /copy, /copy-image and /reveal are always fulfilled by page.route (the
+// posted body is checked), so the real clipboard and folders are never touched.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -65,13 +65,19 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       colorScheme: opts.colorScheme || 'light', reducedMotion: 'reduce',
     });
     const page = await ctx.newPage();
-    const log = { errors: [], copies: [] };
+    const log = { errors: [], copies: [], images: [], reveals: [] };
     page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.errors.push(m.type() + ': ' + m.text()); });
     page.on('pageerror', (e) => log.errors.push('pageerror: ' + e.message));
     await page.route(ORIGIN + '/copy', async (route) => {
       log.copies.push(JSON.parse(route.request().postData()));
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
+    for (const [route, list] of [['/copy-image', log.images], ['/reveal', log.reveals]]) {
+      await page.route(ORIGIN + route, async (r) => {
+        list.push(JSON.parse(r.request().postData()));
+        await r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      });
+    }
     await page.goto(server.url('?client=test&run=' + run.run_id));
     await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
     return { ctx, page, log, run };
@@ -498,10 +504,102 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await page.isVisible('[data-pp="request"]'), true);
       assert.equal(await page.inputValue('#pp-comment'), 'Use the shop front photo instead');
       await page.keyboard.press('Control+Enter');
-      assert.deepEqual(await submitted(page, run), { decision: 'request_changes', platforms: [], comment: 'Use the shop front photo instead' });
+      const note = 'Use the shop front photo instead';
+      assert.deepEqual(await submitted(page, run), {
+        decision: 'request_changes', platforms: [], comment: note,
+        per_platform: {
+          x: { mode: 'manual', decision: 'changes_requested', note },
+          linkedin: { mode: 'auto', decision: 'changes_requested', note },
+          instagram: { mode: 'auto', decision: 'changes_requested', note },
+          facebook: { mode: 'auto', decision: 'changes_requested', note },
+        },
+      });
     } finally {
       await page.evaluate(() => localStorage.clear());
       await ctx.close();
     }
+  });
+  /* --------------------------------------------------- preview-post: modes */
+  const label = (page) => page.textContent('#rs-submit-label');
+
+  test('preview-post: a manual tab is named quietly, copies come first (image too) and the primary marks it as posted', async () => {
+    const { ctx, page, log, run } = await open('preview-post', 'golden');
+    try {
+      assert.equal(await page.textContent('#tab-x'), `${de.platform_x} · ${de.mode_manual}${de.not_approved}`);
+      assert.equal(await page.textContent('#tab-linkedin'), `${de.platform_linkedin}${de.not_approved}`, 'auto is the quiet default');
+      assert.equal(await page.textContent('#panel-x [data-pp="manual-note"]'), de.manual_note);
+      assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), t('mark_posted_on', { platform: de.platform_x }));
+      /* Tab order on the manual panel: the copies, then "Mark as posted" */
+      const order = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
+      assert.deepEqual(order, ['x-text', 'x-hashtags', 'x-comment', 'x-image', 'reveal-x', 'approve-x']);
+      assert.equal(await label(page), de.approve_post, 'nothing ticked yet, the report has auto platforms');
+      const mediaId = await page.$eval('#panel-x [data-copy-id="x-image"]', (el) => el.getAttribute('media'));
+      assert.match(mediaId, /^m_/, 'a media id, never a path');
+      await page.click('[data-copy-id="x-image"] .rs-copy__btn');
+      await page.waitForSelector('[data-copy-id="x-image"][data-state="copied"]');
+      assert.deepEqual(log.images, [{ run_id: run.run_id, media_id: mediaId }]);
+      assert.deepEqual(log.copies, [], 'an image is not copied as text');
+      await page.click('#reveal-x');
+      await page.waitForFunction(() => document.querySelector('#rs-toasts .rs-toast'));
+      assert.deepEqual(log.reveals, [{ run_id: run.run_id, media_id: mediaId }]);
+      await page.check('#approve-x');
+      assert.equal(await label(page), de.mark_posted);
+      assert.equal(await page.textContent('#rs-status'), t('decided_count', { n: 1, total: 4 }));
+      await page.click('#tab-linkedin');
+      assert.equal(await page.$('#panel-linkedin [data-pp="manual-note"]'), null, 'auto keeps today\'s panel');
+      assert.equal(await page.$('#panel-linkedin [data-copy-id="linkedin-image"]'), null);
+      await page.check('#approve-linkedin');
+      assert.equal(await label(page), de.confirm_decision);
+      await page.click('#tab-x');
+      await page.uncheck('#approve-x');
+      assert.equal(await label(page), de.approve_post);
+      await page.check('#approve-x');
+      await page.keyboard.press('Control+Enter');
+      assert.deepEqual(await submitted(page, run), {
+        decision: 'approve', platforms: ['linkedin'], comment: '',
+        per_platform: {
+          x: { mode: 'manual', decision: 'posted_manually' },
+          linkedin: { mode: 'auto', decision: 'approved' },
+          instagram: { mode: 'auto', decision: 'not_approved' },
+          facebook: { mode: 'auto', decision: 'not_approved' },
+        },
+      });
+      /* the decided report shows what it sent, the manual tick included */
+      await reload(page);
+      assert.equal(await page.isChecked('#approve-x'), true);
+      await page.click('#tab-linkedin');
+      assert.equal(await page.isChecked('#approve-linkedin'), true);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('preview-post: plain platform ids stay auto (no mode named); only manual platforms read "Mark as posted"', async () => {
+    const data = fixture('preview-post', 'golden');
+    const legacy = { ...data, platforms: ['x', 'linkedin'] };
+    const plain = await open('preview-post', 'golden', { data: legacy });
+    try {
+      assert.equal(await plain.page.$('.pp__mode'), null);
+      assert.equal(await plain.page.$('[data-pp="manual-note"]'), null);
+      assert.equal(await plain.page.textContent('#panel-x [data-pp="approve-label"]'), t('approve_for', { platform: de.platform_x }));
+      await plain.page.check('#approve-x');
+      assert.equal(await label(plain.page), de.approve_post);
+      assert.equal(await plain.page.textContent('#rs-status'), t('approve_count', { n: 1, total: 2 }));
+      await plain.page.keyboard.press('Control+Enter');
+      assert.deepEqual(await submitted(plain.page, plain.run), {
+        decision: 'approve', platforms: ['x'], comment: '',
+        per_platform: { x: { mode: 'auto', decision: 'approved' }, linkedin: { mode: 'auto', decision: 'not_approved' } },
+      });
+    } finally { await plain.ctx.close(); }
+    const handOnly = await open('preview-post', 'golden', { data: { ...data, platforms: [{ platform: 'x', mode: 'manual' }] } });
+    try {
+      assert.equal(await label(handOnly.page), de.mark_posted);
+      assert.equal(await handOnly.page.textContent('#rs-status'), de.select_platform_manual);
+      await handOnly.page.check('#approve-x');
+      await handOnly.page.keyboard.press('Control+Enter');
+      assert.deepEqual(await submitted(handOnly.page, handOnly.run), {
+        decision: 'approve', platforms: [], comment: '',
+        per_platform: { x: { mode: 'manual', decision: 'posted_manually' } },
+      }, 'posted by hand: nothing for the bot to post');
+    } finally { await handOnly.ctx.close(); }
   });
 });

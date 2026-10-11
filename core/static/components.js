@@ -267,7 +267,10 @@
   // value), block (long text: own line, quoted), max-lines (N: the value is
   // clamped to N lines with a "Show all" disclosure; no extra tab stop at
   // rest), no-value (hide the value; ONLY when the exact string is visible
-  // next to it anyway, e.g. the post text in rs-post-frame).
+  // next to it anyway, e.g. the post text in rs-post-frame), media (a media
+  // id: copies that image as a picture through RS.copyImage instead of text;
+  // with media-copy="path" it copies the media file's path, e.g. a video;
+  // use with no-value).
   // Property: text. Event: rs-copy {detail:{ok, busy}}. data-state: idle|working|copied|busy|error.
   class RsCopy extends HTMLElement {
     static get observedAttributes() { return ['label', 'text', 'no-value', 'max-lines', 'mono', 'caption']; }
@@ -371,7 +374,14 @@
         }
         self.dispatchEvent(new CustomEvent('rs-copy', { bubbles: true, detail: { ok: !!res.ok, busy: !!res.busy } }));
       };
-      Promise.resolve().then(function () { return R.copy(self.text); }).then(done, function () { done({ ok: false }); });
+      var mediaId = this.getAttribute('media');
+      var send = mediaId
+        ? function () {
+          var fn = self.getAttribute('media-copy') === 'path' ? R.copyPath : R.copyImage;
+          return typeof fn === 'function' ? fn(mediaId) : { ok: false };
+        }
+        : function () { return R.copy(self.text); };
+      Promise.resolve().then(send).then(done, function () { done({ ok: false }); });
     }
   }
 

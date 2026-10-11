@@ -204,5 +204,14 @@
   "check_warn": "bitte ansehen",
   "check_fail": "fehlgeschlagen",
   "decision_label": "Entscheidung",
-  "lint_found": "„{text}“ gefunden"
+  "lint_found": "„{text}“ gefunden",
+  "approve_post": "Freigeben & posten",
+  "mark_posted": "Als gepostet markieren",
+  "mark_posted_on": "Auf {platform} als gepostet markieren",
+  "confirm_decision": "Bestätigen",
+  "manual_note": "Du postest das selbst.",
+  "mode_manual": "manuell",
+  "copy_image": "Bild kopieren",
+  "decided_count": "{n} von {total} Plattformen erledigt",
+  "select_platform_manual": "Mindestens eine Plattform freigeben oder markieren"
 }

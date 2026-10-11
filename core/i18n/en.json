@@ -204,5 +204,14 @@
   "check_warn": "needs a look",
   "check_fail": "failed",
   "decision_label": "Decision",
-  "lint_found": "“{text}” found"
+  "lint_found": "“{text}” found",
+  "approve_post": "Approve & post",
+  "mark_posted": "Mark as posted",
+  "mark_posted_on": "Mark as posted on {platform}",
+  "confirm_decision": "Confirm",
+  "manual_note": "You post this yourself.",
+  "mode_manual": "manual",
+  "copy_image": "Copy image",
+  "decided_count": "{n} of {total} platforms done",
+  "select_platform_manual": "Approve or mark at least one platform"
 }
