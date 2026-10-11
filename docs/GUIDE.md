@@ -8,7 +8,7 @@ Run commands from the repository root with `python report_shell.py <command>` us
 
 Quick start: write a payload file, then `show`, then `wait` in a loop, then read the result file. Section A has the full example.
 
-Placeholders used below: `<repo>` = the repository folder, `<host>` = the Windows machine that shows the window, `<user>` = the Windows user on `<host>`, `example-bot` = your bot id, `<data dir>` = `%LOCALAPPDATA%\grokbot-desk` on Windows, or `RS_DATA_DIR` if set. When the new directory is absent, an existing `%LOCALAPPDATA%\spqrk-report-shell` is reused.
+Placeholders used below: `<repo>` = the repository folder, `<host>` = the Windows machine that shows the window, `<user>` = the Windows user on `<host>`, `example-bot` = your bot id, `<data dir>` = `%LOCALAPPDATA%\grokbot-desk` on Windows, or `RS_DATA_DIR` if set. A legacy `%LOCALAPPDATA%\spqrk-report-shell` stays in use until the new folder holds runs of its own; an empty `grokbot-desk` folder does not hide it. Bots always use the CLI (`result`, `wait`, `results --since`, `paths`) and never guess the data directory. `paths` prints which directory is in use and why.
 
 Template ids resolve in one order everywhere (CLI, server, checks and score tools):
 
@@ -91,12 +91,12 @@ German is the default; set `RS_LANG=en` before starting the server to select Eng
 - System fonts only (the core sets them).
 - A link in a post preview is rendered from the payload (`url`, `title`, `domain`); nothing is fetched.
 - http(s) addresses in item text, review-doc Markdown, pick-option text and a payload `url` field are real links. The page does not let those links navigate this window: the anchors are not draggable, a drag is cancelled, and dropping a URL on the page is cancelled. A primary click, a middle click, Enter, and a modified click (Shift, Ctrl, Alt) call `RS.openUrl(url)`, which posts `{run_id, url}` to `/open-url`. Modified Enter does the same, except Ctrl+Enter or Cmd+Enter, which stays the submit shortcut and does not navigate. The server opens the host's default browser only when that exact address occurs in the run's payload, is http or https, is at most 2048 characters, has a hostname and a valid port, and has no credentials in the authority. `rel="noopener noreferrer"` and the server allowlist do not by themselves stop the window from navigating; the page handlers do. A right-click on these links is cancelled so the menu cannot open the address in the app profile. A browser that still offers Open from a menu the page cannot see is outside this guarantee.
-- Images go through the media roots:
-  - The payload holds an absolute Windows path on `<host>` in a field the template's `schema.json` marks with `"x-rs-media": true`.
+- Images and video go through the media roots:
+  - The payload holds an absolute path on `<host>` in a field the template's `schema.json` marks with `"x-rs-media"`. `true` is an image. `"video"` is a video.
   - At `show` the path must resolve (after realpath) under one of the media roots in `config.json` `media_roots` (in `<data dir>`). Defaults are the user's Downloads folder and `<data dir>/media`; add any shared-drive folder explicitly to `config.json` `media_roots`.
-  - Allowed: `.png .jpg .jpeg .webp .gif`, at most 20 MB, the file must exist. Relative paths, `..`, UNC paths and paths outside the roots are rejected with exit code 2.
-  - The page never sees the path, only a random media id: `RS.media(id)` for `img.src`, `RS.reveal(id)` for `Im Ordner zeigen`, `RS.copyImage(id)` (or `<rs-copy media="<id>">`) to put the image on the clipboard as a picture (macOS: PNG, JPEG, GIF, WebP; Windows: PNG, JPEG, GIF).
-  - A bot on another machine copies the image to `<host>` first (section A, step 1: drop folder) and puts the `<host>` path into the payload. Never a path that exists only on the bot's machine.
+  - Images: `.png .jpg .jpeg .webp .gif`, at most 20 MB. Video: `.mp4 .webm`, at most 200 MB. The file must exist. Relative paths, `..`, UNC paths and paths outside the roots are rejected with exit code 2.
+  - The page never sees the path, only a random media id. `RS.media(id)` is the URL for `img.src`, a video `src`, or a poster. `/media/<id>` is served in HTTP ranges, so a video can start without reading the whole file. `RS.reveal(id)` is `Im Ordner zeigen` / `Show in folder`. `RS.copyImage(id)` (or `<rs-copy media="<id>">`) puts an image on the clipboard as a picture (macOS: PNG, JPEG, GIF, WebP; Windows: PNG, JPEG, GIF). `RS.copyPath(id)` (or `<rs-copy media="<id>" media-copy="path">`) copies the file path, which is how a video is handed to a manual post.
+  - A bot on another machine copies the file to `<host>` first (section A, step 1: drop folder) and puts the `<host>` path into the payload. Never a path that exists only on the bot's machine.
 
 ## 7. Accessibility
 
@@ -129,7 +129,8 @@ Checklist (spec 5.2). The core already gives `lang="de"`, visible focus, token c
 | `expired` | `expires_minutes` ran out (default 240, max 10080) | nothing; re-show later only if it still matters |
 
 - Payload hygiene: never put secrets (passwords, tokens, full card numbers) or full email bodies into a payload. Use snippets of at most 600 characters. Payloads, results and logs stay 30 days in `<data dir>\`, then the core deletes them.
-- One open report per topic: when a newer report replaces an open one, `cancel` the old run first.
+- One open report per topic: when a newer report replaces an open one, `cancel` the old run first. Or set `dedupe_key` (1–120 printable ASCII characters, not starting with a space) so the same bot and key does not open a second report. `dedupe_hours` (integer 1–168, default 24) is only valid together with a key. An open run with that key is returned as-is. A run submitted or cancelled within the last N hours is returned too (`show` prints `deduped: true` and `state`: `open`, `submitted` or `cancelled`) and does not open another window. An expired run was never answered, so it never dedupes.
+- `created` is ISO 8601 with an offset. A stamp more than 2 minutes ahead of the clock is clamped to now, and `show` includes a warning: a wrong UTC offset would otherwise make `duration_s` read 0. Up to 2 minutes ahead is left as clock skew.
 
 ## 9. Adding a template
 
@@ -160,8 +161,8 @@ Run `py -3 report_shell.py templates` (or `templates --json`) to see what is ins
 | `template.json` | exactly the fields `id` (= folder name), `namespace` (= the namespace argument passed to `new`, stored as metadata; the folder remains `<data dir>/templates/<name>`), `version` (integer, payloads must send the same), `title_de`, `description`, `components` (only `rs-card`, `rs-action-row`, `rs-copy`, `rs-badge`, `rs-counter`, `rs-post-frame`, `rs-confirm`), `strings` (every `de.json` key used) |
 | `template.html` | a partial: no `<html>`, `<head>`, `<body>`, `<script>`, `<link>`, `<style>`; no literal text; no `on*=` handlers; custom elements only from the list above |
 | `template.css` | `var(--rs-*)` tokens only, spacing only `var(--space-*)`, `0` or `1px`; no `#hex`, `rgb(`, `hsl(`; no URLs |
-| `template.js` | the body of `function (RS, root)`; RS API only (`RS.data`, `RS.run`, `RS.t`, `RS.time`, `RS.date`, `RS.number`, `RS.count`, `RS.copy`, `RS.copyImage`, `RS.toast`, `RS.media`, `RS.reveal`, `RS.openUrl`, `RS.fillText`, `RS.appendLinks`, `RS.externalLink`, `RS.icon`, `RS.setResult`, `RS.setStatus`, `RS.setSubmitLabel`, `RS.setAlternative`, `RS.focusAlternative`, `RS.addMenuItem`, `RS.addMenuMeta`, `RS.onChange`, `RS.draft`, `RS.submit`; see the helper notes below the table); never `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `new Function`, `import()`, `navigator.clipboard`; no literal UI strings; block comments only |
-| `schema.json`, `result.schema.json` | only `type, properties, required, additionalProperties, items, minItems, maxItems, uniqueItems, enum, const, minLength, maxLength, pattern, minimum, maximum, oneOf, default, description, x-rs-*`. `"x-rs-unique-key": "<property>"` on an array of objects rejects an item whose `<property>` repeats an earlier item's (e.g. option ids; finding `/data/options/1/id`); `"x-rs-media": true` marks an image path (section 6) |
+| `template.js` | the body of `function (RS, root)`; RS API only (`RS.data`, `RS.run`, `RS.t`, `RS.time`, `RS.date`, `RS.number`, `RS.count`, `RS.copy`, `RS.copyImage`, `RS.copyPath`, `RS.toast`, `RS.media`, `RS.reveal`, `RS.openUrl`, `RS.fillText`, `RS.appendLinks`, `RS.externalLink`, `RS.icon`, `RS.setResult`, `RS.setStatus`, `RS.setSubmitLabel`, `RS.setAlternative`, `RS.focusAlternative`, `RS.addMenuItem`, `RS.addMenuMeta`, `RS.onChange`, `RS.draft`, `RS.submit`; see the helper notes below the table); never `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `new Function`, `import()`, `navigator.clipboard`; no literal UI strings; block comments only |
+| `schema.json`, `result.schema.json` | only `type, properties, required, additionalProperties, items, minItems, maxItems, uniqueItems, enum, const, minLength, maxLength, pattern, minimum, maximum, oneOf, default, description, x-rs-*`. `"x-rs-unique-key": "<property>"` on an array of objects rejects an item whose `<property>` repeats an earlier item's (e.g. option ids; finding `/data/options/1/id`); `"x-rs-exclusive": ["image", "video"]` on an object rejects a value that sets more than one of those properties (finding `/video`); `"x-rs-media": true` marks an image path and `"x-rs-media": "video"` a video path (section 6) |
 | `fixtures\` | `golden.json`, at least 2 `edge-*.json`, at least 2 `invalid-*.json` (each must be rejected) |
 | `fixtures\expect\golden.json` | `copies` (by `data-copy-id`), `counters` (by `data-counter-id`), `flow` (mouse steps), `keyboard` (keys only), `result` (the exact result `data`) |
 | `README.md` | purpose, payload example, result example, German strings used |
@@ -232,11 +233,11 @@ Replace `RUN_ID` with the value printed by `show`. Choose and send in the window
 
 | Command | Output | Exit codes |
 |---|---|---|
-| `show <template> --data <path\|-> [--focus] [--no-window]` | `{"run_id","url","result_path"}`. Validates, starts the server if needed, registers the run, opens the window if none is open (`--no-window`: never). `--data` may also hold only the `data` object; the core then wraps it (title = template `title_de`, `created` = now, `bot` = the template's namespace, or a built-in default bot id for `global` templates <!-- rename -->). | 0, 2, 3, 4 |
+| `show <template> --data <path\|-> [--focus] [--no-window]` | `{"run_id","url","result_path","data_dir"}`. Validates, starts the server if needed, registers the run, opens the window if none is open (`--no-window`: never). A duplicate `dedupe_key` adds `deduped: true` and `state` and does not open a second report. A clamped `created` adds `warnings`. `--data` may also hold only the `data` object; the core then wraps it (title = template `title_de`, `created` = now, `bot` = the template's namespace, or a built-in default bot id for `global` templates <!-- rename -->). | 0, 2, 3, 4 |
 | `wait <run_id> [--timeout <s> \| --until-expiry]` | `{"status","result_path","data_dir"}` once the result file exists (checked every 200 ms). Returns on the result, at the latest at the run's expiry plus 2 minutes (exit 7: no result by then); `--until-expiry` waits up to that point and excludes `--timeout`. A run record without a readable `expires` (pre-beta.2) has no such limit. Never use `--timeout 0` from a bot | 0, 2, 5, 6, 7 |
 | `result <run_id>` | the result envelope plus `data_dir` | 0, 6 (also while no result exists yet) |
-| `results --since <iso> [--bot <id>] [--seen <run_id>]... [--wait <s>]` | `{"data_dir","results":[{"run_id","bot","template","status","decided","result_path"}],"cursor","seen"}`: results decided at or after `--since`, oldest first, minus `--seen`. `cursor` is the newest `decided` so far and `seen` every run id decided in that second (also on an empty answer); pass both back as they came. `--wait` blocks up to that many seconds (max 3600) for the first one | 0, 2 |
-| `paths` | the data directory in use and why, plus unused legacy directories | 0 |
+| `results --since <iso> [--bot <id>] [--seen <run_id>]... [--wait <s>]` | `{"data_dir","results":[{"run_id","bot","template","title","status","decided","result_path","summary?"}],"cursor","seen"}`: results decided at or after `--since`, oldest first, minus `--seen`. `title` is included when the run record still has a payload title (or the result file itself carries one). `summary`, when the decision is compact, is decide-list counts per choice (`2 approve, 1 defer`), preview-post decisions (`x done, linkedin approved`), the approve-one or review-doc decision word, or the pick-option id. `cursor` is the newest `decided` so far (keep it) and `seen` every run id decided in that second (also on an empty answer); pass both back as they came. `--wait` blocks up to that many seconds (max 3600) for the first one | 0, 2 |
+| `paths` | `{"data_dir","source","runs","results","log","config"}` and `unused_data_dirs` when another candidate still holds results. `source` is `RS_DATA_DIR`, `legacy` or `default`. This is how a bot learns the directory; it never guesses | 0 |
 | `status` | `{"up","port","pid","open_runs","window_alive"}` | 0 |
 | `open` | `{"ok":true,"opened":true\|false}`; opens or focuses the window when runs are open | 0, 3, 4 |
 | `cancel <run_id>` | `{"status":"cancelled","result_path"}`; bot-side withdrawal | 0, 6 (unknown or already decided) |
@@ -275,7 +276,9 @@ Payload `report-shell/payload@1` (max 2 MB; unknown top-level fields are rejecte
 | `run_id` | optional; `^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,20}-[0-9a-f]{4}(?:[0-9a-f]{8})?$`, unused. Best left out; generated ids use 12 hex characters and legacy explicit ids may use 4. |
 | `bot` | your bot id, `^[a-z0-9-]{1,40}$` (e.g. `example-bot`) |
 | `title` | 1-80 characters; becomes the window title (`<title> · <bot name>`; the name comes from `identity` or the bot registry, see below) |
-| `created` | ISO 8601 with an offset |
+| `created` | ISO 8601 with an offset. More than 2 minutes ahead of the clock is clamped to now and `show` warns (see section 8) |
+| `dedupe_key` | optional, 1–120 printable ASCII characters. Same bot + key returns the existing open run, or the submitted/cancelled run from the last `dedupe_hours` (default 24). Expired never matches. See section 8 |
+| `dedupe_hours` | optional integer 1–168, only together with `dedupe_key` |
 | `expires_minutes` | optional, 5-10080, default 240 |
 | `notify` | optional `{"webhook_url"}`; the webhook is **off in v1**, bots use `wait` |
 | `data` | validated against the template's `schema.json` |

@@ -1,0 +1,18 @@
+{
+  "copies": {
+    "x-text": "That prompt should be a button.",
+    "linkedin-text": "That prompt should be a button."
+  },
+  "counters": {
+    "x": {
+      "count": 31,
+      "limit": 280,
+      "over": false
+    },
+    "linkedin": {
+      "count": 31,
+      "limit": 3000,
+      "over": false
+    }
+  }
+}

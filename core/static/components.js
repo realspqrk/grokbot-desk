@@ -461,7 +461,11 @@
   // Attributes: skin (x|linkedin|instagram|facebook), ratio (1:1|4:5|1.91:1|16:9),
   // no-chrome (hide the logo + platform name row, e.g. when tabs name it).
   // Child slots (any element with slot="…"): avatar (img), name, handle,
-  // headline, text, image (img), link-title, link-domain. Method refresh().
+  // headline, text, image (img), video (video), link-title, link-domain,
+  // reply, quote-name, quote-handle, quote-excerpt, quote-domain, quote-url.
+  // image and video are alternatives. quote-url is the address of a quoted
+  // post or reply parent (not shown; it becomes the card's link when
+  // RS.externalLink exists). Method refresh().
   var SKIN_ABBR = { x: 'x', linkedin: 'li', instagram: 'ig', facebook: 'fb' };
   var RATIOS = { '1:1': '1 / 1', '4:5': '4 / 5', '1.91:1': '1.91 / 1', '16:9': '16 / 9' };
   var TAG_RE = /(^|[^\p{L}\p{M}\p{N}_&#])(#+[\p{L}\p{M}\p{N}_]+)|(https?:\/\/\S+[^\s.,;:!?'")\]}>])/gu;
@@ -566,7 +570,9 @@
         if (parts.media) {
           var ratio = RATIOS[this.getAttribute('ratio')] || (skin === 'instagram' ? '1 / 1' : '16 / 9');
           parts.media.style.setProperty('--rs-pf-ratio', ratio);
-          if (slots.image) {
+          if (slots.video) {
+            this._prepareVideo(slots.video);
+          } else if (slots.image) {
             this._prepareImage(slots.image);
           } else {
             this.removeAttribute('data-image-state');
@@ -580,6 +586,7 @@
           }
         }
         if (parts.link && !slots['link-title'] && !slots['link-domain']) parts.link.hidden = true;
+        if (parts.quote) this._placeQuote(post, parts, slots);
         if (parts.captionName) {
           var capEl = slots.handle || slots.name;
           parts.captionName.textContent = capEl ? capEl.textContent : '';
@@ -649,6 +656,30 @@
       else this._setImageState('loading');
     }
 
+    _prepareVideo(video) {
+      var self = this;
+      this._image = video;
+      video.controls = true;
+      video.autoplay = false;
+      video.removeAttribute('autoplay');
+      video.muted = false;
+      video.removeAttribute('muted');
+      var preload = video.getAttribute('preload');
+      if (preload !== 'none' && preload !== 'metadata') video.setAttribute('preload', 'metadata');
+      if (!video._rsAvailabilityBound) {
+        video._rsAvailabilityBound = true;
+        video.addEventListener('loadedmetadata', function () {
+          if (self._image === video) self._setImageState('loaded');
+        });
+        video.addEventListener('error', function () {
+          if (self._image === video) self._setImageState('error');
+        });
+      }
+      if (video.error) this._setImageState('error');
+      else if (video.readyState >= 1) this._setImageState('loaded');
+      else this._setImageState('loading');
+    }
+
     _setImageState(state) {
       var media = this._parts && this._parts.media;
       var image = this._image;
@@ -657,12 +688,13 @@
       if (old) old.remove();
       media.classList.remove('rs-pf__media--empty', 'rs-pf__media--error');
       image.hidden = state === 'error';
+      var isVideo = image.tagName === 'VIDEO';
       if (state === 'error') {
         media.classList.add('rs-pf__media--empty', 'rs-pf__media--error');
         var box = h('div', 'rs-pf__media-error-wrap');
         box.appendChild(icon('image', 'rs-pf__empty-ico'));
-        box.appendChild(h('span', 'rs-pf__media-error', t('pf_image_error')));
-        var retry = h('button', 'rs-btn rs-btn--quiet rs-pf__image-retry', t('pf_image_retry'));
+        box.appendChild(h('span', 'rs-pf__media-error', t(isVideo ? 'pf_video_error' : 'pf_image_error')));
+        var retry = h('button', 'rs-btn rs-btn--quiet rs-pf__image-retry', t(isVideo ? 'pf_video_retry' : 'pf_image_retry'));
         retry.type = 'button';
         /* reloading media never changes a decision: stays usable on a locked report */
         retry.setAttribute('data-rs-view-action', '');
@@ -685,6 +717,7 @@
       this._retryN += 1;
       url.searchParams.set('rs_retry', String(Date.now()) + '-' + this._retryN);
       this._image.src = url.href;
+      if (this._image.tagName === 'VIDEO' && typeof this._image.load === 'function') this._image.load();
     }
 
     _head(post) {
@@ -730,6 +763,72 @@
       return bar;
     }
 
+    _quoteKit() {
+      var card = h('div', 'rs-pf__quote');
+      var author = h('div', 'rs-pf__quote-author');
+      var name = h('span', 'rs-pf__quote-name');
+      var handle = h('span', 'rs-pf__quote-handle');
+      author.appendChild(name);
+      author.appendChild(handle);
+      var excerpt = h('div', 'rs-pf__quote-excerpt');
+      var domain = h('div', 'rs-pf__quote-domain');
+      card.appendChild(author);
+      card.appendChild(excerpt);
+      card.appendChild(domain);
+      var reply = h('div', 'rs-pf__reply');
+      reply.hidden = true;
+      return {
+        card: card,
+        reply: reply,
+        targets: {
+          reply: reply,
+          'quote-name': name,
+          'quote-handle': handle,
+          'quote-excerpt': excerpt,
+          'quote-domain': domain
+        }
+      };
+    }
+
+    _placeQuote(post, parts, slots) {
+      var card = parts.quote;
+      var reply = parts.reply;
+      var has = slots.reply || slots['quote-name'] || slots['quote-handle']
+        || slots['quote-excerpt'] || slots['quote-domain'];
+      if (!card || !has) {
+        if (card) card.hidden = true;
+        if (reply) reply.hidden = true;
+        return;
+      }
+      if (reply) reply.hidden = !slots.reply;
+      var author = card.querySelector('.rs-pf__quote-author');
+      if (author && !slots['quote-name'] && !slots['quote-handle']) author.hidden = true;
+      if (!slots['quote-excerpt']) {
+        var excerpt = card.querySelector('.rs-pf__quote-excerpt');
+        if (excerpt) excerpt.hidden = true;
+      }
+      if (slots.reply) {
+        card.classList.add('rs-pf__quote--above');
+        post.parentNode.insertBefore(card, post);
+      } else {
+        card.classList.add('rs-pf__quote--embed');
+      }
+      var urlEl = slots['quote-url'];
+      if (urlEl) this._openQuote(card, (urlEl.textContent || '').trim());
+    }
+
+    _openQuote(card, url) {
+      var R = window.RS;
+      if (!url || !R || typeof R.externalLink !== 'function') return;
+      var link = R.externalLink(url, '');
+      if (!link) return;
+      link.className = card.className + ' rs-ext';
+      link.textContent = '';
+      while (card.firstChild) link.appendChild(card.firstChild);
+      link.setAttribute('data-rs-part', '');
+      card.replaceWith(link);
+    }
+
     _linkCard(post, cls) {
       var link = h('div', 'rs-pf__link ' + (cls || ''));
       var dom = h('div', 'rs-pf__link-domain');
@@ -755,14 +854,21 @@
       line.appendChild(this._meta(false));
       line.appendChild(icon('more', 'rs-pf__more'));
       main.appendChild(line);
+      var quote = this._quoteKit();
+      main.appendChild(quote.reply);
       var text = this._textBlock(main);
       var media = h('div', 'rs-pf__media');
       main.appendChild(media);
       var lc = this._linkCard(main, 'rs-pf__link--x');
+      main.appendChild(quote.card);
       this._actions(main, [{ icon: 'reply' }, { icon: 'repost' }, { icon: 'heart' }, { icon: 'views' }, { icon: 'bookmark', end: true }, { icon: 'upload' }], false);
       return {
         text: text, avatar: avatar, media: media, link: lc.link,
-        targets: { avatar: avatar, name: name, handle: handle, text: text, image: media, 'link-title': lc.title, 'link-domain': lc.domain }
+        quote: quote.card, reply: quote.reply,
+        targets: Object.assign({
+          avatar: avatar, name: name, handle: handle, text: text, image: media, video: media,
+          'link-title': lc.title, 'link-domain': lc.domain
+        }, quote.targets)
       };
     }
 
@@ -775,16 +881,23 @@
       hd.who.appendChild(headline);
       hd.who.appendChild(this._meta(true));
       hd.head.appendChild(icon('more', 'rs-pf__more'));
+      var quote = this._quoteKit();
+      post.appendChild(quote.reply);
       var text = this._textBlock(post);
       var media = h('div', 'rs-pf__media');
       post.appendChild(media);
       var lc = this._linkCard(post, 'rs-pf__link--li');
+      post.appendChild(quote.card);
       this._actions(post, [
         { icon: 'thumb', label: 'pf_like' }, { icon: 'bubble', label: 'pf_comment' },
         { icon: 'repost', label: 'pf_repost' }, { icon: 'send', label: 'pf_send' }], true);
       return {
         text: text, avatar: hd.avatar, media: media, link: lc.link,
-        targets: { avatar: hd.avatar, name: name, headline: headline, text: text, image: media, 'link-title': lc.title, 'link-domain': lc.domain }
+        quote: quote.card, reply: quote.reply,
+        targets: Object.assign({
+          avatar: hd.avatar, name: name, headline: headline, text: text, image: media, video: media,
+          'link-title': lc.title, 'link-domain': lc.domain
+        }, quote.targets)
       };
     }
 
@@ -807,7 +920,7 @@
       post.appendChild(cap);
       var text = this._textBlock(cap);
       var hasHandle = !!this._slots.handle;
-      var targets = { avatar: hd.avatar, text: text, image: media };
+      var targets = { avatar: hd.avatar, text: text, image: media, video: media };
       targets[hasHandle ? 'handle' : 'name'] = who;
       return { text: text, avatar: hd.avatar, media: media, captionName: capName, targets: targets };
     }
@@ -819,15 +932,22 @@
       hd.who.appendChild(name);
       hd.who.appendChild(this._meta(true));
       hd.head.appendChild(icon('more', 'rs-pf__more'));
+      var quote = this._quoteKit();
+      post.appendChild(quote.reply);
       var text = this._textBlock(post);
       var media = h('div', 'rs-pf__media');
       post.appendChild(media);
       var lc = this._linkCard(post, 'rs-pf__link--fb');
+      post.appendChild(quote.card);
       this._actions(post, [
         { icon: 'thumb', label: 'pf_like' }, { icon: 'bubble', label: 'pf_comment' }, { icon: 'share', label: 'pf_share' }], true);
       return {
         text: text, avatar: hd.avatar, media: media, link: lc.link,
-        targets: { avatar: hd.avatar, name: name, text: text, image: media, 'link-title': lc.title, 'link-domain': lc.domain }
+        quote: quote.card, reply: quote.reply,
+        targets: Object.assign({
+          avatar: hd.avatar, name: name, text: text, image: media, video: media,
+          'link-title': lc.title, 'link-domain': lc.domain
+        }, quote.targets)
       };
     }
 

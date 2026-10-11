@@ -142,6 +142,8 @@ def test_results_since_lists_new_decisions_oldest_first(live):
     code, out = _run(cli.command_results, live.data_dir, since=start.isoformat(), bot=None, wait=0)
     assert code == 0 and out["data_dir"] == str(live.data_dir)
     assert [item["run_id"] for item in out["results"]] == [a["run_id"], b["run_id"]]
+    assert out["results"][0]["title"] == "Safety test"
+    assert "summary" not in out["results"][0]
     code, out = _run(cli.command_results, live.data_dir, since=start.isoformat(), bot="social-agent", wait=0)
     assert [item["run_id"] for item in out["results"]] == [b["run_id"]]
     assert out["cursor"] == out["results"][-1]["decided"] and out["seen"] == [b["run_id"]]
@@ -196,6 +198,53 @@ def test_results_wait_skips_seen_runs_instead_of_returning_at_once(tmp_path):
     began = time.monotonic()
     out = _run(cli.command_results, base, since=second, bot=None, wait=0.6, seen=["run-a"])[1]
     assert out["results"] == [] and time.monotonic() - began >= 0.5
+
+
+def test_results_since_carries_a_title_and_a_compact_summary(tmp_path):
+    """A one-line ack needs the topic, and a summary where the decision is compact."""
+    base = ensure_layout(tmp_path / "data")
+    stamp = "2026-10-11T11:00:00+02:00"
+
+    def write_run(run_id, title):
+        (base / "runs" / f"{run_id}.json").write_text(
+            json.dumps({"payload": {"run_id": run_id, "title": title}}), encoding="utf-8"
+        )
+
+    def write_result(run_id, template, data, bot="inbox-agent"):
+        (base / "results" / f"{run_id}.json").write_text(json.dumps({
+            "run_id": run_id, "bot": bot, "template": template,
+            "status": "submitted", "decided": stamp, "data": data,
+        }), encoding="utf-8")
+
+    write_run("run-list", "Two requests need a decision")
+    write_result("run-list", "decide-list", {"items": [
+        {"id": "travel", "choice": "approve", "note": ""},
+        {"id": "laptop", "choice": "defer", "note": ""},
+        {"id": "toner", "choice": "approve", "note": ""},
+    ], "note": ""})
+    write_run("run-post", "That prompt should be a button")
+    write_result("run-post", "preview-post", {
+        "decision": "approve", "platforms": ["linkedin"], "comment": "",
+        "per_platform": {
+            "x": {"mode": "manual", "decision": "done"},
+            "linkedin": {"mode": "auto", "decision": "approved"},
+        },
+    }, bot="social-agent")
+    write_result("run-one", "approve-one", {"decision": "approve", "comment": ""})
+    code, out = _run(cli.command_results, base, since=stamp, bot=None, wait=0)
+    assert code == 0
+    by_id = {item["run_id"]: item for item in out["results"]}
+    listed = by_id["run-list"]
+    assert listed["title"] == "Two requests need a decision"
+    assert listed["summary"] == "2 approve, 1 defer"
+    assert list(listed) == [
+        "run_id", "bot", "template", "title", "status", "decided", "result_path", "summary",
+    ]
+    post = by_id["run-post"]
+    assert post["summary"] == "x done, linkedin approved"
+    assert post["template"] == "preview-post" and post["bot"] == "social-agent"
+    one = by_id["run-one"]
+    assert one["summary"] == "approve" and "title" not in one
 
 
 def test_results_empty_answer_without_any_result_echoes_the_cursor(tmp_path):

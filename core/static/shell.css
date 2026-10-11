@@ -880,7 +880,10 @@ rs-post-frame[no-chrome] .rs-pf__chrome { display: none; }
   background: var(--rs-pf-avatar);
 }
 .rs-pf__media[hidden] { display: none; }
-.rs-pf__media > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.rs-pf__media > img,
+.rs-pf__media > video { display: block; width: 100%; height: 100%; object-fit: cover; background: var(--rs-pf-avatar); }
+.rs-pf__media > img[hidden],
+.rs-pf__media > video[hidden] { display: none; }
 .rs-pf__post--x .rs-pf__media { border: var(--rs-border) solid var(--rs-pf-line); border-radius: var(--rs-r-lg); }
 .rs-pf__post--ig .rs-pf__media { margin-top: var(--space-3); }
 .rs-pf__media--empty {
@@ -918,6 +921,43 @@ rs-post-frame[no-chrome] .rs-pf__chrome { display: none; }
 .rs-pf__link--fb .rs-pf__link-domain { text-transform: uppercase; }
 .rs-pf__link-title { font-weight: var(--rs-fw-strong); }
 .rs-pf__link--x .rs-pf__link-title { font-weight: var(--rs-fw-normal); }
+
+.rs-pf__quote {
+  display: block;
+  margin: var(--space-3) var(--space-pf) 0;
+  padding: var(--space-2) var(--space-3);
+  border: var(--rs-border) solid var(--rs-pf-line);
+  border-radius: var(--rs-r-lg);
+  background: var(--rs-pf-card, var(--rs-pf-bg));
+  color: inherit;
+  text-decoration: none;
+  line-height: var(--rs-lh-tight);
+}
+.rs-pf__quote[hidden] { display: none; }
+a.rs-pf__quote.rs-ext { color: inherit; text-decoration: none; }
+.rs-pf__quote--above { margin: 0 0 var(--space-3); }
+.rs-pf__post--x .rs-pf__quote--embed { margin: var(--space-2) 0 0; }
+.rs-pf__post--li .rs-pf__quote--embed,
+.rs-pf__post--fb .rs-pf__quote--embed {
+  margin-left: 0;
+  margin-right: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+}
+.rs-pf__quote-author { display: flex; gap: var(--space-1); min-width: 0; font-weight: var(--rs-pf-fw-bold); }
+.rs-pf__quote-author[hidden] { display: none; }
+.rs-pf__quote-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rs-pf__quote-handle, .rs-pf__quote-domain { color: var(--rs-pf-muted); font-weight: var(--rs-fw-normal); font-size: var(--rs-fs-sm); }
+.rs-pf__quote-excerpt { margin-top: var(--space-1); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rs-pf__quote-excerpt[hidden] { display: none; }
+.rs-pf__reply {
+  padding-top: var(--space-1);
+  color: var(--rs-pf-muted);
+  font-size: var(--rs-fs-sm);
+}
+.rs-pf__reply[hidden] { display: none; }
+.rs-pf__post--x .rs-pf__reply { padding-top: var(--space-1); }
 
 .rs-pf__actions {
   display: flex;

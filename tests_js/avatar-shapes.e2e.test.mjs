@@ -84,7 +84,9 @@ describe('P8c shape avatars (served, headless Edge)', { skip }, () => {
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(server.url(`?client=test&run=${runId}`));
-    await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+    // the first page of a cold headless Edge on a loaded CI runner once took
+    // more than 8 s to get ready (Windows 3.11); later pages take < 1 s
+    await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 20000 });
     return { ctx, page, errors };
   }
 

@@ -461,6 +461,85 @@ def _decided_after(value, since):
         return False
 
 
+_LIST_CHOICES = ("approve", "reject", "defer", "done", "skipped", "later")
+_POST_PLATFORMS = ("x", "linkedin", "instagram", "facebook")
+
+
+def _run_title(base, run_id):
+    if not isinstance(run_id, str) or not run_id:
+        return None
+    try:
+        record = json_loads((Path(base) / "runs" / f"{run_id}.json").read_text(encoding="utf-8"))
+        title = record["payload"]["title"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return title if isinstance(title, str) and title.strip() else None
+
+
+def _join_counts(counts, order):
+    parts = [f"{counts[name]} {name}" for name in order if counts.get(name)]
+    parts.extend(
+        f"{counts[name]} {name}" for name in sorted(counts) if name not in order and counts[name]
+    )
+    return ", ".join(parts)
+
+
+def _result_summary(value):
+    """A one-line reading of a submitted decision, only when it is unambiguous."""
+    if value.get("status") != "submitted" or not isinstance(value.get("data"), dict):
+        return None
+    data = value["data"]
+    template = value.get("template")
+    if template == "decide-list" and isinstance(data.get("items"), list):
+        counts = {}
+        for item in data["items"]:
+            choice = item.get("choice") if isinstance(item, dict) else None
+            if isinstance(choice, str) and choice:
+                counts[choice] = counts.get(choice, 0) + 1
+        text = _join_counts(counts, _LIST_CHOICES)
+        return text or None
+    if template == "preview-post" and isinstance(data.get("per_platform"), dict):
+        parts = []
+        seen = set()
+        for name in _POST_PLATFORMS:
+            entry = data["per_platform"].get(name)
+            if isinstance(entry, dict) and isinstance(entry.get("decision"), str):
+                parts.append(f"{name} {entry['decision']}")
+                seen.add(name)
+        for name, entry in data["per_platform"].items():
+            if name in seen or not isinstance(entry, dict):
+                continue
+            if isinstance(entry.get("decision"), str):
+                parts.append(f"{name} {entry['decision']}")
+        return ", ".join(parts) or None
+    if template in ("approve-one", "review-doc") and isinstance(data.get("decision"), str):
+        return data["decision"]
+    if template == "pick-option" and isinstance(data.get("choice"), str) and data["choice"]:
+        return data["choice"]
+    return None
+
+
+def _result_item(base, path, value):
+    """What a one-line acknowledgement needs, plus a summary when it is cheap."""
+    title = value.get("title")
+    if not isinstance(title, str) or not title.strip():
+        title = _run_title(base, value.get("run_id"))
+    item = {
+        "run_id": value.get("run_id"),
+        "bot": value.get("bot"),
+        "template": value.get("template"),
+    }
+    if isinstance(title, str) and title.strip():
+        item["title"] = title
+    item["status"] = value.get("status")
+    item["decided"] = value.get("decided")
+    item["result_path"] = str(path)
+    summary = _result_summary(value)
+    if summary:
+        item["summary"] = summary
+    return item
+
+
 def _results_since(base, since, bot=None):
     """Every result decided at or after since (one per run id), oldest first."""
     items, listed = [], set()
@@ -476,14 +555,7 @@ def _results_since(base, since, bot=None):
         if value.get("run_id") in listed:
             continue
         listed.add(value.get("run_id"))
-        items.append({
-            "run_id": value.get("run_id"),
-            "bot": value.get("bot"),
-            "template": value.get("template"),
-            "status": value.get("status"),
-            "decided": value.get("decided"),
-            "result_path": str(path),
-        })
+        items.append(_result_item(base, path, value))
     items.sort(key=lambda item: (to_vienna(item["decided"]).astimezone(timezone.utc), item["run_id"] or ""))
     return items
 

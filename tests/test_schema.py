@@ -38,6 +38,25 @@ def test_schema_subset_reports_json_pointer():
         validate({"items": ["ok"], "extra": True}, schema)
 
 
+def test_exclusive_properties_reject_a_second_one():
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "x-rs-exclusive": ["image", "video"],
+        "properties": {
+            "image": {"type": "string"},
+            "video": {"type": "string"},
+        },
+    }
+    validate({"image": "a.jpg"}, schema)
+    validate({"video": "a.mp4"}, schema)
+    validate({}, schema)
+    with pytest.raises(SchemaError) as error:
+        validate({"image": "a.jpg", "video": "a.mp4"}, schema)
+    assert error.value.pointer == "/video"
+    assert "image" in error.value.message
+
+
 def test_one_of_requires_exactly_one_match():
     with pytest.raises(SchemaError) as error:
         validate(1, {"oneOf": [{"type": "number"}, {"minimum": 0}]})
@@ -54,6 +73,9 @@ def test_one_of_requires_exactly_one_match():
         {"type": "array", "x-rs-unique-key": ""},
         {"type": "array", "x-rs-unique-key": ["id"]},
         {"type": "object", "x-rs-unique-key": "id"},
+        {"type": "object", "x-rs-exclusive": ["image"]},
+        {"type": "object", "x-rs-exclusive": ["image", "image"]},
+        {"type": "array", "x-rs-exclusive": ["image", "video"]},
     ],
 )
 def test_schema_definition_rejects_malformed_keywords(schema):

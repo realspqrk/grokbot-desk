@@ -53,6 +53,11 @@
     "manual_note",
     "mode_manual",
     "copy_image",
+    "copy_path",
+    "copy_link",
+    "replying_to",
+    "approval_waits_video",
+    "approval_video_failed",
     "decided_count",
     "select_platform_manual",
     "report_skips"

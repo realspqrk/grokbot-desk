@@ -7,6 +7,7 @@
     "platforms"
   ],
   "additionalProperties": false,
+  "x-rs-exclusive": ["image", "video"],
   "properties": {
     "persona": {
       "type": "string",
@@ -137,6 +138,90 @@
             "1.91:1",
             "16:9"
           ]
+        }
+      }
+    },
+    "video": {
+      "type": "object",
+      "required": [
+        "path",
+        "poster",
+        "alt",
+        "ratio"
+      ],
+      "additionalProperties": false,
+      "description": "Optional video in place of image (the two cannot both be set). The preview shows the poster and plays the file inline. Instagram treats a video as the required media.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "x-rs-media": "video",
+          "description": "Absolute .mp4 or .webm path under a media root, at most 200 MB."
+        },
+        "poster": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "x-rs-media": true,
+          "description": "Poster image, required with a video. Absolute image path under a media root."
+        },
+        "alt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "ratio": {
+          "enum": [
+            "1:1",
+            "4:5",
+            "1.91:1",
+            "16:9"
+          ]
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "type",
+        "url"
+      ],
+      "additionalProperties": false,
+      "description": "Optional quoted post or reply parent. Not part of the composed text: X does not count this URL.",
+      "properties": {
+        "type": {
+          "enum": [
+            "quote",
+            "reply"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 2048
+        },
+        "excerpt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "author": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The account being quoted or replied to. Both fields are optional.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            },
+            "handle": {
+              "type": "string",
+              "pattern": "^[^\\s@]{1,30}$",
+              "description": "Without @."
+            }
+          }
         }
       }
     },

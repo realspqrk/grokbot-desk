@@ -67,7 +67,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       colorScheme: opts.colorScheme || 'light', reducedMotion: 'reduce',
     });
     const page = await ctx.newPage();
-    const log = { errors: [], copies: [], images: [], reveals: [] };
+    const log = { errors: [], copies: [], images: [], paths: [], reveals: [] };
     page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.errors.push(m.type() + ': ' + m.text()); });
     page.on('pageerror', (e) => log.errors.push('pageerror: ' + e.message));
     await page.route(ORIGIN + '/copy', async (route) => {
@@ -75,7 +75,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
     log.urls = [];
-    for (const [route, list] of [['/copy-image', log.images], ['/reveal', log.reveals], ['/open-url', log.urls]]) {
+    for (const [route, list] of [['/copy-image', log.images], ['/copy-path', log.paths], ['/reveal', log.reveals], ['/open-url', log.urls]]) {
       await page.route(ORIGIN + route, async (r) => {
         list.push(JSON.parse(r.request().postData()));
         await r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
@@ -586,6 +586,106 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await page.isChecked('#approve-linkedin'), true);
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
+  });
+
+  test('preview-post: a quote with a video shows the poster, copies the file path and the link, and stays usable when locked', async () => {
+    const data = fixture('preview-post', 'quote-video');
+    const { ctx, page, log, run } = await open('preview-post', 'quote-video');
+    try {
+      await mediaSettled(page);
+      const attrs = await page.$eval('#panel-x video', (el) => ({
+        controls: el.controls,
+        preload: el.preload,
+        autoplay: el.autoplay,
+        muted: el.muted,
+        poster: el.poster,
+        label: el.getAttribute('aria-label'),
+      }));
+      assert.equal(attrs.controls, true);
+      assert.equal(attrs.preload, 'metadata');
+      assert.equal(attrs.autoplay, false);
+      assert.equal(attrs.muted, false);
+      assert.match(attrs.poster, /\/media\/m_/);
+      assert.equal(attrs.label, data.video.alt);
+      assert.equal(await page.locator('#panel-x [slot="image"]').count(), 0);
+      const placed = await page.evaluate(() => {
+        const post = document.querySelector('#panel-x .rs-pf__post');
+        const card = document.querySelector('#panel-x .rs-pf__quote');
+        const text = document.querySelector('#panel-x [slot="text"]');
+        return {
+          inside: post.contains(card),
+          afterText: Boolean(text.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING),
+          replyHidden: document.querySelector('#panel-x .rs-pf__reply').hidden,
+        };
+      });
+      assert.deepEqual(placed, { inside: true, afterText: true, replyHidden: true });
+      assert.equal(await page.getAttribute('#panel-x .rs-pf__quote', 'href'), data.target.url);
+      assert.equal(await page.textContent('#panel-x .rs-pf__quote-name'), 'Northwind Notes');
+      assert.equal(await page.textContent('#panel-x .rs-pf__quote-handle'), t('pf_handle', { handle: 'northwindnotes' }));
+      assert.equal(await page.textContent('#panel-x .rs-pf__quote-excerpt'), data.target.excerpt);
+      assert.equal(await page.textContent('#panel-x .rs-pf__quote-domain'), 'example.com');
+      const shown = await page.textContent('#panel-x [slot="text"]');
+      assert.equal(shown, data.text);
+      assert.equal(shown.includes(data.target.url), false);
+      const counted = await page.$eval('[data-counter-id="x"]', (el) => el.result.count);
+      assert.equal(counted, RS_COUNT.count(shown, 'x').count);
+      const mediaId = await page.getAttribute('#panel-x [data-copy-id="x-video"]', 'media');
+      assert.match(mediaId, /^m_/);
+      await page.click('#panel-x [data-copy-id="x-video"] .rs-copy__btn');
+      await page.waitForSelector('#panel-x [data-copy-id="x-video"][data-state="copied"]');
+      assert.deepEqual(log.paths, [{ run_id: run.run_id, media_id: mediaId }]);
+      assert.equal(await page.textContent('#panel-x [data-copy-id="x-link"] .rs-copy__value'), data.target.url);
+      await page.click('#panel-x [data-copy-id="x-link"] .rs-copy__btn');
+      await page.waitForSelector('#panel-x [data-copy-id="x-link"][data-state="copied"]');
+      assert.equal(log.copies.at(-1).text, data.target.url);
+      await page.click('#reveal-x');
+      await page.waitForFunction(() => document.querySelector('#rs-toasts .rs-toast'));
+      assert.deepEqual(log.reveals, [{ run_id: run.run_id, media_id: mediaId }]);
+      await page.click('#panel-x .rs-pf__quote');
+      assert.deepEqual(log.urls, [{ run_id: run.run_id, url: data.target.url }]);
+      assert.equal(page.url().startsWith(ORIGIN), true);
+      await page.check('#approve-x');
+      await page.keyboard.press('Control+Enter');
+      await page.waitForSelector('.rs-banner[data-banner="submitted"]');
+      assert.equal(await page.isEnabled('#panel-x [data-copy-id="x-video"] .rs-copy__btn'), true);
+      assert.equal(await page.isEnabled('#reveal-x'), true);
+      await page.click('#reveal-x');
+      assert.equal(log.reveals.length, 2);
+      await page.click('#tab-linkedin');
+      await mediaSettled(page);
+      assert.equal(await page.locator('#panel-linkedin .rs-pf__quote').count(), 1);
+      assert.equal(await page.locator('#panel-linkedin [data-copy-id="linkedin-video"]').count(), 0);
+      assert.equal(await page.locator('#panel-linkedin [data-copy-id="linkedin-link"]').count(), 0);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+
+    const replyData = { ...data, target: { ...data.target, type: 'reply' } };
+    const reply = await open('preview-post', 'quote-video', { data: replyData });
+    try {
+      await mediaSettled(reply.page);
+      assert.equal(await reply.page.textContent('#panel-x .rs-pf__reply'), t('replying_to', { handle: 'northwindnotes' }));
+      const above = await reply.page.evaluate(() => {
+        const post = document.querySelector('#panel-x .rs-pf__post');
+        const card = document.querySelector('#panel-x .rs-pf__quote');
+        return !post.contains(card) && Boolean(card.compareDocumentPosition(post) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      assert.equal(above, true);
+      await reply.page.click('#tab-linkedin');
+      assert.equal(await reply.page.locator('#panel-linkedin .rs-pf__quote').count(), 1);
+      assert.equal(await reply.page.textContent('#panel-linkedin .rs-pf__reply'), t('replying_to', { handle: 'northwindnotes' }));
+    } finally { await reply.ctx.close(); }
+
+    const withIg = await open('preview-post', 'quote-video', {
+      data: { ...data, platforms: [...data.platforms, { platform: 'instagram', mode: 'auto' }] },
+    });
+    try {
+      await withIg.page.click('#tab-instagram');
+      await mediaSettled(withIg.page);
+      assert.equal(await withIg.page.locator('#panel-instagram video').count(), 1);
+      assert.equal(await withIg.page.locator('#panel-instagram .rs-pf__quote').count(), 0);
+      assert.equal(await withIg.page.isHidden('#lint-image-instagram'), true);
+      assert.equal(await withIg.page.isDisabled('#approve-instagram'), false);
+    } finally { await withIg.ctx.close(); }
   });
 
   test('preview-post: plain platform ids stay auto (no mode named); only manual platforms read "Mark as posted"', async () => {

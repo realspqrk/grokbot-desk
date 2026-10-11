@@ -28,7 +28,7 @@ test('template strings from spec 4.6 / 4.7', () => {
     choice_ja: 'Ja', choice_nein: 'Nein',
     approve_for: 'Freigeben für {platform}',
     lint_em_dash: 'Gedankenstrich (—) gefunden', lint_registered: '® gefunden',
-    lint_ig_needs_image: 'Instagram braucht ein Bild',
+    lint_ig_needs_image: 'Instagram braucht ein Bild oder ein Video',
     platform_x: 'X', platform_linkedin: 'LinkedIn', platform_instagram: 'Instagram', platform_facebook: 'Facebook',
   };
   for (const [k, v] of Object.entries(want)) assert.equal(de[k], v, k);

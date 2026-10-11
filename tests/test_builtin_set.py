@@ -34,9 +34,13 @@ FIXTURES = {
         "expect": ("golden", "edge-access", "edge-max"),
     },
     "preview-post": {
-        "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-max"),
-        "invalid": {"invalid-hash-in-tag": "/hashtags/1", "invalid-no-platform": "/platforms"},
-        "expect": ("golden", "edge-no-image", "edge-x-limit", "edge-max"),
+        "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-max", "quote-video"),
+        "invalid": {
+            "invalid-hash-in-tag": "/hashtags/1",
+            "invalid-no-platform": "/platforms",
+            "invalid-image-and-video": "/video",
+        },
+        "expect": ("golden", "edge-no-image", "edge-x-limit", "edge-max", "quote-video"),
     },
 }
 # Built-ins are product-neutral and do not carry vendor endorsements.
@@ -418,10 +422,17 @@ def test_length_facts_match_the_copy_they_describe():
                 assert fact["value"].split()[0] == str(len(copy)), path.name
 
 
+def _preview_media_paths(data):
+    image = data.get("image") or {}
+    video = data.get("video") or {}
+    author = data.get("author") or {}
+    return [image.get("path"), video.get("path"), video.get("poster"), author.get("avatar")]
+
+
 def test_preview_post_fixture_media_are_template_relative_and_present():
     for name in (*FIXTURES["preview-post"]["valid"], *FIXTURES["preview-post"]["invalid"]):
         data = fixture("preview-post", name)
-        paths = [data.get("image", {}).get("path"), data["author"].get("avatar")]
+        paths = _preview_media_paths(data)
         for value in filter(None, paths):
             assert value.startswith("%RS_TEMPLATE%\\fixtures\\media\\"), value
             target = BUILTIN / "preview-post" / Path(*value.split("\\")[1:])

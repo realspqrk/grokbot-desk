@@ -47,6 +47,12 @@
 - Test and lint fixes for macOS: timing in browser tests, a local `.venv` is
   ignored by the source lint.
 - `python report_shell.py --version` prints `grokbot-desk 1.0.0-beta.2`.
+- `preview-post` takes an optional `video` (`path` `.mp4`/`.webm` up to 200 MB, required `poster` image, `alt`, `ratio`) instead of `image`. The mockup shows the poster and plays the file inline. A manual platform copies the file path and can show the file in its folder. Instagram counts a video as media. Images stay at most 20 MB; video is served in HTTP ranges.
+- `preview-post` takes an optional `target` (`quote` or `reply`, with `url`, optional `excerpt` and `author`). X shows a quote card under the post, or a reply line and the parent card above the post. LinkedIn and Facebook show a reshare card. The quoted URL is not part of the text, so X does not count it. A manual platform can copy the link.
+- `paths` prints the data directory in use and why. A legacy data directory stays in use until the new folder holds runs. Bots use the CLI (`result`, `wait`, `results --since`, `paths`) and never guess the directory.
+- Optional `dedupe_key` and `dedupe_hours`: the same bot and key returns the open run, or a run submitted or cancelled within that many hours (`deduped: true` and `state`). An expired run never dedupes. `show` twice with the same key does not open a second report.
+- A `created` stamp more than 2 minutes ahead is clamped to now, and `show` warns.
+- `results --since` items include `title` and, when the decision is compact, `summary` (decide-list counts per choice, preview-post decisions per platform).
 
 ## 1.0.0-beta.1 (2026-10-10)
 

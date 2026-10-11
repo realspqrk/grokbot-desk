@@ -943,6 +943,63 @@ def test_cli_preserves_omitted_run_id_for_server_side_generation(tmp_path):
     assert "run_id" not in payload
 
 
+def test_show_twice_with_the_same_dedupe_key_does_not_open_a_second_report(tmp_path, server_guard):
+    data_dir = tmp_path / "data"
+    port = free_port()
+    env = server_guard(dict(os.environ, RS_DATA_DIR=str(data_dir)), port)
+    payload = {
+        "schema": "report-shell/payload@1",
+        "template": "_starter",
+        "version": 1,
+        "bot": "automation-agent",
+        "title": "Weekly review",
+        "created": "2026-10-11T09:00:00+02:00",
+        "dedupe_key": "weekly-review",
+        "data": {"message": "Hello"},
+    }
+    source = tmp_path / "payload.json"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    try:
+        first = cli(env, port, "show", "_starter", "--data", str(source), "--no-window")
+        assert first.returncode == 0, first.stderr
+        one = json.loads(first.stdout)
+        payload["title"] = "Weekly review again"
+        source.write_text(json.dumps(payload), encoding="utf-8")
+        second = cli(env, port, "show", "_starter", "--data", str(source), "--no-window")
+        assert second.returncode == 0, second.stderr
+        two = json.loads(second.stdout)
+        assert two["run_id"] == one["run_id"]
+        assert two["deduped"] is True and two["state"] == "open"
+        assert two["data_dir"] == one["data_dir"]
+        status = json.loads(cli(env, port, "status").stdout)
+        assert status["open_runs"] == 1
+    finally:
+        cli(env, port, "stop")
+
+
+def test_show_clamps_a_created_stamp_far_ahead(tmp_path, server_guard):
+    data_dir = tmp_path / "data"
+    port = free_port()
+    env = server_guard(dict(os.environ, RS_DATA_DIR=str(data_dir)), port)
+    source = tmp_path / "payload.json"
+    source.write_text(json.dumps({
+        "schema": "report-shell/payload@1",
+        "template": "_starter",
+        "version": 1,
+        "bot": "automation-agent",
+        "title": "Clock",
+        "created": "2099-01-01T00:00:00+00:00",
+        "data": {"message": "Hello"},
+    }), encoding="utf-8")
+    try:
+        shown = cli(env, port, "show", "_starter", "--data", str(source), "--no-window")
+        assert shown.returncode == 0, shown.stderr
+        answer = json.loads(shown.stdout)
+        assert answer["warnings"] and "clamped" in answer["warnings"][0]
+    finally:
+        cli(env, port, "stop")
+
+
 def test_duplicate_run_id_is_invalid_payload(tmp_path, server_guard):
     data_dir = tmp_path / "data"
     port = free_port()
@@ -1226,6 +1283,16 @@ def test_show_accepts_one_utf8_bom_from_file_and_stdin(
         cli(env, port, "stop")
 
 
+class _QuickBindServer(__import__("http.server").server.ThreadingHTTPServer):
+    """No socket.getfqdn() in server_bind: on macOS runners that reverse
+    lookup stalls for seconds, so the stand-in would listen far later than
+    listen_after (the real server skips it the same way)."""
+
+    def server_bind(self):
+        __import__("socketserver").TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def _slow_cold_server(base, port, *, listen_after, answer_after, write_state=True):
     """A stand-in for a cold start: listens after listen_after seconds,
     writes state.json, and only answers /hello answer_after seconds later."""
@@ -1248,7 +1315,7 @@ def _slow_cold_server(base, port, *, listen_after, answer_after, write_state=Tru
 
     def run():
         time.sleep(listen_after)
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Hello)
+        server = _QuickBindServer(("127.0.0.1", port), Hello)
         holder["server"] = server
         if write_state:
             (Path(base) / "state.json").write_text(json.dumps({"port": port, "pid": os.getpid()}))

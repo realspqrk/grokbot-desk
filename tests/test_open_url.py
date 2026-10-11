@@ -106,7 +106,8 @@ def test_allowlist_is_verbatim_and_extracts_urls_from_text():
 
 
 def test_windows_opener_uses_startfile():
-    with patch("core.platform_windows.os.startfile") as startfile:
+    # os.startfile exists only on Windows; create it for the other runners
+    with patch("core.platform_windows.os.startfile", create=True) as startfile:
         windows_open_url(EXAMPLE)
     startfile.assert_called_once_with(EXAMPLE)
 

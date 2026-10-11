@@ -120,4 +120,6 @@ limit = load("edge-x-limit")
 write("edge-x-limit.json", {"copies": copies(limit), "counters": counters(limit)})
 for name in ("edge-no-image", "edge-max"):
     write(f"{name}.json", {"copies": copies(load(name)), "counters": {}})
+quote = load("quote-video")
+write("quote-video.json", {"copies": copies(quote), "counters": counters(quote)})
 print("ok")

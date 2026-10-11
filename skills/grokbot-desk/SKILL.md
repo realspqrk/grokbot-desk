@@ -80,7 +80,15 @@ Pick a built-in before writing your own:
 
 5. Acknowledge in your own chat with one short line: topic + OK (for example "X replies: 5x posted, OK"). If the result asks for work, start it right away; otherwise that one line is all.
 
-Catch up on decisions you did not wait for: `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID ...]` lists results decided at or after `CURSOR` (ISO 8601 with offset), oldest first. Pass the `cursor` and `seen` from its last answer back as they came (`--since CURSOR`, `--seen` once per run id), so a decision in the same second is neither lost nor listed twice. Every result names the `data_dir` in use; `paths` prints it too. Never guess the data directory.
+Catch up on decisions you did not wait for: `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID ...]` lists results decided at or after `CURSOR` (ISO 8601 with offset), oldest first. Pass the `cursor` and `seen` from its last answer back as they came (`--since CURSOR`, `--seen` once per run id), so a decision in the same second is neither lost nor listed twice. Keep the newest `decided` as `cursor`. Each item has `run_id`, `bot`, `template`, `status`, `decided` and `result_path`, plus `title` when the run record still has one. That is enough for one acknowledgement line (topic from `title`). A submitted item also has `summary` when the decision is compact: decide-list counts per choice (`2 approve, 1 defer`), preview-post one decision per platform (`x done, linkedin approved`). Every answer names the `data_dir` in use; `paths` prints it too. Never guess the data directory.
+
+## Data directory, dedupe, created
+
+Bots always use the CLI (`result`, `wait`, `results --since`, `paths`) and never guess the data directory. `paths` prints the directory in use, why (`RS_DATA_DIR`, `legacy` or `default`), and any unused legacy directory. On Windows a legacy `%LOCALAPPDATA%\spqrk-report-shell` stays in use until `%LOCALAPPDATA%\grokbot-desk` holds runs of its own. An empty new folder does not hide the legacy one. `RS_DATA_DIR` overrides both.
+
+Optional `dedupe_key` (1–120 printable ASCII characters) on the payload: the same bot and key returns the existing run instead of opening a second one, while that run is open or was submitted or cancelled within `dedupe_hours` (integer 1–168, default 24). `show` then prints `deduped: true` and `state`. An expired run never dedupes.
+
+`created` is the current time with its offset. A stamp more than 2 minutes ahead is clamped to now, and `show` includes a warning. Up to 2 minutes ahead is left as clock skew.
 
 If `show` fails, read its error. Correct the payload field named in the error; `doctor` checks registry/setup warnings. `check <template>` checks the template and requires the development tools described above. Try once more after fixing the cause; do not retry in a loop.
 
@@ -96,6 +104,10 @@ Set `actor` from who actually does the next step. `bot` means you act after the 
 ## Social posts: who posts where
 
 In `preview-post`, give each platform a `mode`: `{"platform": "linkedin", "mode": "auto"}` means you post it after the user approves; `{"platform": "x", "mode": "manual"}` means the user posts it by hand (the window shows copy buttons for the text, hashtags, comment and image, and the user marks it as posted). A plain id such as `"linkedin"` means `auto`.
+
+Optional `video` replaces `image` (the two cannot both be set): `{path, poster, alt, ratio}`. `path` is `.mp4` or `.webm`, at most 200 MB (`x-rs-media` is `"video"`); `poster` is an image, at most 20 MB, and is required. The preview shows the poster and plays the file inline. Images stay at most 20 MB. Media is served in ranges. On a manual platform the user gets `Copy file path` and `Show in folder` for the video. Instagram counts a video as the required media.
+
+Optional `target` is a quote or a reply: `{type: "quote"|"reply", url, excerpt?, author?: {name?, handle?}}`. `url` is `https`, at most 2048 characters. X shows a quote card under the post, or `Replying to @handle` plus the parent card above the post. LinkedIn and Facebook show a reshare card. The card's link opens in the system browser. A manual platform also gets `Copy link` for `target.url`. X does not count that URL: it is not part of the post text. A URL written inside `text` still weighs 23.
 
 - Decide the mode per platform from your own instructions and experience: who actually posts where. If you cannot post to a platform, or the user posts there themselves, mark it `manual`.
 - Post only what the result lists in `platforms`: those are the `auto` platforms the user approved (`per_platform.<p>.decision` is `approved`).
@@ -114,6 +126,6 @@ A bad identity value never rejects the report; it falls back to initials or the 
 
 - No secrets in payloads: no passwords, tokens, API keys, private keys or full card numbers. Payloads, results and logs are stored as plain files on the user's computer.
 - Show only what the user needs to decide. Link or summarize large documents.
-- Report images must come from the template folder or an allowed `media_roots` folder. Avatar images follow the separate avatar rules above.
+- Report images (at most 20 MB) and video (`.mp4` or `.webm`, at most 200 MB) must come from the template folder or an allowed `media_roots` folder. Avatar images follow the separate avatar rules above.
 - Never fake a decision, and never treat a missing result as approval.
 - Do not stop or kill the grokbot-desk server or its window; it closes itself when it is idle.

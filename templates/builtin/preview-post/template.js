@@ -17,8 +17,12 @@
 
    Mode per platform (payload: a plain id is auto; {platform, mode}):
    auto, the bot posts after "Approve & post"; manual, the reviewer posts it
-   by hand: copies first (text, hashtags, comment, image, folder), the note
-   "You post this yourself." and "Posted". A ticked manual platform is
+   by hand: copies first (text, hashtags, comment, image or video path,
+   the target link, folder), the note
+   "You post this yourself." and "Posted". A video replaces the image.
+   An optional target is a quote card under the body, or a reply line
+   plus the parent card above the post; its URL is not part of the text,
+   so X does not count it. A ticked manual platform is
    `done`; an unticked one is `skipped`. When nothing is ticked and the
    report has a manual platform, the primary reads Done and submitting
    reports every manual platform as skipped (auto platforms stay
@@ -45,6 +49,9 @@ var tags = data.hashtags || [];
 var tagLine = tags.map(function (h) { return '#' + h; }).join(' ');
 var append = (data.hashtag_mode || 'append') === 'append' && tags.length > 0;
 var image = data.image || null;
+var video = data.video || null;
+var hasVisual = !!(image || video);
+var target = data.target || null;
 var author = data.author;
 var panels = part('panels');
 var tablist = part('tabs');
@@ -74,6 +81,16 @@ function slot(tag, name, text) {
   return el;
 }
 
+/* Host only: the quoted URL stays out of the composed text, so X's weighted
+   count never includes it. A URL written in the post text still counts. */
+function quoteDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch (e) {
+    return '';
+  }
+}
+
 function badge(box, variant, text) {
   var b = document.createElement('rs-badge');
   b.setAttribute('variant', variant);
@@ -89,6 +106,7 @@ else part('notes').remove();
 if (data.persona) RS.addMenuMeta(RS.t('meta_persona', { persona: data.persona }));
 if (data.post_id) RS.addMenuMeta(RS.t('meta_post_id', { id: data.post_id }));
 if (image) RS.addMenuItem(RS.t('reveal'), function () { RS.reveal(image.path); });
+else if (video) RS.addMenuItem(RS.t('reveal'), function () { RS.reveal(video.path); });
 
 /* ---- one panel per platform, in payload order ---- */
 ORDER.forEach(function (p) {
@@ -135,10 +153,10 @@ platforms.forEach(function (p) {
 
   /* Preview: slots are built complete and appended in one go, so the frame
      renders once with everything in place. A link card only shows without an
-     image, as on the platforms themselves. */
+     image or a video, as on the platforms themselves. */
   var frame = part('frame', col);
   frame.id = 'pf-' + p;
-  if (image) frame.setAttribute('ratio', image.ratio);
+  if (hasVisual) frame.setAttribute('ratio', (video || image).ratio);
   var slots = document.createDocumentFragment();
   if (author.avatar) {
     var avatar = slot('img', 'avatar');
@@ -151,14 +169,40 @@ platforms.forEach(function (p) {
   if (p === 'instagram') slots.appendChild(slot('span', 'handle', author.handle));
   if (p === 'linkedin' && author.headline) slots.appendChild(slot('span', 'headline', author.headline));
   slots.appendChild(slot('div', 'text', text));
-  if (image) {
-    var img = slot('img', 'image');
+  var img = null;
+  var vid = null;
+  if (video) {
+    vid = slot('video', 'video');
+    vid.controls = true;
+    vid.preload = 'metadata';
+    vid.autoplay = false;
+    vid.muted = false;
+    vid.poster = RS.media(video.poster);
+    vid.src = RS.media(video.path);
+    vid.setAttribute('aria-label', video.alt);
+    slots.appendChild(vid);
+  } else if (image) {
+    img = slot('img', 'image');
     img.src = RS.media(image.path);
     img.alt = image.alt;
     slots.appendChild(img);
   } else if (data.link && p !== 'instagram') {
     slots.appendChild(slot('span', 'link-domain', data.link.domain));
     slots.appendChild(slot('span', 'link-title', data.link.title));
+  }
+  /* Instagram has no quote or reply chrome. Elsewhere a quote sits under
+     the body; a reply adds the line and the parent card above the post. */
+  if (target && p !== 'instagram') {
+    if (target.type === 'reply' && target.author && target.author.handle) {
+      slots.appendChild(slot('span', 'reply', RS.t('replying_to', { handle: target.author.handle })));
+    }
+    if (target.author && target.author.name) slots.appendChild(slot('span', 'quote-name', target.author.name));
+    if (target.author && target.author.handle) {
+      slots.appendChild(slot('span', 'quote-handle', RS.t('pf_handle', { handle: target.author.handle })));
+    }
+    if (target.excerpt) slots.appendChild(slot('div', 'quote-excerpt', target.excerpt));
+    slots.appendChild(slot('span', 'quote-domain', quoteDomain(target.url)));
+    slots.appendChild(slot('span', 'quote-url', target.url));
   }
   frame.appendChild(slots);
 
@@ -196,23 +240,42 @@ platforms.forEach(function (p) {
      folder. Auto keeps today's panel. */
   var manualNote = part('manual-note', col);
   var copyImage = part('copy-image', col);
+  var copyVideo = part('copy-video', col);
+  var copyLink = part('copy-link', col);
   var revealButton = part('reveal', col);
   col.setAttribute('data-mode', modes[p]);
   if (manual(p)) {
     manualNote.textContent = RS.t('manual_note');
-    if (image) {
+    if (video) {
+      copyImage.remove();
+      copyVideo.setAttribute('label', RS.t('copy_path'));
+      copyVideo.setAttribute('media', video.path);
+      copyVideo.setAttribute('media-copy', 'path');
+      part('reveal-label', revealButton).textContent = RS.t('reveal');
+      revealButton.addEventListener('click', function () { RS.reveal(video.path); });
+    } else if (image) {
+      copyVideo.remove();
       copyImage.setAttribute('label', RS.t('copy_image'));
       copyImage.setAttribute('media', image.path);
       part('reveal-label', revealButton).textContent = RS.t('reveal');
       revealButton.addEventListener('click', function () { RS.reveal(image.path); });
     } else {
       copyImage.remove();
+      copyVideo.remove();
       revealButton.remove();
+    }
+    if (target) {
+      copyLink.setAttribute('label', RS.t('copy_link'));
+      copyLink.text = target.url;
+    } else {
+      copyLink.remove();
     }
     manualNote.parentNode.insertBefore(col.querySelector('.pp__copies'), manualNote.nextSibling);
   } else {
     manualNote.remove();
     copyImage.remove();
+    copyVideo.remove();
+    copyLink.remove();
     revealButton.remove();
   }
 
@@ -228,10 +291,10 @@ platforms.forEach(function (p) {
     badge(badges, 'danger', RS.t('lint_over_hashtags', { n: res.hashtags - res.hashtagLimit }));
     blocked = RS.t('over_limit_blocks');
   }
-  if (p === 'instagram' && !image) {
+  if (p === 'instagram' && !hasVisual) {
     blockedBy = badge(badges, 'danger', RS.t('lint_ig_needs_image'));
     blockedBy.id = 'lint-image-' + p;
-  } else if (p === 'instagram' && image) {
+  } else if (p === 'instagram' && hasVisual) {
     blockedBy = badge(badges, 'danger', RS.t('lint_ig_needs_image'));
     blockedBy.id = 'lint-image-' + p;
   }
@@ -251,7 +314,7 @@ platforms.forEach(function (p) {
     input.setAttribute('aria-describedby', blockedBy.id);
   }
   /* over the limit, or Instagram without any image: never approvable */
-  fixedBlock[p] = !!(blocked || (blockedBy && !image));
+  fixedBlock[p] = !!(blocked || (blockedBy && !hasVisual));
   if (fixedBlock[p]) {
     input.disabled = true;
     input.setAttribute('data-rs-blocked', '');
@@ -262,17 +325,27 @@ platforms.forEach(function (p) {
 
   /* Instagram needs its image. Only the selected panel is mounted, so until
      its frame reports a state the image element itself tells. */
-  if (p === 'instagram' && image) {
+  if (p === 'instagram' && hasVisual) {
+    var visual = vid || img;
     imageState[p] = function () {
       var known = frame.getAttribute('data-image-state');
       if (known) return known;
-      if (!img.complete) return 'loading';
-      return img.naturalWidth > 0 ? 'loaded' : 'error';
+      if (visual.tagName === 'VIDEO') {
+        if (visual.error) return 'error';
+        return visual.readyState >= 1 ? 'loaded' : 'loading';
+      }
+      if (!visual.complete) return 'loading';
+      return visual.naturalWidth > 0 ? 'loaded' : 'error';
     };
     var onImage = function () { syncControl(p); update(false); };
     frame.addEventListener('rs-image-state', onImage);
-    img.addEventListener('load', onImage);
-    img.addEventListener('error', onImage);
+    if (vid) {
+      vid.addEventListener('loadedmetadata', onImage);
+      vid.addEventListener('error', onImage);
+    } else {
+      img.addEventListener('load', onImage);
+      img.addEventListener('error', onImage);
+    }
   }
 });
 
@@ -425,8 +498,12 @@ function update(save) {
   var waiting = list.filter(function (p) { return !confirmed(p); })[0];
   if (waiting) {
     RS.setResult(null);
-    RS.setStatus(RS.t(imageState[waiting]() === 'error' ? 'approval_image_failed' : 'approval_waits_image',
-      { platform: NAMES[waiting] }));
+    var waitingVideo = !!video;
+    var failed = imageState[waiting]() === 'error';
+    var waitingKey = waitingVideo
+      ? (failed ? 'approval_video_failed' : 'approval_waits_video')
+      : (failed ? 'approval_image_failed' : 'approval_waits_image');
+    RS.setStatus(RS.t(waitingKey, { platform: NAMES[waiting] }));
     return;
   }
   /* only auto approvals are the bot's to post; a manual one never is.

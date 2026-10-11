@@ -12,6 +12,9 @@ KEYWORDS = {
 # Extension keyword on an array of objects: the named property must not
 # repeat across items (e.g. option ids). JSON Schema has no such keyword.
 UNIQUE_KEY = "x-rs-unique-key"
+# Extension keyword on an object: at most one of the named properties may
+# be present (e.g. a post image and a post video).
+EXCLUSIVE = "x-rs-exclusive"
 TYPES = {
     "object": dict,
     "array": list,
@@ -101,6 +104,20 @@ def check_schema(schema, pointer=""):
             raise SchemaError(_pointer(pointer, UNIQUE_KEY), "must be a non-empty property name")
         if schema.get("type", "array") != "array":
             raise SchemaError(_pointer(pointer, UNIQUE_KEY), "only applies to arrays")
+    if EXCLUSIVE in schema:
+        names = schema[EXCLUSIVE]
+        if (
+            not isinstance(names, list)
+            or len(names) < 2
+            or len(names) != len(set(names))
+            or not all(isinstance(name, str) and name for name in names)
+        ):
+            raise SchemaError(
+                _pointer(pointer, EXCLUSIVE),
+                "must be an array of two or more unique property names",
+            )
+        if schema.get("type", "object") != "object":
+            raise SchemaError(_pointer(pointer, EXCLUSIVE), "only applies to objects")
     if "enum" in schema and (not isinstance(schema["enum"], list) or not schema["enum"]):
         raise SchemaError(_pointer(pointer, "enum"), "must be a non-empty array")
     if "pattern" in schema:
@@ -240,6 +257,13 @@ def validate(value, schema, pointer=""):
                 validate(item, schema["items"], _pointer(pointer, index))
         if UNIQUE_KEY in schema:
             _check_unique_key(value, schema[UNIQUE_KEY], pointer)
+    if isinstance(value, dict) and EXCLUSIVE in schema:
+        present = [name for name in schema[EXCLUSIVE] if name in value]
+        if len(present) > 1:
+            raise SchemaError(
+                _pointer(pointer, present[-1]),
+                f"cannot be combined with {present[0]}",
+            )
     if isinstance(value, str):
         if len(value) < schema.get("minLength", 0):
             raise SchemaError(pointer, f"must be at least {schema['minLength']} characters")
