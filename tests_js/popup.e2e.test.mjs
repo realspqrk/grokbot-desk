@@ -201,7 +201,9 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
     try {
       await decide(page);
       await activeIs(page, runs[1].run_id);
-      await page.waitForFunction((t) => [...document.querySelectorAll('#rs-toasts .rs-toast')].some((x) => x.textContent === t), de.sent);
+      // the "sent" toast belonged to the decided report: it must not linger
+      // over the next one after the advance
+      assert.deepEqual(await page.$$eval('#rs-toasts .rs-toast', (t) => t.map((x) => x.textContent)), [], 'no toast over the next report');
       assert.equal(server.result(runs[0].run_id).status, 'submitted');
       await page.waitForFunction(() => document.querySelectorAll('#rs-strip .rs-strip__run').length === 2);
       assert.equal((await strip(page)).count, fill('strip_count', { n: 1, m: 2 }));

@@ -258,6 +258,12 @@
     setTimeout(function () { item.remove(); }, 3000);
   }
 
+  /* a toast belongs to the report it was raised for: switching reports
+     (auto-advance after a decision, a new arrival, the strip) clears it */
+  function clearToasts() {
+    if (el.toasts) el.toasts.textContent = '';
+  }
+
   // ------------------------------------------------------ core API ----
   function activeRunId() { return state.activeId; }
 
@@ -1119,6 +1125,7 @@
        once its detail has loaded (the close must not fire meanwhile) */
     var wasDone = !!state.done;
     clearDone();
+    clearToasts();
     state.pending = runId;
     setReady(false);
     function keepShown() {
