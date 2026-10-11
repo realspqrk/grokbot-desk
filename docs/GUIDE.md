@@ -56,7 +56,7 @@ When several bots post at once (a burst), the window stays one calm window:
 ## 2. Action design
 
 - Every item ends in an explicit choice. The person picks; nothing is decided by default.
-- Set `task.kind` and write a short `task.why` (at most 3 sentences). Labels say who acts next: `Gepostet ✓` when the person posted it, `Freigeben & posten` when the bot will, `Verstanden` when there is nothing to decide. The built-ins take their buttons from one table per kind (*Task banner*, section D).
+- Set `task.kind` and write a short `task.why` (aim for 3 sentences). Labels say who acts next: `Erledigt ✓` when the person does it, `Gepostet ✓` when they post it, `Freigeben & posten` when the bot will, `Verstanden` when there is nothing to decide. The actor-model built-ins take their buttons from one table (*Task banner*).
 - Choice labels are German verbs of at most 2 words (`Erledigt`, `Später`, `Ignorieren`, `Ja`, `Nein`, `Freigeben`, `Änderungen anfordern`).
 - At most 3 choices per item. Use `rs-action-row` (radio-group semantics, arrow keys).
 - No pre-selected choice. "Do nothing" is the default: a report that is discarded (`Verwerfen`) or expires gives the bot a `cancelled` or `expired` result, and the bot then does nothing.
@@ -313,7 +313,7 @@ Each bot can show its own **name**, **avatar** (an image or a built-in shape) an
 
 ### Task banner
 
-A busy person who was interrupted should know within 10 seconds what to do. Every report therefore opens with a banner above the title: the task line of its kind, one line of steps (`task.steps`, else a default per kind), at most three sentences of why, and `eta_min` / `due` as quiet meta (`~3 min`, `due today 15:00`, `overdue since 09:00`; Vienna time). A longer why from the template is folded behind `Mehr dazu` / `More on why`, the only control the banner may hold. A decided report keeps the banner, neutral and muted (`Gelesen: nichts weiter zu tun`, `Verworfen: der Bot macht nichts`).
+A busy person who was interrupted should know within 10 seconds what to do. Every report therefore opens with a banner above the title: the task line of its kind, one line of steps (`task.steps`, else a default per kind), at most three sentences of why, and `eta_min` / `due` as quiet meta (`~3 min`, `due today 15:00`, `overdue since 09:00`; Vienna time). A longer why, from the payload or from the template, is folded behind `Mehr dazu` / `More on why`, the only control the banner may hold. A decided report keeps the banner, neutral and muted (`Gelesen: nichts weiter zu tun`, `Verworfen: der Bot macht nichts`).
 
 `task` fields:
 
@@ -322,8 +322,8 @@ A busy person who was interrupted should know within 10 seconds what to do. Ever
 | `kind` | required: `post_yourself`, `approve_bot_acts`, `pick`, `fyi`, `review` or `blocking` |
 | `steps` | optional, one line, 1-140 characters |
 | `eta_min` | optional integer 1-120 (minutes of the person's effort) |
-| `due` | optional ISO date (`2026-10-14`) or ISO datetime with an offset |
-| `why` | optional, 1-360 characters and at most 3 sentences. Without it the banner shows the template's own lead text (`summary`, `intro`, `context` or `notes`, first three sentences, the rest folded) and the template leaves that text out, so nothing is said twice. A lead text with a link stays in the template |
+| `due` | optional calendar date `YYYY-MM-DD`, or an extended timestamp `YYYY-MM-DDTHH:MM[:SS[.fff]]Z` or with a `±HH:MM` offset. Basic ISO, week dates and other separators are rejected, so a deadline cannot vanish in the browser |
+| `why` | optional non-empty text. Aim for 3 sentences and 360 characters: past either limit, `show` warns and still accepts the report (exit 0). The banner shows the first three sentences, or the first 360 characters, and folds the rest. Without `why` the banner uses the template's lead (`summary`, `intro`, `context` or `notes`) the same way, and the template leaves that text out. A lead with a link stays in the template |
 
 Without `task` the kind is derived:
 
@@ -336,24 +336,46 @@ Without `task` the kind is derived:
 | `approve-one` | `approve_bot_acts`; `actor: "user"`: `post_yourself`; `actor: "none"`: `fyi` |
 | other templates | `review` |
 
-A given kind sets the matching actor when `data` leaves it out (for example `fyi` on `approve-one` means `actor: "none"`, `post_yourself` on `preview-post` makes every platform manual) and is rejected with a pointer when `data` says otherwise (`/data/actor`, `/data/platforms/1/mode`). Each built-in accepts only the kinds it can show (`pick-option`: `pick`, `blocking`). `blocking` keeps the derived kind's buttons and emphasises its primary.
+A given kind sets the matching actor when `data` leaves it out (for example `fyi` on `approve-one` means `actor: "none"`, `post_yourself` on `preview-post` makes every platform manual) and is rejected with a pointer when `data` says otherwise (`/data/actor`, `/data/platforms/1/mode`). Each built-in accepts only the kinds it can show (`pick-option`: `pick`, `blocking`). `blocking` keeps the derived kind's buttons and emphasises its primary. A template without an actor model (`_starter`, or a user template that does not extend a built-in) may set `review` or `blocking` only. An explicit `fyi` or any other kind is rejected at `/task/kind`: the banner would promise a button the template does not have. With no `task`, those templates still show the generic review banner and keep their own buttons.
 
-Buttons per kind (one table, `core\static\tasks.js`, used by every built-in's footer and per-item controls):
+Buttons per kind (one table, `core\static\tasks.js`, used by the actor-model built-ins' footers and per-item controls; `RS.cta(value, {item, actor, content})` is the per-item path):
 
 | Kind | Who acts next | Primary | Other buttons |
 |---|---|---|---|
 | `post_yourself` | the person posts, then reports back | `Gepostet ✓` | `Überspringen`; per decide-list item also `Später` |
+| user, not a post | the person does it, then reports back | `Erledigt ✓` (`Gesendet ✓` when `action` is `send`) | `Überspringen`. `approve-one` also offers `Änderungen anfordern` when `allow_changes` is set |
 | `approve_bot_acts` | the bot, after approval | `Freigeben & posten` / `& senden` / `& weiter` (or the payload's `approve_label`) | `Änderungen anfordern` or `Ablehnen` |
 | `pick` | the bot, with the chosen option | `Auswählen` (`<Option> wählen` once picked) | an optional note |
-| `fyi` | nobody | `Verstanden`, enabled at once | none, and no `Verwerfen` |
+| `fyi` | nobody | `Verstanden`, enabled at once | no other decision, and no `Verwerfen`. One collapsed note (`Notiz hinzufügen`), closed by default |
 | `review` | the bot, with the verdict | `Passt` | `Änderungen` |
 | `blocking` | as the derived kind | the derived kind's primary, emphasised | as the derived kind |
 
+`Gepostet ✓` is only for a post: a manual `preview-post` platform, a decide-list item with `content` `post` or `reply`, or an explicit `task.kind` of `post_yourself`. A user item without `content` reads `Erledigt ✓`. Result values stay `done` / `skipped` (and `later` on a list). A decide-list footer reads `Fertig` when every item is `actor: "user"`, and `Freigeben & weiter` only when the bot acts next. A mixed report (a preview with `auto` and `manual` platforms, a list with `user` and `bot` items) gives each actor one banner line, the person first, the bot by its display name (from `identity` or the registry):
+
+| State | Deutsch | English |
+|---|---|---|
+| open | `Du postest: X` / `Inbox Agent postet nach Freigabe: LinkedIn` | `You post: X` / `Inbox Agent posts after approval: LinkedIn` |
+| a list | `Du postest: 2 Antworten` / `Inbox Agent sendet nach Freigabe: 3 Einträge` | `You post: 2 replies` / `Inbox Agent sends after approval: 3 items` |
+| only X ticked | `Du postest: X` / `Inbox Agent postet nichts: LinkedIn nicht angehakt` | `You post: X` / `Inbox Agent posts nothing: LinkedIn not ticked` |
+| decided | `Du hast gepostet: X` / `Inbox Agent postet jetzt: LinkedIn` | `You posted: X` / `Inbox Agent posts now: LinkedIn` |
+| changes asked | `Du hast Änderungen angefordert` / `Inbox Agent postet nichts` | `You asked for changes` / `Inbox Agent posts nothing` |
+
+Platforms are named by their labels (up to three, then `LinkedIn, Instagram +2`); list items are counted (`Antworten` for `content: "reply"`, `Beiträge` for `post`, else `Einträge`). The person's verb is `postest` when every item of theirs is a post or reply, else `erledigst`. The bot's verb is the payload `action` (`post`, `send`, `continue`; `preview-post` always posts). The lines follow the ticks and choices: until something is ticked every platform is planned; after that an unticked platform, a skipped or deferred item and a rejected bot item are out, and a side with nothing left says so (`postet nichts`). A mixed preview's steps stay on one line and name per actor what is still open, in tab order, then the footer as it reads now:
+
+| State | Deutsch | English |
+|---|---|---|
+| nothing ticked | `LinkedIn: Freigeben anhaken · X: kopieren, selbst posten, Gepostet ✓ · dann Abschicken drücken` | `LinkedIn: tick Approve · X: copy, post it yourself, tick Posted ✓ · then press Submit` |
+| only LinkedIn ticked | `X: kopieren, selbst posten, Gepostet ✓ · oder Freigeben & posten drücken` | `X: copy, post it yourself, tick Posted ✓ · or press Approve & post` |
+| only X ticked | `LinkedIn: Freigeben anhaken · oder Gepostet ✓ drücken` | `LinkedIn: tick Approve · or press Posted ✓` |
+| everything ticked | `Jetzt Abschicken drücken` | `Now press Submit` |
+
+A platform that cannot be approved (over its limit, Instagram without an image) is not a step. The footer of a mixed preview names neither actor while both act: `Abschicken` / `Submit` (also, disabled, before anything is ticked), `Freigeben & posten` when only auto platforms are ticked, `Gepostet ✓` when only manual ones are. Its status splits the count: `1 freigegeben · 1 gepostet` / `1 approved · 1 posted`. A list's steps name the footer as it reads now (`Jeden Eintrag entscheiden, dann Freigeben & senden drücken`). A decided report words the same lines in the past tense.
+
 Colours: one calm tint per kind with a 4 px edge (`--rs-task-<kind>-bg` / `-edge` in `tokens.css`): amber for `post_yourself`, green for `approve_bot_acts`, violet for `pick`, grey for `fyi`, teal for `review`. Red only for `blocking` or when `due` is today or past. Text on every tint is at least 4.5:1 and the edge at least 3:1 in light and dark (`contrast-pairs.json`).
 
-The C16 exception: a report shows one accent and otherwise only neutral greys and small status dots (calm rule K6). The banner tint is a status colour, not the accent, and it is the only other colour allowed: exactly one banner, above the title, with no buttons in it. The calm checker (`tools\calm.mjs`) enforces all three. One primary action and at most 3 buttons per item still hold, because the banner adds none.
+The C16 exception: a report shows one accent and otherwise only neutral greys and small status dots (calm rule K6). The banner tint is a status colour, not the accent, and it is the only other colour allowed: exactly one banner, above the title, with no buttons in it and at most one details summary. The calm checker exempts that banner's background and edge, and neutral text on it; any other chromatic colour still fails, including inside the banner. One primary action and at most 3 buttons per item still hold. The information-only note is a closed disclosure, not a second action.
 
-Templates read the kind as `RS.task` (`{kind, base, verb, why_from}`) and a label as `RS.cta(value)` (`RS.cta('approve')` is `Freigeben & posten` for a post the bot makes, `Passt` for a review). Templates without an actor model, such as `_starter` and user templates that do not extend a built-in, show the banner but keep their own buttons.
+Templates read the kind as `RS.task` (`{kind, base, verb, why_from, mark, parties, steps_for}`) and a label as `RS.cta(value)` (`RS.cta('approve')` is `Freigeben & posten` for a post the bot makes, `Passt` for a review). `mark` is `posted`, `sent` or `done` when the person reports a completion. `parties` lists a mixed report's platforms (`{id, role}`) or items (`{role, noun}`). A template keeps the per-actor lines true with `RS.setTaskLive({parties, changes, stepsFor, stepsKey, stepsButton, tone})`, each party with `on` (`true` ticked or approved, `false` left out, absent while undecided) and, for a platform that cannot be approved, `blocked: true`. `stepsFor: 'mixed_platforms'` words the per-actor steps from the parties; `stepsKey` is any other steps key; both end with `stepsButton`.
 
 When no report is on screen while some wait (for example, a report failed to load), the window lists them under `Wartet auf dich` / `Waiting for you`: avatar, bot, title and the kind of task. A row opens its report.
 

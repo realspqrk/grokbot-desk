@@ -48,13 +48,15 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | Field | Rule |
 |---|---|
 | `intro` | optional, 1–300 characters, plain text |
+| `action` | optional `post`, `send` or `continue` (default): what the bot does with the bot items you approve. Names the footer (Approve & send) and the bot's banner line in a mixed list. The result does not change |
 | `items[]` | required, 1–5 items, shown in this order |
 | `items[].id` | `^[a-z0-9-]{1,40}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/items/1/id`; echoed in the result |
 | `items[].kind` | optional, 1–24 (a short category above the title, e.g. `Expense`) |
 | `items[].source` | optional, 1–60 (requester, sender or counterparty) |
 | `items[].title` | required, 1–140 (one line). An http(s) address in the title or detail becomes a link |
 | `items[].detail` | optional, 1–600 (a snippet, never a full document) |
-| `items[].actor` | optional `bot` (default) or `user`. `bot`: Approve, Reject, Defer. `user`: the person does it, so the choices are Posted ✓, Skip and Later (`done`, `skipped`, `later`) and `choices` is ignored. The bot never acts on a user item |
+| `items[].actor` | optional `bot` (default) or `user`. `bot`: Approve, Reject, Defer. `user`: the person does it. The choices are Done ✓, Skip and Later unless `content` is `post` or `reply` (Posted ✓) or `task.kind` is `post_yourself`. Results stay `done`, `skipped`, `later`. `choices` is ignored. The bot never acts on a user item |
+| `items[].content` | optional `post` or `reply`. Marks the item as something the person publishes, so the done choice reads Posted ✓. Without it a user item reads Done ✓ |
 | `items[].url` | optional http(s) address, 8–2048 characters. A hostname is required. No backslash or control character. Credentials are rejected only in the authority (`user@host`); `@` may appear in the path, query or fragment. Shown as one link on its own line (that link opens the post) when it can be opened. The same address is not linked again in the title or detail. A URL the opener would reject is plain text |
 | `items[].due` | optional `YYYY-MM-DD` (shown as `due Oct 14` / `fällig 14.10.`) |
 | `items[].copy[]` | optional, at most 4 of `{label 1–24, text 1–5000}`; each value is shown in full next to its button (long or multi-line values on their own line, clamped with *Show all*) |
@@ -73,7 +75,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 }
 ```
 
-`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`). For a `user` item, `choice` is `done`, `skipped` or `later`. `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Posted ✓ (Gepostet ✓), or Done (Fertig) when nothing was posted: it reports the status back. Otherwise it reads Approve & continue (Freigeben & weiter) while something is approved or nothing is decided yet. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
+`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`). For a `user` item, `choice` is `done`, `skipped` or `later`. `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Done (Fertig): it reports the status back. Approve & continue (Freigeben & weiter) only when the bot acts next. A mix of user and bot items gives each actor one banner line, the person first, counted: `You post: 2 replies` / `Inbox Agent sends after approval: 3 items` (the verb from the optional top-level `action`: `post`, `send` or `continue`, which also names the footer, e.g. Approve & send). A skipped, deferred or rejected item leaves its line; a side with nothing left says so (`Inbox Agent sends nothing`), and the decided banner says what each side did. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)
 
@@ -81,7 +83,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 |---|---|---|
 | `section_todo` | Needs you | Wartet auf dich |
 | `choice_approve`, `choice_reject`, `choice_defer` | Approve, Reject, Defer | Genehmigen, Ablehnen, Zurückstellen |
-| `posted`, `skip`, `later` | Posted ✓, Skip, Later (user items) | Gepostet ✓, Überspringen, Später |
+| `done_mark`, `posted`, `skip`, `later` | Done ✓ or Posted ✓, Skip, Later (user items) | Erledigt ✓ or Gepostet ✓, Überspringen, Später |
 | `footer_done` | Done (footer when every item is a user item and none was posted) | Fertig |
 | `links_label` | Links (name of a row that holds more than one link) | Links |
 | `choice_group_label` | Decision: {what} (name of each choice row) | Entscheidung: {what} |

@@ -134,6 +134,10 @@ def validate_payload(payload, registry, used_ids=(), warnings=None):
             validate(data, schema, "/data")
         except (TaskError, SchemaError) as error:
             raise EnvelopeError(error.pointer, error.message) from error
+        if warnings is not None:
+            from .tasks import why_warnings
+            why = payload["task"].get("why") if isinstance(payload["task"], dict) else None
+            warnings.extend(why_warnings(why))
     result = dict(payload)
     result["data"] = data
     if clamped is not None:

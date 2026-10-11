@@ -112,8 +112,12 @@ def test_a_full_task_validates_and_is_kept():
     ({"kind": "review", "due": "tomorrow"}, "/task/due"),
     ({"kind": "review", "due": "2026-10-11T15:00:00"}, "/task/due"),
     ({"kind": "review", "due": "2026-13-01"}, "/task/due"),
-    ({"kind": "review", "why": "x" * 361}, "/task/why"),
-    ({"kind": "review", "why": "One. Two. Three. Four."}, "/task/why"),
+    ({"kind": "review", "due": "20261011T15:00:00+02:00"}, "/task/due"),
+    ({"kind": "review", "due": "2026-W41-7T15:00:00+02:00"}, "/task/due"),
+    ({"kind": "review", "due": "2026-10-11X15:00:00+02:00"}, "/task/due"),
+    ({"kind": "review", "due": "2026-10-11T15:00:00+02:00:00"}, "/task/due"),
+    ({"kind": "review", "why": ""}, "/task/why"),
+    ({"kind": "review", "why": "   "}, "/task/why"),
 ])
 def test_invalid_task_is_rejected_with_a_pointer(task, pointer):
     error = rejected("review-doc", fixture("review-doc", "golden"), task)
@@ -209,6 +213,153 @@ def test_a_default_why_with_a_link_stays_in_the_template():
     data = dict(fixture("approve-one", "golden"), summary="See https://example.org/notes first.")
     view = task_view(envelope("approve-one", data), REGISTRY)
     assert (view["why"], view["why_from"]) == ("", None)
+
+
+def test_a_long_why_is_kept_folded_and_warned():
+    """More than three sentences, or more than 360 characters, stays valid.
+    The banner shows the start and folds the rest. Acceptance warns."""
+    from core.tasks import why_warnings
+
+    long = "One. Two. Three. Four is folded."
+    warnings = []
+    validated = validate_payload(
+        envelope("review-doc", fixture("review-doc", "golden"), task={"kind": "review", "why": long}),
+        REGISTRY,
+        warnings=warnings,
+    )
+    view = task_view(validated, REGISTRY)
+    assert (view["why"], view["why_more"]) == ("One. Two. Three.", "Four is folded.")
+    assert warnings and any("sentence" in item for item in warnings)
+    huge = "Word " * 90  # one sentence, well over 360 characters
+    assert len(huge) > 360
+    warnings.clear()
+    validated = validate_payload(
+        envelope("review-doc", fixture("review-doc", "golden"), task={"kind": "review", "why": huge}),
+        REGISTRY,
+        warnings=warnings,
+    )
+    view = task_view(validated, REGISTRY)
+    assert len(view["why"]) <= 360
+    assert view["why_more"]
+    assert view["why"] + view["why_more"]
+    assert any("360" in item for item in warnings)
+    assert why_warnings("Short.") == []
+
+
+def test_due_accepts_only_browser_safe_extended_iso_and_keeps_a_calendar_date():
+    date_only = validate_payload(
+        envelope("review-doc", fixture("review-doc", "golden"), task={"kind": "review", "due": "2026-10-14"}),
+        REGISTRY,
+    )
+    assert task_view(date_only, REGISTRY)["due"] == "2026-10-14"
+    stamped = validate_payload(
+        envelope(
+            "review-doc",
+            fixture("review-doc", "golden"),
+            task={"kind": "review", "due": "2026-10-11T15:00:00+02:00"},
+        ),
+        REGISTRY,
+    )
+    due = task_view(stamped, REGISTRY)["due"]
+    assert due.startswith("2026-10-11T15:00")
+    assert due.endswith("+02:00") or due.endswith("Z")
+    minutes = validate_payload(
+        envelope(
+            "review-doc",
+            fixture("review-doc", "golden"),
+            task={"kind": "review", "due": "2026-10-11T15:00Z"},
+        ),
+        REGISTRY,
+    )
+    assert "T" in task_view(minutes, REGISTRY)["due"]
+
+
+def test_a_template_without_an_actor_model_rejects_an_explicit_fyi(tmp_path):
+    from conftest import install_minimal_template
+
+    starter = rejected("_starter", fixture("_starter", "golden"), {"kind": "fyi"})
+    assert starter.pointer == "/task/kind"
+    review = validate_payload(
+        envelope("_starter", fixture("_starter", "golden"), task={"kind": "review"}),
+        REGISTRY,
+    )
+    assert task_view(review, REGISTRY)["kind"] == "review"
+    root = tmp_path / "repo"
+    install_minimal_template(root, "sample")
+    registry = scan_registry(root / "templates")
+    with pytest.raises(EnvelopeError) as caught:
+        validate_payload(
+            envelope("sample", {"message": "Hello"}, task={"kind": "fyi"}),
+            registry,
+        )
+    assert caught.value.pointer == "/task/kind"
+    kept = validate_payload(
+        envelope("sample", {"message": "Hello"}, task={"kind": "review"}),
+        registry,
+    )
+    assert task_view(kept, registry)["kind"] == "review"
+
+
+def test_a_user_action_is_generic_unless_it_is_a_post_or_a_send():
+    user = task_view(envelope("approve-one", {"summary": "Email the signed form.", "actor": "user"}), REGISTRY)
+    assert user["mark"] == "done"
+    sent = task_view(
+        envelope("approve-one", {"summary": "Email the signed form.", "actor": "user", "action": "send"}),
+        REGISTRY,
+    )
+    assert sent["mark"] == "sent"
+    explicit = task_view(
+        envelope(
+            "approve-one",
+            {"summary": "Post the note.", "actor": "user"},
+            task={"kind": "post_yourself"},
+        ),
+        REGISTRY,
+    )
+    assert explicit["mark"] == "posted"
+    manual = task_view(
+        envelope("preview-post", {"platforms": [{"platform": "x", "mode": "manual"}], "text": "Hi", "author": {"name": "A"}}),
+        REGISTRY,
+    )
+    assert manual["mark"] == "posted"
+    replies = task_view(envelope("decide-list", fixture("decide-list", "edge-replies")), REGISTRY)
+    assert replies["mark"] == "posted"
+    assert replies["steps_for"] == "replies"
+
+
+def test_a_mixed_report_names_both_actors():
+    mixed = task_view(
+        envelope(
+            "preview-post",
+            {"platforms": [{"platform": "linkedin", "mode": "auto"}, {"platform": "x", "mode": "manual"}], "text": "Hi", "author": {"name": "A"}},
+        ),
+        REGISTRY,
+    )
+    assert mixed["parties"] == [{"id": "linkedin", "role": "auto"}, {"id": "x", "role": "manual"}]
+    assert mixed["steps_for"] == "mixed_platforms"
+    items = {
+        "action": "send",
+        "items": [
+            {"id": "a", "title": "Pay the invoice", "actor": "bot"},
+            {"id": "b", "title": "Reply under the ferry post", "actor": "user", "content": "reply"},
+            {"id": "c", "title": "Sign the form", "actor": "user"},
+        ],
+    }
+    payload = validate_payload(envelope("decide-list", items), REGISTRY)
+    listing = task_view(payload, REGISTRY)
+    assert listing["parties"] == [
+        {"role": "bot", "noun": "item"},
+        {"role": "user_post", "noun": "reply"},
+        {"role": "user", "noun": "item"},
+    ]
+    assert listing["steps_for"] == "mixed_items"
+    assert listing["verb"] == "send"
+
+
+def test_a_decide_list_action_is_post_send_or_continue():
+    items = {"action": "delete", "items": [{"id": "a", "title": "Pay", "actor": "bot"}]}
+    with pytest.raises(EnvelopeError):
+        validate_payload(envelope("decide-list", items), REGISTRY)
 
 
 def test_run_detail_and_summary_carry_the_task(tmp_path):

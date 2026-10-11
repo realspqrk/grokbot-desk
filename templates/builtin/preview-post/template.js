@@ -482,12 +482,26 @@ function perPlatform(list, note) {
    platform manual: you post yourself, "Posted ✓" once one is ticked, "Skip"
    reports every platform as skipped. Any auto platform: "Approve & post"
    (the bot posts what is ticked; "Posted ✓" when only manual ones are
-   ticked), "Request changes" as the alternative. */
+   ticked), "Request changes" as the alternative. A mix names neither actor
+   while both act ("Submit"); before any tick every approvable platform is
+   the plan. */
 var selfPost = RS.task.base === 'post_yourself';
+var mixed = anyManual && platforms.some(function (p) { return !manual(p); });
 function submitLabel(list) {
   if (selfPost) return RS.cta('done');
-  var auto = list.some(function (p) { return !manual(p); });
-  return list.length && !auto ? RS.t('posted') : RS.cta('approve');
+  var plan = list.length || !mixed ? list : platforms.filter(function (p) { return !fixedBlock[p]; });
+  var auto = plan.some(function (p) { return !manual(p); });
+  var hand = plan.some(manual);
+  if (auto && hand) return RS.t('submit_mixed');
+  return hand ? RS.t('posted') : RS.cta('approve');
+}
+/* "1 approved · 1 posted": what goes to the bot and what you report */
+function splitCount(list) {
+  var hand = list.filter(manual).length;
+  var parts = [];
+  if (list.length > hand) parts.push(RS.t('mixed_approved_count', { n: list.length - hand }));
+  if (hand) parts.push(RS.t('mixed_posted_count', { n: hand }));
+  return parts.join(' ' + RS.t('sep') + ' ');
 }
 function skipAll() {
   RS.setResult({ decision: 'approve', platforms: [], comment: '', per_platform: perPlatform([]) });
@@ -500,6 +514,7 @@ function update(save) {
   var list = approved();
   if (save && RS.run.state === 'open') RS.draft.set({ approve: list, comment: comment.value, requesting: requesting, selected: selected });
   renderTicks();
+  refreshBanner(list);
   if (requesting) {
     var text = comment.value.trim();
     RS.setSubmitLabel(RS.t('send_request'));
@@ -535,11 +550,37 @@ function update(save) {
       decision: 'approve', platforms: list.filter(function (p) { return !manual(p); }), comment: '',
       per_platform: perPlatform(list)
     });
-    RS.setStatus(RS.t(anyManual ? 'decided_count' : 'approve_count', { n: list.length, total: platforms.length }));
+    RS.setStatus(mixed ? splitCount(list)
+      : RS.t(anyManual ? 'decided_count' : 'approve_count', { n: list.length, total: platforms.length }));
   } else {
     RS.setResult(null);
     RS.setStatus(RS.t(anyManual ? 'select_platform_manual' : 'select_platform'));
   }
+}
+
+/* A mix gets one banner line per actor. Until something is ticked every
+   platform is the plan; after that an unticked one is out (the bot does not
+   post it, or you report it skipped), and a change request means nobody
+   posts. The decided banner words the same state in the past. The steps
+   say per actor what is still open, then the footer as it reads now. */
+function refreshBanner(list) {
+  if (!anyManual || selfPost || typeof RS.setTaskLive !== 'function') return;
+  var picked = list.length > 0;
+  var chosen = picked ? list : platforms;
+  var hasAuto = chosen.some(function (p) { return !manual(p); });
+  RS.setTaskLive({
+    parties: platforms.map(function (p) {
+      var party = { id: p, role: manual(p) ? 'manual' : 'auto' };
+      if (picked) party.on = list.indexOf(p) >= 0;
+      if (fixedBlock[p]) party.blocked = true;
+      return party;
+    }),
+    changes: requesting,
+    stepsFor: requesting ? null : 'mixed_platforms',
+    stepsKey: requesting ? 'task_steps_changes' : null,
+    stepsButton: requesting ? RS.t('send_request') : submitLabel(list),
+    tone: requesting || hasAuto ? 'approve_bot_acts' : 'post_yourself'
+  });
 }
 
 function setRequesting(on, focus) {

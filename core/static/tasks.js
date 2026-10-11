@@ -23,11 +23,14 @@
   var CTA = {
     post_yourself: {
       primary: 'done',
-      labels: { done: 'posted', skipped: 'skip', later: 'later' },
+      /* done reads Posted, Sent or Done from opts.mark; the map's posted
+         value is the posting default. request_changes is the optional third
+         choice when the payload allows it. */
+      labels: { done: 'posted', skipped: 'skip', later: 'later', request_changes: 'request_changes' },
       secondary: ['skipped'],
       items: { done: 'posted', skipped: 'skip', later: 'later' },
       discard: true,
-      variants: ['footer_done']
+      variants: ['footer_done', 'done_mark', 'sent_mark', 'request_changes']
     },
     approve_bot_acts: {
       primary: 'approve',
@@ -35,7 +38,7 @@
       secondary: ['request_changes', 'reject'],
       items: { approve: 'choice_approve', reject: 'choice_reject', defer: 'choice_defer' },
       discard: true,
-      variants: ['send_request', 'send_rejection', 'posted', 'submit']
+      variants: ['send_request', 'send_rejection', 'posted', 'submit', 'submit_mixed']
     },
     pick: {
       primary: 'choose',
@@ -74,13 +77,33 @@
     return Object.prototype.hasOwnProperty.call(APPROVE, verb) ? APPROVE[verb] : APPROVE['continue'];
   }
 
-  /* the label key of a decision value; opts.item for a per-item choice,
-     opts.verb for the bot's approve (post, send or continue) */
+  var MARK_DONE = { posted: 'posted', sent: 'sent_mark', done: 'done_mark' };
+
+  /* the label key of a decision value.
+     opts.item with opts.actor (and opts.content post|reply) for one decide-list
+     item. opts.mark is posted, sent or done for a user action. opts.verb is
+     the bot's approve (post, send or continue). */
   function labelKey(kind, value, opts) {
     var row = CTA[kind] || CTA.review;
     opts = opts || {};
+    if (opts.item && opts.actor === 'user') {
+      if (value === 'done') {
+        if (opts.content === 'post' || opts.content === 'reply') return 'posted';
+        return MARK_DONE[opts.mark] || 'done_mark';
+      }
+      if (value === 'skipped') return 'skip';
+      if (value === 'later') return 'later';
+      return null;
+    }
+    if (opts.item && opts.actor === 'bot') {
+      var bot = CTA.approve_bot_acts.items;
+      return Object.prototype.hasOwnProperty.call(bot, value) ? bot[value] : null;
+    }
     var table = opts.item ? row.items : row.labels;
     if (!Object.prototype.hasOwnProperty.call(table, value)) return null;
+    if (!opts.item && value === 'done' && (kind === 'post_yourself' || opts.mark)) {
+      return MARK_DONE[opts.mark] || 'posted';
+    }
     if (!opts.item && kind === 'approve_bot_acts' && value === 'approve') return approveKey(opts.verb);
     return table[value];
   }
@@ -106,19 +129,144 @@
     };
   }
 
-  /* banner copy, as i18n keys */
+  /* banner copy, as i18n keys. A user action that is not a post uses mark
+     (done or sent) instead of the posting line. A mixed report has one line
+     per actor (actorLines), open or decided; lineKey is null for that. A
+     mixed preview's steps come from mixedSteps, not from stepsKey. */
   function lineKey(task, state) {
     var base = baseOf(task);
     if (state === 'cancelled' || state === 'expired') return 'task_' + state;
-    if (state === 'submitted') return 'task_done_' + base;
+    if (task && task.parties && task.parties.length) return null;
+    if (state === 'submitted') {
+      if (task && task.mark === 'done') return 'task_done_do';
+      if (task && task.mark === 'sent') return 'task_done_send';
+      return 'task_done_' + base;
+    }
     if (task && task.kind === 'blocking') return 'task_line_blocking';
+    if (task && task.mark === 'done') return 'task_line_do';
+    if (task && task.mark === 'sent') return 'task_line_send';
     if (base === 'approve_bot_acts') return 'task_line_approve_' + (APPROVE[task && task.verb] ? task.verb : 'continue');
     return 'task_line_' + base;
   }
 
-  function stepsKey(task) { return 'task_steps_' + baseOf(task); }
+  function stepsKey(task) {
+    if (task && task.steps_for === 'replies') return 'task_steps_replies';
+    if (task && task.steps_for === 'mixed_items') return 'task_steps_mixed_items';
+    if (task && task.mark === 'done') return 'task_steps_do';
+    if (task && task.mark === 'sent') return 'task_steps_send';
+    return 'task_steps_' + baseOf(task);
+  }
 
-  function kindKey(task) { return 'task_kind_' + (task && task.kind === 'blocking' ? 'blocking' : baseOf(task)); }
+  function kindKey(task) {
+    if (task && task.kind === 'blocking') return 'task_kind_blocking';
+    if (task && task.mark === 'done') return 'task_kind_do';
+    if (task && task.mark === 'sent') return 'task_kind_send';
+    return 'task_kind_' + baseOf(task);
+  }
+
+  /* A mixed report (the person and the bot both act) gets one banner line
+     per actor, the person first. parties are platforms ({id, role}) or items
+     ({role, noun}); role manual, user_post or user is the person's, auto or
+     bot the bot's. on: true (ticked, done, approved), false (left out:
+     unticked, skipped, rejected, deferred), absent (not decided yet).
+     Each line is {actor, key, names, dropped}: names are the parties the
+     line lists, dropped the ones left out (while open). opts.verb is the
+     bot's (post, send, continue); opts.decided switches to what happened;
+     opts.changes means the person asked for changes, so nobody acts. */
+  var PERSON_VERB = { manual: 'post', user_post: 'post', user: 'do' };
+  var BOT_ROLES = { auto: true, bot: true };
+
+  function actorLines(parties, opts) {
+    opts = opts || {};
+    var verb = Object.prototype.hasOwnProperty.call(APPROVE, opts.verb) ? opts.verb : 'continue';
+    var past = opts.decided ? '_done' : '';
+    var person = [];
+    var bot = [];
+    (parties || []).forEach(function (party) {
+      if (!party) return;
+      if (PERSON_VERB[party.role]) person.push(party);
+      else if (BOT_ROLES[party.role]) bot.push(party);
+    });
+    function split(list) {
+      if (opts.changes) return { names: [], dropped: [] };
+      return {
+        names: list.filter(function (party) { return party.on !== false; }),
+        dropped: opts.decided ? [] : list.filter(function (party) { return party.on === false; })
+      };
+    }
+    var lines = [];
+    if (person.length) {
+      var doing = person.every(function (party) { return PERSON_VERB[party.role] === 'post'; }) ? 'post' : 'do';
+      var mine = split(person);
+      var key = opts.changes ? 'task_you_changes' + past
+        : mine.names.length ? 'task_you_' + doing + past : 'task_you_none_' + doing + past;
+      lines.push({ actor: 'user', key: key, names: mine.names, dropped: mine.dropped });
+    }
+    if (bot.length) {
+      var theirs = split(bot);
+      lines.push({
+        actor: 'bot',
+        key: theirs.names.length ? 'task_bot_' + verb + past : 'task_bot_none_' + verb,
+        names: theirs.names,
+        dropped: theirs.dropped
+      });
+    }
+    return lines;
+  }
+
+  /* The steps of a mixed preview, one line: per role what is still open, in
+     tab order ("LinkedIn: tick Approve · X: copy, post it yourself, tick
+     Posted ✓"), then the footer as it reads now (tail then, before any
+     tick; or, while something is left; now, once nothing is). A platform
+     that cannot be approved (blocked) is never a step. */
+  var STEP_KEYS = { auto: 'task_step_auto', manual: 'task_step_manual' };
+
+  function mixedSteps(parties) {
+    var segments = [];
+    var byRole = {};
+    var ticked = false;
+    (parties || []).forEach(function (party) {
+      if (!party || !STEP_KEYS[party.role]) return;
+      if (party.on === true) ticked = true;
+      if (party.on === true || party.blocked) return;
+      if (!byRole[party.role]) {
+        byRole[party.role] = { role: party.role, key: STEP_KEYS[party.role], names: [] };
+        segments.push(byRole[party.role]);
+      }
+      byRole[party.role].names.push(party);
+    });
+    var tail = !segments.length ? 'task_steps_tail_now' : ticked ? 'task_steps_tail_or' : 'task_steps_tail_then';
+    return { segments: segments, tail: tail };
+  }
+
+  /* reply, post or item: what a counted group of items is called */
+  function nounOf(parties) {
+    var first = parties.length ? parties[0].noun : 'item';
+    return parties.every(function (party) { return party.noun === first; }) && first ? first : 'item';
+  }
+
+  /* Up to three names in full; more than that: the first two and "+n". */
+  function shortList(labels) {
+    if (labels.length <= 3) return { shown: labels.slice(), more: 0 };
+    return { shown: labels.slice(0, 2), more: labels.length - 2 };
+  }
+
+  var ACTOR_KEYS = [
+    'task_you_changes', 'task_you_changes_done', 'task_unticked', 'task_names_more',
+    'task_steps_mixed_items', 'task_steps_changes', 'task_step_auto', 'task_step_manual',
+    'task_steps_tail_then', 'task_steps_tail_or', 'task_steps_tail_now'
+  ];
+  ['post', 'do'].forEach(function (verb) {
+    ['task_you_', 'task_you_none_'].forEach(function (stem) {
+      ACTOR_KEYS.push(stem + verb, stem + verb + '_done');
+    });
+  });
+  Object.keys(APPROVE).forEach(function (verb) {
+    ACTOR_KEYS.push('task_bot_' + verb, 'task_bot_' + verb + '_done', 'task_bot_none_' + verb);
+  });
+  ['reply', 'post', 'item'].forEach(function (noun) {
+    ACTOR_KEYS.push('task_noun_' + noun, 'task_noun_' + noun + '_one');
+  });
 
   return {
     KINDS: KINDS,
@@ -129,6 +277,11 @@
     allowed: allowed,
     lineKey: lineKey,
     stepsKey: stepsKey,
-    kindKey: kindKey
+    kindKey: kindKey,
+    actorLines: actorLines,
+    mixedSteps: mixedSteps,
+    nounOf: nounOf,
+    shortList: shortList,
+    ACTOR_KEYS: ACTOR_KEYS
   };
 });

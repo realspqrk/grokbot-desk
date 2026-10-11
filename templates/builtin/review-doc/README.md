@@ -22,7 +22,7 @@ Pick this template when the person has to **read** something. For one yes/no dec
 | Field | Rule |
 |---|---|
 | `summary` | optional, 1–600 characters, plain text: what the document is and what to look at. Shown as the why of the task banner (first three sentences, the rest folded) unless the payload brings its own `task.why`; then it leads the report. An http(s) address keeps it in the report, where it becomes a link |
-| `actor` | optional `bot` (default), `user` or `none`. `bot`: Looks good / Changes, or Approve & post / send / continue when `action` is set. `user`: Posted ✓ / Skip (`done` / `skipped`). `none`: only Got it (`acknowledged`, no section comments). The bot never acts on `user` or `none`. A payload `task.kind` sets it when left out (`post_yourself` = `user`, `fyi` = `none`) |
+| `actor` | optional `bot` (default), `user` or `none`. `bot`: Looks good / Changes, or Approve & post / send / continue when `action` is set. `user`: Done ✓ / Skip (`done` / `skipped`), or Sent ✓ when `action` is `send`, or Posted ✓ when `task.kind` is `post_yourself`. `none`: only Got it (`acknowledged`), plus one collapsed note and no section comments. The bot never acts on `user` or `none`. A payload `task.kind` sets it when left out (`post_yourself` = `user`, `fyi` = `none`) |
 | `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. `post` and `send` name the bot primary; any other verb reads Approve & continue |
 | `copy` | optional, at most 4 of `{label 1–24, text 1–5000}`, shown near the top as fix texts to copy |
 | `format` | optional, `markdown` (default) or `text` |

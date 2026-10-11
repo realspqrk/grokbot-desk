@@ -170,6 +170,7 @@
     hydrated: null,    // key of the decided run the template shows (hydrationKey)
     requestGen: 0,     // activation request order; stale responses are ignored
     templateGen: 0,    // rendered-template lifetime; stale template calls are ignored
+    taskLive: null,    // { runId, parties, changes }: a mixed report's banner as the template last set it
     gone: {},          // run id -> true once this page decided it (before SSE says so)
     done: null,        // null, 'closing' or 'kept': the calm done state after the last decision
     order: [],         // open run ids in arrival order (arrivals append)
@@ -742,11 +743,25 @@
     el.task.setAttribute('data-kind', task.kind);
     el.task.setAttribute('data-tone', decided ? 'quiet' : taskTone(task, due));
     el.task.setAttribute('data-state', decided ? 'decided' : 'open');
+    if (due && due.urgent) el.task.setAttribute('data-due-urgent', 'true');
+    else el.task.removeAttribute('data-due-urgent');
     var line = document.createElement('p');
     line.className = 'rs-task__line';
-    line.appendChild(textNode('span', 'rs-task__what', t(TASKS.lineKey(task, run.state))));
-    if (!decided) line.appendChild(textNode('span', 'rs-task__steps', task.steps || t(TASKS.stepsKey(task))));
+    var whatKey = TASKS.lineKey(task, run.state);
+    var what = textNode('span', 'rs-task__what', whatKey ? t(whatKey) : '');
+    if (!whatKey) {
+      fillActors(what, run);
+      line.setAttribute('data-actors', '');
+    }
+    line.appendChild(what);
+    if (!decided) {
+      var stepsText = task.steps
+        || (task.steps_for === 'mixed_platforms' ? mixedStepsText(task.parties || [], t('submit_mixed'))
+          : t(TASKS.stepsKey(task), { button: t(TASKS.primaryKey('approve_bot_acts', { verb: task.verb })) }));
+      line.appendChild(textNode('span', 'rs-task__steps', stepsText));
+    }
     var meta = [];
+    if (!whatKey && !decided && task.kind === 'blocking') meta.push(t('task_kind_blocking'));
     if (!decided && task.eta_min) meta.push(t('task_eta', { n: number(task.eta_min) }));
     if (due) meta.push(due.text);
     if (meta.length) line.appendChild(textNode('span', 'rs-task__meta', meta.join(' ' + t('sep') + ' ')));
@@ -760,6 +775,88 @@
       box.appendChild(more);
     }
     el.task.hidden = false;
+  }
+
+  function partyLabel(party) {
+    if (!party) return '';
+    if (party.name) return party.name;
+    if (!party.id) return '';
+    var key = 'platform_' + party.id;
+    var label = t(key);
+    return label && label !== key ? label : party.id;
+  }
+
+  /* Platforms by their labels ("LinkedIn, Instagram +2"), items by count
+     ("2 replies"). */
+  function partyNames(parties) {
+    if (parties[0].noun) {
+      var noun = TASKS.nounOf(parties);
+      return parties.length === 1 ? t('task_noun_' + noun + '_one') : t('task_noun_' + noun, { n: number(parties.length) });
+    }
+    var list = TASKS.shortList(parties.map(partyLabel).filter(Boolean));
+    var names = list.shown.join(t('sep_names'));
+    return list.more ? t('task_names_more', { names: names, n: number(list.more) }) : names;
+  }
+
+  /* "LinkedIn: tick Approve · X: copy, post it yourself, tick Posted ✓ ·
+     then press Submit"; button is the footer as it reads now. */
+  function mixedStepsText(parties, button) {
+    var plan = TASKS.mixedSteps(parties);
+    var parts = plan.segments.map(function (segment) { return t(segment.key, { names: partyNames(segment.names) }); });
+    parts.push(t(plan.tail, { button: button }));
+    return parts.join(' ' + t('sep') + ' ');
+  }
+
+  /* The parties of a mixed report as the template last reported them
+     (ticks, choices, a change request), else as the payload lists them. */
+  function liveParties(run) {
+    var live = state.taskLive;
+    if (live && run && live.runId === run.run_id) return live;
+    return { parties: taskOf(run).parties || [], changes: false };
+  }
+
+  /* "You post: X" / "Research Agent posts after OK: LinkedIn". One line
+     per actor, the person first; the bot by its display name. */
+  function fillActors(what, run) {
+    var task = taskOf(run);
+    var live = liveParties(run);
+    var decided = !!run.state && run.state !== 'open';
+    var bot = identityOf(run).name;
+    what.textContent = '';
+    what.setAttribute('data-actors', '');
+    TASKS.actorLines(live.parties, { verb: task.verb, decided: decided, changes: live.changes }).forEach(function (entry) {
+      var text = t(entry.key, { bot: bot, names: entry.names.length ? partyNames(entry.names) : '' });
+      if (entry.dropped.length && entry.dropped[0].id) text = t('task_unticked', { line: text, names: partyNames(entry.dropped) });
+      var node = textNode('span', 'rs-task__actor', text);
+      node.setAttribute('data-actor', entry.actor);
+      what.appendChild(node);
+    });
+  }
+
+  /* A template updates the banner when the selection changes who acts:
+     parties with on (ticked or chosen) or changes (a change request) for a
+     mixed report, which also words the decided banner. stepsFor
+     mixed_platforms words the steps from those parties (on, blocked) and
+     stepsButton. Due-today and blocking keep the urgent tone; a decided
+     banner stays quiet. */
+  function applyTaskLive(patch) {
+    if (!patch || !state.active) return;
+    var run = state.active;
+    var decided = run.state !== 'open';
+    var what = el.taskInner.querySelector('.rs-task__what');
+    var steps = el.taskInner.querySelector('.rs-task__steps');
+    if (patch.parties) {
+      state.taskLive = { runId: run.run_id, parties: patch.parties, changes: !!patch.changes };
+      if (what && what.hasAttribute('data-actors')) fillActors(what, run);
+    } else if (patch.what != null && what) what.textContent = String(patch.what);
+    var button = patch.stepsButton != null ? String(patch.stepsButton) : t(TASKS.primaryKey('approve_bot_acts', { verb: taskOf(run).verb }));
+    if (patch.stepsFor === 'mixed_platforms' && patch.parties && steps) steps.textContent = mixedStepsText(patch.parties, button);
+    else if (patch.stepsKey && steps) steps.textContent = t(patch.stepsKey, { button: button });
+    else if (patch.steps != null && steps) steps.textContent = String(patch.steps);
+    var blocking = taskOf(run).kind === 'blocking';
+    if (patch.tone && !decided && el.task.getAttribute('data-due-urgent') !== 'true' && !blocking) {
+      el.task.setAttribute('data-tone', patch.tone);
+    }
   }
 
   // ------------------------------------------------------------ strip --
@@ -1353,13 +1450,26 @@
       data: run.data,
       /* the task kind and, when the banner shows a template field as the
          why, which one (the template then leaves it out) */
-      task: { kind: task.kind, base: base, verb: task.verb || 'continue', why_from: task.why_from || null },
-      /* the label of a decision value for this kind (tasks.js CTA table);
-         opts.item for a per-item choice */
+      task: {
+        kind: task.kind, base: base, verb: task.verb || 'continue',
+        why_from: task.why_from || null, mark: task.mark || null,
+        parties: task.parties || null, steps_for: task.steps_for || null
+      },
+      /* the label of a decision value for this kind (tasks.js CTA table).
+         opts.item with opts.actor and opts.content for one decide-list item;
+         opts.mark overrides posted / sent / done. */
       cta: function (value, opts) {
-        var key = TASKS.labelKey(base, value, { item: !!(opts && opts.item), verb: task.verb });
+        opts = opts || {};
+        var key = TASKS.labelKey(base, value, {
+          item: !!opts.item,
+          verb: opts.verb || task.verb,
+          mark: opts.mark || task.mark,
+          actor: opts.actor,
+          content: opts.content
+        });
         return key ? t(key) : '';
       },
+      setTaskLive: function (patch) { if (live()) applyTaskLive(patch); },
       run: {
         run_id: run.run_id, template: run.template, title: run.title, bot: run.bot,
         bot_display: run.bot_display, created: run.created, created_display: run.created_display,
@@ -1472,6 +1582,7 @@
     state.listeners = [];
     state.status = null;
     state.submitLabel = null;
+    state.taskLive = null;
     state.touched = draftGet(run.run_id) !== null;
     var nextUrl = new URL(location.href);
     nextUrl.searchParams.set('run', run.run_id);

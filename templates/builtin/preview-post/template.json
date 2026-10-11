@@ -62,6 +62,10 @@
     "approval_video_failed",
     "decided_count",
     "select_platform_manual",
-    "report_skips"
+    "report_skips",
+    "submit_mixed",
+    "mixed_approved_count",
+    "mixed_posted_count",
+    "sep"
   ]
 }

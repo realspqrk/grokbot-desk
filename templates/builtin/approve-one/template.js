@@ -11,8 +11,9 @@
 
    The task kind says who acts next and so which buttons exist (RS.cta,
    the shell's table): the bot acts once approved (Approve & verb, Reject,
-   optional Request changes), the user acts and reports back (Posted, Skip),
-   or it is information only (just Got it, no choice and no note). */
+   optional Request changes), the user acts and reports back (Done, or
+   Sent, or Posted when it is a post; Skip; Request changes when allowed),
+   or it is information only (just Got it, plus one collapsed note). */
 var data = RS.data;
 var actor = RS.task.base === 'post_yourself' ? 'user' : RS.task.base === 'fyi' ? 'none' : 'bot';
 function label(value) {
@@ -124,13 +125,27 @@ var noteShown = false;
 var values = actor === 'user' ? ['done', 'skipped']
   : actor === 'none' ? []
   : ['approve', 'reject'];
-if (actor === 'bot' && data.allow_changes === true) values.push('request_changes');
+if (actor !== 'none' && data.allow_changes === true) values.push('request_changes');
 if (values.length) {
   choice.setAttribute('label', RS.t('decision_label'));
   choice.options = values.map(function (v) { return { value: v, label: label(v) }; });
 } else {
   part('decide').remove();
-  box.remove();
+  var note = document.createElement('details');
+  note.className = 'rs-disclosure';
+  var summary = document.createElement('summary');
+  summary.textContent = RS.t('add_a_note');
+  var body = document.createElement('div');
+  body.className = 'rs-disclosure__body';
+  var noteLabel = document.createElement('label');
+  noteLabel.className = 'rs-label';
+  noteLabel.setAttribute('for', 'ao-comment');
+  noteLabel.textContent = RS.t('note');
+  body.appendChild(noteLabel);
+  body.appendChild(comment);
+  note.appendChild(summary);
+  note.appendChild(body);
+  box.replaceWith(note);
 }
 
 function render() {
@@ -145,7 +160,8 @@ function render() {
 function update(save) {
   if (!values.length) {
     RS.setSubmitLabel(label('acknowledged'));
-    RS.setResult({ decision: 'acknowledged', comment: '' });
+    var noted = /\S/.test(comment.value) ? comment.value : '';
+    RS.setResult({ decision: 'acknowledged', comment: noted });
     RS.setStatus(null);
     return;
   }
@@ -154,7 +170,7 @@ function update(save) {
   if (!decision) {
     RS.setSubmitLabel(label(values[0]));
     RS.setResult(null);
-    RS.setStatus(RS.t('decision_pick'));
+    RS.setStatus(RS.t(actor === 'user' ? 'decision_pick_user' : 'decision_pick'));
     return;
   }
   if (decision === 'request_changes') {

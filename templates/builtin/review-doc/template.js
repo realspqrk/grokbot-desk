@@ -7,10 +7,11 @@
    only through the template's media field (RS.media).
    Bot: "Looks good" is the primary and "Changes" the quiet alternative
    (or Approve & post / send / continue when action is set). User: "Done"
-   and "Skip". Info only: "Got it" and "Request changes". The alternative
-   opens the overall comment and the primary becomes "Send request", except
-   Skip, which sends at once. Each section heading carries a "Comment" action (shown on
-   hover/focus) that opens a comment for that section. */
+   (or "Sent", or "Posted" when it is a post) and "Skip". Info only: "Got it"
+   and one collapsed note. The alternative opens the overall comment and the
+   primary becomes "Send request", except Skip, which sends at once. Each
+   section heading carries a "Comment" action (shown on hover/focus) that
+   opens a comment for that section, except information only, which has none. */
 var data = RS.data;
 var MAX_SECTIONS = 200;
 var HEADING_MAX = 200;
@@ -640,10 +641,25 @@ RS.addMenuItem(RS.t(isText ? 'copy_text' : 'rd_copy_markdown'), function () {
 var overall = root.querySelector('#rd-comment');
 var requesting = false;
 /* the task kind says who acts next (RS.cta, the shell's table): the user
-   posts (Posted, Skip), information only (Got it), the bot acts once
-   approved (Approve & verb, Request changes), or a plain review (Looks
-   good, Changes) */
+   does it (Done, or Sent, or Posted when it is a post; Skip), information
+   only (Got it, plus one collapsed note), the bot acts once approved
+   (Approve & verb, Request changes), or a plain review (Looks good, Changes) */
 var base = RS.task.base;
+if (base === 'fyi') {
+  var fyiNote = make('details', 'rs-disclosure');
+  var fyiSummary = make('summary');
+  fyiSummary.textContent = RS.t('add_a_note');
+  var fyiBody = make('div', 'rs-disclosure__body');
+  var fyiLabel = make('label', 'rs-label');
+  fyiLabel.setAttribute('for', 'rd-comment');
+  fyiLabel.textContent = RS.t('note');
+  fyiBody.appendChild(fyiLabel);
+  fyiBody.appendChild(overall);
+  fyiNote.appendChild(fyiSummary);
+  fyiNote.appendChild(fyiBody);
+  part('request').hidden = true;
+  part('request').parentNode.insertBefore(fyiNote, part('request'));
+}
 
 function sectionComments() {
   return sections.filter(function (s) { return s.input.value.trim(); }).map(function (s) {
@@ -680,7 +696,8 @@ function update(save) {
   } else if (base === 'fyi') {
     RS.setSubmitLabel(RS.cta('acknowledged'));
     RS.setAlternative(null);
-    RS.setResult({ decision: 'acknowledged', comment: '', comments: [] });
+    var noted = overall.value.trim() ? overall.value : '';
+    RS.setResult({ decision: 'acknowledged', comment: noted, comments: [] });
     RS.setStatus(null);
     return;
   } else {
@@ -714,7 +731,9 @@ if (sent) {
 } else if (RS.run.state === 'open') {
   restore = RS.draft.get();
 }
-if (restore && typeof restore === 'object' && commentable) {
+if (restore && typeof restore === 'object' && base === 'fyi') {
+  if (typeof restore.comment === 'string') overall.value = restore.comment;
+} else if (restore && typeof restore === 'object' && commentable) {
   if (typeof restore.comment === 'string') overall.value = restore.comment;
   if (restore.requesting === true) { requesting = true; part('request').hidden = false; }
   var savedComments = restore.comments && typeof restore.comments === 'object' ? restore.comments : {};

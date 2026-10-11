@@ -16,7 +16,9 @@ const TASKS = require('../core/static/tasks.js');
 const DIR = (id) => path.join(ROOT, 'templates', 'builtin', id);
 const fixture = (id, name) => JSON.parse(readFileSync(path.join(DIR(id), 'fixtures', name + '.json'), 'utf8'));
 const de = JSON.parse(readFileSync(path.join(ROOT, 'core', 'i18n', 'de.json'), 'utf8'));
-const t = (key, vars = {}) => de[key].replace(/\{(\w+)\}/g, (_, name) => String(vars[name]));
+const en = JSON.parse(readFileSync(path.join(ROOT, 'core', 'i18n', 'en.json'), 'utf8'));
+const tIn = (table) => (key, vars = {}) => table[key].replace(/\{(\w+)\}/g, (_, name) => String(vars[name]));
+const t = tIn(de);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* what each built-in golden asks for when the payload names no task */
@@ -62,9 +64,69 @@ test('the CTA table: every label key exists in English and German; information o
   assert.equal(TASKS.CTA.fyi.discard, false);
   assert.equal(TASKS.labelKey('approve_bot_acts', 'approve', { verb: 'send' }), 'approve_send');
   assert.equal(TASKS.labelKey('post_yourself', 'done'), 'posted');
+  assert.equal(TASKS.labelKey('post_yourself', 'done', { mark: 'done' }), 'done_mark');
+  assert.equal(TASKS.labelKey('post_yourself', 'done', { mark: 'sent' }), 'sent_mark');
+  assert.equal(TASKS.labelKey('approve_bot_acts', 'done', { item: true, actor: 'user', content: 'reply' }), 'posted');
+  assert.equal(TASKS.labelKey('approve_bot_acts', 'done', { item: true, actor: 'user' }), 'done_mark');
+  assert.equal(TASKS.labelKey('post_yourself', 'approve', { item: true, actor: 'bot' }), 'choice_approve');
+  assert.equal(TASKS.lineKey({ kind: 'post_yourself', base: 'post_yourself', mark: 'done' }), 'task_line_do');
+  assert.equal(TASKS.stepsKey({ kind: 'post_yourself', steps_for: 'replies' }), 'task_steps_replies');
   assert.equal(TASKS.labelKey('review', 'request_changes'), 'changes');
   assert.equal(TASKS.baseOf({ kind: 'blocking', base: 'pick' }), 'pick');
   assert.equal(TASKS.lineKey({ kind: 'blocking', base: 'pick' }), 'task_line_blocking');
+});
+
+test('per-actor lines: the person first, the bot by its verb, nothing once every one is out, past tense once decided', () => {
+  const parties = [{ id: 'linkedin', role: 'auto' }, { id: 'x', role: 'manual' }];
+  const keys = (lines) => lines.map((line) => [line.actor, line.key, line.names.map((p) => p.id || p.noun)]);
+  assert.deepEqual(keys(TASKS.actorLines(parties, { verb: 'post' })), [
+    ['user', 'task_you_post', ['x']],
+    ['bot', 'task_bot_post', ['linkedin']],
+  ]);
+  const xOnly = [{ id: 'linkedin', role: 'auto', on: false }, { id: 'x', role: 'manual', on: true }];
+  const open = TASKS.actorLines(xOnly, { verb: 'post' });
+  assert.deepEqual(keys(open), [['user', 'task_you_post', ['x']], ['bot', 'task_bot_none_post', []]]);
+  assert.deepEqual(open[1].dropped.map((p) => p.id), ['linkedin']);
+  assert.deepEqual(keys(TASKS.actorLines(xOnly, { verb: 'post', decided: true })), [
+    ['user', 'task_you_post_done', ['x']],
+    ['bot', 'task_bot_none_post', []],
+  ]);
+  assert.deepEqual(keys(TASKS.actorLines(parties, { verb: 'post', changes: true, decided: true })), [
+    ['user', 'task_you_changes_done', []],
+    ['bot', 'task_bot_none_post', []],
+  ]);
+  const items = [{ role: 'user_post', noun: 'reply' }, { role: 'user', noun: 'item' }, { role: 'bot', noun: 'item', on: false }];
+  assert.deepEqual(keys(TASKS.actorLines(items, { verb: 'send' })), [
+    ['user', 'task_you_do', ['reply', 'item']],
+    ['bot', 'task_bot_none_send', []],
+  ]);
+  assert.deepEqual(TASKS.nounOf([{ noun: 'reply' }, { noun: 'reply' }]), 'reply');
+  assert.deepEqual(TASKS.nounOf([{ noun: 'reply' }, { noun: 'post' }]), 'item');
+  assert.deepEqual(TASKS.shortList(['LinkedIn', 'Instagram', 'Facebook']), { shown: ['LinkedIn', 'Instagram', 'Facebook'], more: 0 });
+  assert.deepEqual(TASKS.shortList(['LinkedIn', 'Mastodon', 'Instagram', 'Facebook']), { shown: ['LinkedIn', 'Mastodon'], more: 2 });
+  for (const table of [en, de]) {
+    for (const key of TASKS.ACTOR_KEYS) assert.ok(table[key], key);
+  }
+});
+
+test('mixed steps: what is left per actor in tab order, then the footer as it reads now', () => {
+  const plan = (parties) => {
+    const steps = TASKS.mixedSteps(parties);
+    return [steps.segments.map((s) => [s.key, s.names.map((p) => p.id)]), steps.tail];
+  };
+  const li = { id: 'linkedin', role: 'auto' };
+  const x = { id: 'x', role: 'manual' };
+  assert.deepEqual(plan([li, x]), [[['task_step_auto', ['linkedin']], ['task_step_manual', ['x']]], 'task_steps_tail_then']);
+  assert.deepEqual(plan([{ ...li, on: true }, { ...x, on: false }]), [[['task_step_manual', ['x']]], 'task_steps_tail_or']);
+  assert.deepEqual(plan([{ ...li, on: false }, { ...x, on: true }]), [[['task_step_auto', ['linkedin']]], 'task_steps_tail_or']);
+  assert.deepEqual(plan([{ ...li, on: true }, { ...x, on: true }]), [[], 'task_steps_tail_now']);
+  const golden = [x, li, { id: 'instagram', role: 'auto', blocked: true }, { id: 'facebook', role: 'auto' }];
+  assert.deepEqual(plan(golden), [[['task_step_manual', ['x']], ['task_step_auto', ['linkedin', 'facebook']]], 'task_steps_tail_then'],
+    'a platform that cannot be approved is not a step');
+  for (const table of [en, de]) {
+    for (const key of ['task_step_auto', 'task_step_manual', 'task_steps_tail_then', 'task_steps_tail_or', 'task_steps_tail_now',
+      'submit_mixed', 'mixed_approved_count', 'mixed_posted_count']) assert.ok(table[key], key);
+  }
 });
 
 /* the data a golden needs so the server accepts the kind: a platform the
@@ -88,15 +150,21 @@ const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CO
 
 describe('task banner and buttons per kind (served, headless Edge)', { skip }, () => {
   let server;
+  let serverEn;
   let browser;
 
   before(async () => {
-    server = await startServer({ port: PORT });
+    [server, serverEn] = await Promise.all([
+      startServer({ port: PORT }),
+      startServer({ port: PORT + 31, env: { RS_LANG: 'en' } }),
+    ]);
     browser = await chromium.launch({ channel: browserChannel(), headless: true });
   });
 
   after(async () => {
-    try { if (browser) await browser.close(); } finally { if (server) await server.stop(); }
+    try { if (browser) await browser.close(); } finally {
+      try { if (serverEn) await serverEn.stop(); } finally { if (server) await server.stop(); }
+    }
   });
 
   const show = (template, data, extra = {}) => server.show(data, { template, version: 1, title: `${template} report`, ...extra });
@@ -111,7 +179,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     if (opts.beforeGoto) await opts.beforeGoto(page);
-    await page.goto(server.url(`?client=test${query}`));
+    await page.goto((opts.server || server).url(`?client=test${query}`));
     await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
     return { ctx, page, errors };
   }
@@ -128,6 +196,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       tone: box.getAttribute('data-tone'),
       state: box.getAttribute('data-state'),
       what: text('.rs-task__what'),
+      actors: [...box.querySelectorAll('.rs-task__actor')].map((node) => [node.getAttribute('data-actor'), node.textContent]),
       meta: text('.rs-task__meta'),
       steps: text('.rs-task__steps'),
       why: text('.rs-task__why'),
@@ -168,8 +237,17 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         assert.equal(view.kind, want.kind, template);
         assert.equal(view.tone, want.kind, template);
         assert.equal(view.state, 'open', template);
-        assert.equal(view.what, t(TASKS.lineKey(task)), template);
-        assert.equal(view.steps, t(TASKS.stepsKey(task)), template);
+        if (template === 'preview-post') {
+          /* the golden: X by hand, LinkedIn, Instagram and Facebook by the bot */
+          assert.deepEqual(view.actors.map(([actor]) => actor), ['user', 'bot'], template);
+          assert.equal(view.steps, [
+            t('task_step_manual', { names: 'X' }), t('task_step_auto', { names: 'LinkedIn, Instagram, Facebook' }),
+            t('task_steps_tail_then', { button: t('submit_mixed') }),
+          ].join(' · '), template);
+        } else {
+          assert.equal(view.what, t(TASKS.lineKey(task)), template);
+          assert.equal(view.steps, t(TASKS.stepsKey(task)), template);
+        }
         assert.equal(view.controls, 0, `${template}: no buttons in the banner`);
         assert.ok(view.summaries <= 1, template);
         assert.deepEqual(errors, [], template);
@@ -187,9 +265,12 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         const bar = await footer(page);
         const key = TASKS.primaryKey(want.kind, { verb: want.verb });
         /* a payload may name the bot's approve itself (approve_label);
-           templates without an actor model keep the shell's generic label */
+           templates without an actor model keep the shell's generic label;
+           the preview golden is mixed (you post X, the bot the rest) */
         const expected = template === '_starter' ? de.submit
-          : template === 'approve-one' && data.approve_label ? data.approve_label : t(key);
+          : template === 'approve-one' && data.approve_label ? data.approve_label
+            : template === 'preview-post' ? t('submit_mixed') : t(key);
+        if (template === 'preview-post') assert.ok(TASKS.allowed(want.kind, { verb: want.verb }).variants.includes('submit_mixed'));
         assert.equal(bar.primary, expected, `${template} (${want.kind})`);
       } finally { await ctx.close(); }
     }
@@ -215,8 +296,11 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
           const bar = await footer(page);
           assert.equal(view.kind, kind, label);
           assert.equal(view.tone, kind === 'blocking' ? 'urgent' : kind, label);
+          const userFooter = template === 'decide-list' && base === 'post_yourself' && bar.primary === t('footer_done');
+          /* a mixed preview at rest plans both actors: the neutral send */
+          const mixedFooter = template === 'preview-post' && base === 'approve_bot_acts' && bar.primary === t('submit_mixed');
           assert.ok(
-            primaries.includes(bar.primary) || (base === 'pick' && bar.primary === t('po_choose_idle')),
+            primaries.includes(bar.primary) || (base === 'pick' && bar.primary === t('po_choose_idle')) || userFooter || mixedFooter,
             `${label}: primary ${bar.primary} (allowed ${primaries.join(' | ')})`,
           );
           assert.equal(bar.emphasis, kind === 'blocking', `${label}: emphasis`);
@@ -385,6 +469,219 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       assert.equal(await page.textContent('#rs-title'), 'Venue');
       assert.deepEqual(errors.filter((e) => !/Failed to load resource|ERR_FAILED/.test(e)), []);
     } finally { await ctx.close(); }
+  });
+
+  test('a user action says Done, a send says Sent, and an explicit post says Posted', async () => {
+    await server.clearRuns();
+    const summary = 'Email the signed form back today.';
+    const generic = show('approve-one', { summary, actor: 'user', allow_changes: true });
+    const { ctx, page } = await openRun(generic);
+    try {
+      const view = await banner(page);
+      assert.equal(view.what, t('task_line_do'));
+      assert.equal(view.steps, t('task_steps_do'));
+      assert.equal(await page.textContent('#rs-status'), t('decision_pick_user'));
+      const labels = await page.$$eval('[data-ao="choice"] button', (buttons) => buttons.map((b) => b.textContent));
+      assert.deepEqual(labels, [t('done_mark'), t('skip'), t('request_changes')]);
+      await page.click('[data-ao="choice"] button[value="request_changes"]');
+      await page.fill('#ao-comment', 'Use the new address.');
+      assert.equal(await page.textContent('#rs-submit-label'), t('send_request'));
+    } finally { await ctx.close(); }
+    const sent = show('review-doc', { ...fixture('review-doc', 'golden'), actor: 'user', action: 'send' });
+    const sentPage = await openRun(sent);
+    try {
+      assert.equal((await banner(sentPage.page)).what, t('task_line_send'));
+      assert.equal(await sentPage.page.textContent('#rs-submit-label'), t('sent_mark'));
+    } finally { await sentPage.ctx.close(); }
+    const posted = show('approve-one', { summary, actor: 'user' }, { task: { kind: 'post_yourself' } });
+    const postedPage = await openRun(posted);
+    try {
+      assert.equal((await banner(postedPage.page)).what, t('task_line_post_yourself'));
+      assert.equal(await postedPage.page.textContent('#rs-submit-label'), t('posted'));
+    } finally { await postedPage.ctx.close(); }
+  });
+
+  test('information only keeps one collapsed note and no second action', async () => {
+    await server.clearRuns();
+    const run = show('approve-one', { ...fixture('approve-one', 'golden'), actor: 'none' });
+    const { ctx, page } = await openRun(run);
+    try {
+      const summary = page.locator('#rs-mount summary', { hasText: t('add_a_note') });
+      assert.equal(await summary.count(), 1);
+      assert.equal(await summary.evaluate((el) => el.parentElement.open), false);
+      assert.equal(await page.locator('#rs-mount rs-action-row').count(), 0);
+      assert.equal(await page.isHidden('#rs-discard'), true);
+      await page.click('#rs-submit');
+      const deadline = Date.now() + 5000;
+      while (!server.result(run.run_id) && Date.now() < deadline) await sleep(20);
+      assert.deepEqual(server.result(run.run_id).data, { decision: 'acknowledged', comment: '' });
+    } finally { await ctx.close(); }
+  });
+
+  /* mixed reports: one banner line per actor, the person first, the bot by
+     its display name; true in every state and once decided (en and de) */
+  const mixedPost = fixture('preview-post', 'mixed-image');
+  const reply = (id) => ({ id, title: `Reply ${id}`, actor: 'user', content: 'reply', url: `https://example.com/post/${id}` });
+  const mixedList = {
+    action: 'send',
+    items: [reply('ferry'), reply('market'),
+      { id: 'flour', title: 'Pay the flour invoice', actor: 'bot' },
+      { id: 'power', title: 'Pay the power bill', actor: 'bot' },
+      { id: 'boxes', title: 'Pay for the boxes', actor: 'bot' }],
+  };
+  const decided = (page) => page.waitForFunction(() => document.getElementById('rs-task').getAttribute('data-state') === 'decided');
+
+  for (const lang of ['de', 'en']) {
+    const tl = lang === 'en' ? tIn(en) : t;
+    const on = () => (lang === 'en' ? serverEn : server);
+
+    test(`${lang}: a mixed preview names you first and the bot by name, in every tick state and once decided`, async () => {
+      const srv = on();
+      await srv.clearRuns();
+      const bot = 'Research Agent';
+      const run = srv.show(mixedPost, { template: 'preview-post', version: 1, title: 'Bread course', bot: 'research-agent', identity: { name: bot } });
+      const { ctx, page, errors } = await open(`&run=${run.run_id}`, { server: srv, viewport: { width: 864, height: 836 } });
+      const lines = async () => (await banner(page)).actors;
+      const you = tl('task_you_post', { names: 'X' });
+      const botPosts = tl('task_bot_post', { bot, names: 'LinkedIn' });
+      const steps = (segments, tail, button) => [
+        ...segments.map(([key, names]) => tl(key, { names })), tl(tail, { button: tl(button) }),
+      ].join(' · ');
+      const bar = () => page.evaluate(() => ({
+        label: document.getElementById('rs-submit-label').textContent,
+        disabled: document.getElementById('rs-submit').disabled,
+        status: document.getElementById('rs-status').textContent,
+      }));
+      try {
+        assert.deepEqual(await lines(), [['user', you], ['bot', botPosts]], 'initial');
+        assert.equal((await banner(page)).steps,
+          steps([['task_step_auto', 'LinkedIn'], ['task_step_manual', 'X']], 'task_steps_tail_then', 'submit_mixed'), 'initial');
+        assert.deepEqual(await bar(), { label: tl('submit_mixed'), disabled: true, status: tl('select_platform_manual') }, 'initial');
+        const stepsRows = await page.$eval('.rs-task__steps', (el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+        assert.equal(stepsRows, 1, 'the steps stay on one line at 864 px');
+
+        await page.check('#approve-linkedin');
+        assert.deepEqual(await lines(), [
+          ['user', tl('task_unticked', { line: tl('task_you_none_post'), names: 'X' })], ['bot', botPosts],
+        ], 'only LinkedIn');
+        assert.equal((await banner(page)).steps, steps([['task_step_manual', 'X']], 'task_steps_tail_or', 'approve_post'), 'only LinkedIn');
+        assert.deepEqual(await bar(), { label: tl('approve_post'), disabled: false, status: tl('mixed_approved_count', { n: 1 }) }, 'only LinkedIn');
+
+        await page.uncheck('#approve-linkedin');
+        await page.click('#tab-x');
+        /* the X tab: the copies (text, hashtags, image, folder) and the Posted ✓ tick */
+        const side = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
+        assert.deepEqual(side, ['x-text', 'x-hashtags', 'x-image', 'reveal-x', 'approve-x']);
+        assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), tl('posted'));
+        assert.equal(await page.textContent('#panel-x [data-pp="manual-note"]'), tl('manual_note'));
+        await page.check('#approve-x');
+        assert.deepEqual(await lines(), [
+          ['user', you], ['bot', tl('task_unticked', { line: tl('task_bot_none_post', { bot }), names: 'LinkedIn' })],
+        ], 'only X');
+        assert.equal((await banner(page)).steps, steps([['task_step_auto', 'LinkedIn']], 'task_steps_tail_or', 'posted'), 'only X');
+        assert.deepEqual(await bar(), { label: tl('posted'), disabled: false, status: tl('mixed_posted_count', { n: 1 }) }, 'only X');
+
+        await page.click('#tab-linkedin');
+        await page.check('#approve-linkedin');
+        assert.deepEqual(await lines(), [['user', you], ['bot', botPosts]], 'both');
+        assert.equal((await banner(page)).steps, steps([], 'task_steps_tail_now', 'submit_mixed'), 'both');
+        assert.deepEqual(await bar(), {
+          label: tl('submit_mixed'), disabled: false,
+          status: `${tl('mixed_approved_count', { n: 1 })} · ${tl('mixed_posted_count', { n: 1 })}`,
+        }, 'both');
+
+        await page.click('#rs-submit');
+        await decided(page);
+        assert.deepEqual(srv.result(run.run_id).data, {
+          decision: 'approve', platforms: ['linkedin'], comment: '',
+          per_platform: { linkedin: { mode: 'auto', decision: 'approved' }, x: { mode: 'manual', decision: 'done' } },
+        }, 'the result is unchanged by the label');
+        const done = [['user', tl('task_you_post_done', { names: 'X' })], ['bot', tl('task_bot_post_done', { bot, names: 'LinkedIn' })]];
+        assert.deepEqual(await lines(), done, 'decided');
+        await page.reload();
+        await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
+        await decided(page);
+        assert.deepEqual(await lines(), done, 'decided, reloaded');
+        assert.deepEqual(errors, []);
+      } finally { await ctx.close(); }
+    });
+
+    test(`${lang}: a mixed preview that asks for changes says nobody posts`, async () => {
+      const srv = on();
+      await srv.clearRuns();
+      const bot = 'Research Agent';
+      const run = srv.show(mixedPost, { template: 'preview-post', version: 1, title: 'Bread course', bot: 'research-agent', identity: { name: bot } });
+      const { ctx, page, errors } = await open(`&run=${run.run_id}`, { server: srv });
+      try {
+        await page.click('#rs-alt');
+        await page.fill('#pp-comment', 'Use the new date.');
+        assert.deepEqual((await banner(page)).actors, [['user', tl('task_you_changes')], ['bot', tl('task_bot_none_post', { bot })]]);
+        assert.equal((await banner(page)).steps, tl('task_steps_changes', { button: tl('send_request') }));
+        await page.click('#rs-submit');
+        await decided(page);
+        assert.deepEqual((await banner(page)).actors, [['user', tl('task_you_changes_done')], ['bot', tl('task_bot_none_post', { bot })]]);
+        assert.deepEqual(errors, []);
+      } finally { await ctx.close(); }
+    });
+
+    test(`${lang}: a mixed decide-list counts what you post and what the bot sends, as you decide and once decided`, async () => {
+      const srv = on();
+      await srv.clearRuns();
+      /* no identity in the payload: the name comes from the shipped registry */
+      const bot = 'Inbox Agent';
+      const run = srv.show(mixedList, { template: 'decide-list', version: 1, title: 'Replies and invoices', bot: 'inbox-agent' });
+      const { ctx, page, errors } = await open(`&run=${run.run_id}`, { server: srv, viewport: { width: 864, height: 836 } });
+      const lines = async () => (await banner(page)).actors;
+      const pick = (value) => page.click(`[data-rs-item][data-current] rs-action-row button[value="${value}"]`);
+      try {
+        assert.deepEqual(await lines(), [
+          ['user', tl('task_you_post', { names: tl('task_noun_reply', { n: 2 }) })],
+          ['bot', tl('task_bot_send', { bot, names: tl('task_noun_item', { n: 3 }) })],
+        ], 'initial');
+        assert.equal((await banner(page)).steps, tl('task_steps_mixed_items', { button: tl('approve_send') }));
+        assert.equal(await page.textContent('#rs-submit-label'), tl('approve_send'));
+        await pick('done');
+        await pick('skipped');
+        assert.deepEqual(await lines(), [
+          ['user', tl('task_you_post', { names: tl('task_noun_reply_one') })],
+          ['bot', tl('task_bot_send', { bot, names: tl('task_noun_item', { n: 3 }) })],
+        ], 'one reply skipped');
+        await pick('reject');
+        await pick('reject');
+        await pick('reject');
+        assert.deepEqual(await lines(), [
+          ['user', tl('task_you_post', { names: tl('task_noun_reply_one') })],
+          ['bot', tl('task_bot_none_send', { bot })],
+        ], 'every bot item rejected');
+        assert.equal((await banner(page)).steps, tl('task_steps_mixed_items', { button: tl('submit') }));
+        await page.click('[data-item-id="flour"] .dl-row');
+        await pick('approve');
+        assert.deepEqual((await lines())[1], ['bot', tl('task_bot_send', { bot, names: tl('task_noun_item_one') })], 'one approved');
+        await page.click('#rs-submit');
+        await decided(page);
+        assert.deepEqual(await lines(), [
+          ['user', tl('task_you_post_done', { names: tl('task_noun_reply_one') })],
+          ['bot', tl('task_bot_send_done', { bot, names: tl('task_noun_item_one') })],
+        ], 'decided');
+        assert.deepEqual(errors, []);
+      } finally { await ctx.close(); }
+    });
+  }
+
+  test('an extended due stays urgent in the browser; a basic timestamp is rejected', async () => {
+    await server.clearRuns();
+    const data = { summary: 'The ferry invoice is due.' };
+    const run = show('approve-one', data, { task: { kind: 'approve_bot_acts', due: '2020-01-15T15:00:00+01:00' } });
+    const { ctx, page } = await openRun(run);
+    try {
+      const view = await banner(page);
+      assert.equal(view.tone, 'urgent');
+      assert.ok(view.meta && view.meta.length > 0, 'the due text is on the banner');
+    } finally { await ctx.close(); }
+    assert.throws(
+      () => show('approve-one', data, { task: { kind: 'approve_bot_acts', due: '20201015T15:00:00+01:00' } }),
+      /due|show failed/u,
+    );
   });
 
   test('no open report: the empty state stays one quiet line and no banner', async () => {

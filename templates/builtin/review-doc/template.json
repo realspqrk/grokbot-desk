@@ -33,6 +33,8 @@
     "done_check",
     "skip",
     "got_it",
+    "add_a_note",
+    "note",
     "approve_post",
     "approve_send",
     "approve_continue",

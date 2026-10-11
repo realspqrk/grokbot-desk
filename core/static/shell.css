@@ -137,6 +137,10 @@ button, input, textarea, select { font: inherit; color: inherit; }
   gap: var(--space-1) var(--space-3);
 }
 .rs-task__what { font-weight: var(--rs-fw-strong); }
+/* a mixed report: one line per actor, the person first */
+.rs-task__what[data-actors] { display: grid; flex-basis: 100%; }
+/* its steps name each actor's platforms on one line, across the banner */
+.rs-task__inner > .rs-task__line[data-actors] { max-width: none; }
 .rs-task__meta { color: var(--rs-muted); font-size: var(--rs-fs-sm); white-space: nowrap; }
 .rs-task__steps { font-size: var(--rs-fs-sm); }
 .rs-task__more > summary {
@@ -489,9 +493,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
   flex: 1;
   min-width: 0;
   color: var(--rs-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 /* errors stay neutral text; a small status dot carries the hue (K6) */
 .rs-submitbar__status[data-tone="danger"] { color: var(--rs-ink); }

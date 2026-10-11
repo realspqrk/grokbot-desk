@@ -15,15 +15,35 @@
   its `actor`, so existing payloads work unchanged. A kind sets the matching
   actor when `data` leaves it out and is rejected with a pointer when `data`
   contradicts it.
-- Buttons follow the kind, from one table for every built-in: `Posted ✓` /
-  `Skip` when you post it yourself, `Approve & post` / `send` / `continue`
-  when the bot acts, `Choose`, `Got it` alone for information (no Request
-  changes, no Discard), `Looks good` / `Changes` for a review. `approve-one`
-  and `review-doc` with `actor: "user"` now read `Posted ✓` instead of
-  `Done ✓`. `preview-post` posting yourself offers `Skip` instead of
-  `Request changes`, and the primary stays disabled until a platform is
-  ticked (`Confirm` is gone; a mix reads `Approve & post`). Templates get
-  `RS.task` and `RS.cta(value)`.
+- Buttons follow the kind, from one table for the actor-model built-ins:
+  `Posted ✓` / `Skip` when you post it yourself, `Done ✓` / `Skip` when you
+  do something else (`Sent ✓` when `action` is `send`), `Approve & post` /
+  `send` / `continue` when the bot acts, `Choose`, `Got it` alone for
+  information (one collapsed note, no Request changes, no Discard),
+  `Looks good` / `Changes` for a review. `Posted ✓` is for a manual
+  platform, a decide-list item with `content` `post` or `reply`, or an
+  explicit `task.kind` of `post_yourself`. A decide-list footer reads
+  `Done` when every item is yours, and `Approve & continue` only when the
+  bot acts next. A mixed report (a preview with auto and manual platforms,
+  a list with your items and the bot's) gives each actor one banner line,
+  you first, the bot by its display name: `You post: X` /
+  `Inbox Agent posts after approval: LinkedIn`, or counted for a list
+  (`You post: 2 replies` / `Inbox Agent sends after approval: 3 items`).
+  The lines follow the ticks and choices (`Inbox Agent posts nothing:
+  LinkedIn not ticked`), and the decided banner says what each side did
+  (`You posted: X` / `Inbox Agent posts now: LinkedIn`). A mixed
+  preview's steps say per actor what is still open, on one line, then the
+  footer as it reads now (`LinkedIn: tick Approve · X: copy, post it
+  yourself, tick Posted ✓ · then press Submit`). Its primary reads `Submit`
+  while both act (`Approve & post` with only auto platforms ticked,
+  `Posted ✓` with only manual ones), and the status splits the count
+  (`1 approved · 1 posted`). The result is unchanged. `decide-list`
+  takes an optional `action` (`post`, `send`, `continue`) for the bot's
+  verb and footer. Templates without an
+  actor model keep their own buttons and may only set `review` or
+  `blocking`. Templates get `RS.task` and `RS.cta(value)`. A `why` past
+  3 sentences or 360 characters warns on `show` and is folded. `due` is a
+  calendar date or a browser-safe extended timestamp.
 - With no report on screen while some wait, the window lists them (`Waiting
   for you`): bot, title and the kind of task; a row opens its report.
 - `wait` ends at the run's expiry plus 2 minutes at the latest and exits
@@ -46,9 +66,10 @@
   and decision (`approved`, `done`, `skipped`, `not_approved`,
   `changes_requested` with the comment as `note`).
 - Labels say who acts next. `decide-list` items take an optional `actor`
-  (`bot` or `user`, default `bot`) and an optional `url`. User items use
-  Posted ✓ / Skip / Later (`done` / `skipped` / `later`); when every item
-  is a user item the footer reads Posted ✓ (Done when nothing was posted). `approve-one` and `review-doc` take
+  (`bot` or `user`, default `bot`), an optional `content` (`post` or `reply`)
+  and an optional `url`. User items use Done ✓ / Skip / Later, or Posted ✓
+  when `content` is a post or reply (`done` / `skipped` / `later`). When
+  every item is a user item the footer reads Done. `approve-one` and `review-doc` take
   an optional `actor` (`bot`, `user` or `none`, default `bot`) and an
   optional `action` verb. Existing payloads keep today's results.
 - Links in item text, review-doc Markdown, pick-option text and `url`

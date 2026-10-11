@@ -122,4 +122,6 @@ for name in ("edge-no-image", "edge-max"):
     write(f"{name}.json", {"copies": copies(load(name)), "counters": {}})
 quote = load("quote-video")
 write("quote-video.json", {"copies": copies(quote), "counters": counters(quote)})
+mixed = load("mixed-image")
+write("mixed-image.json", {"copies": copies(mixed), "counters": counters(mixed)})
 print("ok")

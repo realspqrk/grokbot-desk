@@ -34,13 +34,13 @@ FIXTURES = {
         "expect": ("golden", "edge-access", "edge-max"),
     },
     "preview-post": {
-        "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-max", "quote-video"),
+        "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-max", "quote-video", "mixed-image"),
         "invalid": {
             "invalid-hash-in-tag": "/hashtags/1",
             "invalid-no-platform": "/platforms",
             "invalid-image-and-video": "/video",
         },
-        "expect": ("golden", "edge-no-image", "edge-x-limit", "edge-max", "quote-video"),
+        "expect": ("golden", "edge-no-image", "edge-x-limit", "edge-max", "quote-video", "mixed-image"),
     },
 }
 # Built-ins are product-neutral and do not carry vendor endorsements.

@@ -38,7 +38,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | Field | Rule |
 |---|---|
 | `summary` | required, 1–600, plain text (newlines kept). An http(s) address in the text becomes a link |
-| `actor` | optional `bot` (default), `user` or `none`. `user`: Posted ✓ / Skip (`done` / `skipped`). `none`: only Got it, sent at once (`acknowledged`). The bot never acts on `user` or `none`. A payload `task.kind` sets it when left out (`post_yourself` = `user`, `fyi` = `none`) |
+| `actor` | optional `bot` (default), `user` or `none`. `user`: Done ✓ / Skip (`done` / `skipped`), or Sent ✓ when `action` is `send`, or Posted ✓ when `task.kind` is `post_yourself`. `allow_changes` adds Request changes. `none`: only Got it, sent at once (`acknowledged`), plus one collapsed note. The bot never acts on `user` or `none`. A payload `task.kind` sets the actor when left out (`post_yourself` = `user`, `fyi` = `none`) |
 | `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. For a bot decision, `post` labels the primary Approve & post, `send` labels it Approve & send, any other verb labels it Approve & continue |
 | `approve_label` | optional, 1–24; overrides `action` and the default Approve once Approve is picked |
 | `allow_changes` | optional boolean, default `false`; offers `Request changes` |
@@ -63,7 +63,7 @@ Empty sections are not rendered.
 
 - `approve` or `reject` (actor `bot`): `comment` 0–2000 (the optional note; `""` when no note was shown).
 - `done` or `skipped` (actor `user`), and `acknowledged` (actor `none`): `comment` 0–2000.
-- `request_changes` (bot or user, only with `allow_changes`; always offered for `none`): `comment` 1–2000 with at least one non-whitespace character.
+- `request_changes` (bot or user, only with `allow_changes`; not offered for information only): `comment` 1–2000 with at least one non-whitespace character. Information only may include the optional note as `comment`.
 - A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)
@@ -73,6 +73,7 @@ Empty sections are not rendered.
 | `choice_approve`, `choice_reject`, `request_changes` | Approve, Reject, Request changes | Genehmigen, Ablehnen, Änderungen anfordern |
 | `decision_label` | Decision (name of the choice row) | Entscheidung |
 | `decision_pick` | Please approve or reject | Bitte genehmigen oder ablehnen |
+| `decision_pick_user` | Choose Done or Skip | Wähle Erledigt oder Überspringen |
 | `add_note`, `note` | Add note, Note | Notiz hinzufügen, Notiz |
 | `request_changes_label`, `comment_required` | What should change?; Please write a comment to request changes | Was soll sich ändern?; Für Änderungen bitte einen Kommentar schreiben |
 | `send_rejection`, `send_request` | Send rejection, Send request | Ablehnung senden, Änderungen senden |

@@ -1212,6 +1212,60 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   });
 
+  test('the banner must sit above the title, hold one summary, and reject a semantic control', async () => {
+    const placed = await judgeHtml(calmPage().replace(
+      '<header>',
+      '<section id="placed" data-rs-task style="padding:12px 16px;border-left:4px solid #1b7340;background:#e2f3e7"><p>Approve, then the bot posts</p></section><header>',
+    ).replace('<h1>Review report</h1>', '<h1 id="rs-title">Review report</h1>'));
+    try {
+      assert.equal(placed.facts.K6.task_banner_above_title, true);
+      assert.equal(placed.judged.items.K6.pass, true, placed.judged.items.K6.reasons.join('; '));
+    } finally {
+      await placed.context.close();
+    }
+    const below = await judgeHtml(calmPage().replace(
+      '<main>',
+      '<main><h1 id="rs-title">Review report</h1><section data-rs-task style="padding:12px;background:#e2f3e7"><p>Late banner</p></section>',
+    ));
+    try {
+      assert.equal(below.facts.K6.task_banner_above_title, false);
+      assert.equal(below.judged.items.K6.pass, false);
+      assert.match(below.judged.items.K6.reasons.join(' '), /above the title/u);
+    } finally {
+      await below.context.close();
+    }
+    const two = await judgeHtml(calmPage().replace(
+      '<main>',
+      taskBanner('<details><summary>More</summary><p>One.</p></details><details><summary>Again</summary><p>Two.</p></details>'),
+    ));
+    try {
+      assert.equal(two.facts.K6.task_banner_summaries, 2);
+      assert.equal(two.judged.items.K6.pass, false);
+    } finally {
+      await two.context.close();
+    }
+    const role = await judgeHtml(calmPage().replace(
+      '<main>',
+      taskBanner('<span role="button">Approve</span>'),
+    ));
+    try {
+      assert.equal(role.judged.items.K6.pass, false);
+      assert.match(role.judged.items.K6.reasons.join(' '), /holds controls/u);
+    } finally {
+      await role.context.close();
+    }
+    const painted = await judgeHtml(calmPage().replace(
+      '<main>',
+      taskBanner('<span style="color:#d2691e">A second hue inside</span>'),
+    ));
+    try {
+      assert.equal(painted.judged.items.K6.pass, false);
+      assert.ok(painted.facts.K6.off_accent.length > 0);
+    } finally {
+      await painted.context.close();
+    }
+  });
+
   test('a button in the task banner fails K6; the details toggle of a long why passes', async () => {
     const button = await judgeHtml(calmPage().replace('<main>', taskBanner('<button>Approve</button>')));
     try {

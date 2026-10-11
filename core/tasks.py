@@ -38,7 +38,16 @@ WHY_SOURCES = {
 
 SENTENCE_END = re.compile(r"(?<=[.!?\u2026])[\"'\u201c\u201d\u00bb)\]]*\s+(?=\S)")
 DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+# What Edge parses: a calendar date, or an extended timestamp with Z or ±HH:MM.
+# Basic ISO, week dates and odd separators parse in Python and then vanish in the browser.
+EXTENDED_DUE = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}"
+    r"(?::[0-9]{2}(?:\.[0-9]{1,3})?)?(?:Z|[+-][0-9]{2}:[0-9]{2})$"
+)
 URL_RE = re.compile(r"https?://", re.IGNORECASE)
+# A template with no actor model can show the generic review banner, or blocking
+# (the shell emphasises its existing primary). It cannot promise any other kind.
+SHELL_KINDS = frozenset({"review", "blocking"})
 
 
 class TaskError(ValueError):
@@ -57,6 +66,35 @@ def split_why(text):
     """The first three sentences, and the rest (shown folded)."""
     parts = sentences(text or "")
     return " ".join(parts[:MAX_WHY_SENTENCES]), " ".join(parts[MAX_WHY_SENTENCES:])
+
+
+def present_why(text):
+    """Three sentences on show, the rest folded. A run longer than 360 characters
+    is cut there too, and the cut-off is folded rather than dropped."""
+    shown, more = split_why(text or "")
+    if len(shown) > MAX_WHY:
+        extra = shown[MAX_WHY:].strip()
+        shown = shown[:MAX_WHY].rstrip()
+        more = " ".join(part for part in (extra, more) if part)
+    return shown, more
+
+
+def why_warnings(why):
+    """Notes for a why the banner will fold. Empty when the text is within both limits."""
+    if not isinstance(why, str):
+        return []
+    notes = []
+    if len(sentences(why)) > MAX_WHY_SENTENCES:
+        notes.append(
+            f"/task/why: longer than {MAX_WHY_SENTENCES} sentences; "
+            "the banner shows the first three and folds the rest"
+        )
+    if len(why) > MAX_WHY:
+        notes.append(
+            f"/task/why: longer than {MAX_WHY} characters; "
+            "the banner shows the start and folds the rest"
+        )
+    return notes
 
 
 def _actor(value):
@@ -127,11 +165,8 @@ def validate_task(value):
     if "due" in value:
         _validate_due(value["due"])
     why = value.get("why")
-    if "why" in value:
-        if not isinstance(why, str) or not why.strip() or len(why) > MAX_WHY:
-            raise TaskError("/task/why", f"must be 1-{MAX_WHY} characters")
-        if len(sentences(why)) > MAX_WHY_SENTENCES:
-            raise TaskError("/task/why", f"must be at most {MAX_WHY_SENTENCES} sentences")
+    if "why" in value and (not isinstance(why, str) or not why.strip()):
+        raise TaskError("/task/why", "must be a non-empty string")
 
 
 def _validate_due(due):
@@ -140,10 +175,15 @@ def _validate_due(due):
             raise ValueError
         if DATE_RE.fullmatch(due):
             date.fromisoformat(due)
-        else:
+        elif EXTENDED_DUE.fullmatch(due):
             to_vienna(due)
+        else:
+            raise ValueError
     except (TypeError, ValueError, OverflowError) as error:
-        raise TaskError("/task/due", "must be an ISO date or an ISO datetime with an offset") from error
+        raise TaskError(
+            "/task/due",
+            "must be YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS[.fff]]Z or with a ±HH:MM offset",
+        ) from error
 
 
 def apply_kind(template_id, data, kind):
@@ -153,6 +193,11 @@ def apply_kind(template_id, data, kind):
     """
     allowed = APPLICABLE.get(template_id)
     if allowed is None:
+        if kind not in SHELL_KINDS:
+            raise TaskError(
+                "/task/kind",
+                f"{template_id} cannot show {kind} (allowed: {', '.join(sorted(SHELL_KINDS))})",
+            )
         return data
     if kind not in allowed:
         raise TaskError(
@@ -223,6 +268,64 @@ def default_why(template_id, data):
     return text.strip(), field
 
 
+def _publishes(item):
+    return item.get("content") in ("post", "reply")
+
+
+def report_shape(template_id, data, task):
+    """How the person reports a user action, and a mixed actor list.
+
+    `mark` is posted, sent or done. `parties` lists both sides of a mixed
+    report, one entry per platform ({id, role}) or item ({role, noun}), so the
+    banner can give each actor its own line. `steps_for` picks a steps line
+    (replies, mixed_platforms, mixed_items) when the kind's default would
+    describe the wrong work.
+    """
+    data = data if isinstance(data, dict) else {}
+    explicit = task.get("kind") if isinstance(task, dict) else None
+    mark = "posted" if explicit == "post_yourself" else None
+    parties = []
+    steps_for = None
+    if template_id == "preview-post":
+        entries = []
+        for entry in data.get("platforms") or []:
+            if isinstance(entry, dict):
+                platform, mode = entry.get("platform"), entry.get("mode", "auto")
+            else:
+                platform, mode = entry, "auto"
+            if isinstance(platform, str):
+                entries.append({"id": platform, "role": "manual" if mode == "manual" else "auto"})
+        roles = {entry["role"] for entry in entries}
+        if mark is None and roles == {"manual"}:
+            mark = "posted"
+        elif len(roles) > 1:
+            parties = entries
+            steps_for = "mixed_platforms"
+    elif template_id in ("approve-one", "review-doc"):
+        if mark is None and _actor(data.get("actor")) == "user":
+            mark = "sent" if data.get("action") == "send" else "done"
+    elif template_id == "decide-list":
+        shaped = []
+        items = [item for item in data.get("items") or [] if isinstance(item, dict)]
+        for item in items:
+            if item.get("actor") == "user":
+                role = "user_post" if _publishes(item) else "user"
+            else:
+                role = "bot"
+            shaped.append({"role": role, "noun": item.get("content") if _publishes(item) else "item"})
+        roles = {entry["role"] for entry in shaped}
+        if roles & {"user", "user_post"} and "bot" in roles:
+            parties = shaped
+            steps_for = "mixed_items"
+        elif mark is None and roles == {"user_post"}:
+            mark = "posted"
+        elif mark is None and roles and roles <= {"user", "user_post"}:
+            mark = "done"
+        if roles <= {"user", "user_post"} and items and all(item.get("content") == "reply" for item in items):
+            steps_for = "replies"
+    return mark, parties, steps_for
+
+
 def task_view(payload, registry):
     """The task the page shows above the report."""
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
@@ -235,6 +338,13 @@ def task_view(payload, registry):
         "base": derived if kind == "blocking" else kind,
         "verb": approve_verb(template_id, data),
     }
+    mark, parties, steps_for = report_shape(template_id, data, task)
+    if mark:
+        view["mark"] = mark
+    if parties:
+        view["parties"] = parties
+    if steps_for:
+        view["steps_for"] = steps_for
     for field in ("steps", "eta_min", "due"):
         if field in task:
             view[field] = task[field]
@@ -242,12 +352,16 @@ def task_view(payload, registry):
         text, source = task["why"].strip(), None
     else:
         text, source = default_why(template_id, data)
-    view["why"], view["why_more"] = split_why(text)
+    view["why"], view["why_more"] = present_why(text)
     view["why_from"] = source
     return view
 
 
 def task_brief(payload, registry):
-    """kind and base only, for the run list."""
+    """kind and base only, for the run list. mark rides along when the
+    completion wording is not the kind's own."""
     view = task_view(payload, registry)
-    return {"kind": view["kind"], "base": view["base"]}
+    brief = {"kind": view["kind"], "base": view["base"]}
+    if view.get("mark"):
+        brief["mark"] = view["mark"]
+    return brief

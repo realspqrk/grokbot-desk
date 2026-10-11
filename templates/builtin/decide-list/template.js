@@ -11,14 +11,14 @@
    the document, so every copy control on screen is reachable by Tab. */
 var data = RS.data;
 var source = data.items || [];
-var CHOICES = { approve: 'choice_approve', reject: 'choice_reject', defer: 'choice_defer' };
 var USER_CHOICES = ['done', 'skipped', 'later'];
-var USER_LABELS = { done: 'posted', skipped: 'skip', later: 'later' };
 var DEFAULT_CHOICES = ['approve', 'reject', 'defer'];
 function isUser(w) { return w.actor === 'user'; }
 function choiceValues(w) { return isUser(w) ? USER_CHOICES : (w.choices || DEFAULT_CHOICES); }
+/* Item labels come from the shared table: a bot item's approve/reject/defer,
+   a post or reply's Posted, otherwise Done. */
 function choiceLabel(w, value) {
-  return RS.t(isUser(w) ? USER_LABELS[value] : CHOICES[value]);
+  return RS.cta(value, { item: true, actor: isUser(w) ? 'user' : 'bot', content: w.content || null });
 }
 /* A copy value wider than this, or with a line break, gets its own quoted line. */
 var SHORT_COPY = 40;
@@ -345,16 +345,37 @@ if (draft && typeof draft === 'object') {
 /* a restored draft puts focus back on the item being decided */
 setCurrent(firstOpen(-1), !!(draft && !sent));
 
+/* A mixed list (your items and the bot's) gets one banner line per actor,
+   counted: an undecided item is still planned, a skipped, deferred or
+   rejected one is out. The steps name the footer as it reads now. */
+var ON = { done: true, approve: true };
+function refreshBanner(label) {
+  if (!RS.task.parties || typeof RS.setTaskLive !== 'function') return;
+  RS.setTaskLive({
+    stepsKey: 'task_steps_mixed_items',
+    stepsButton: label,
+    parties: items.map(function (it) {
+      var posts = it.w.content === 'post' || it.w.content === 'reply';
+      var party = { role: isUser(it.w) ? (posts ? 'user_post' : 'user') : 'bot', noun: posts ? it.w.content : 'item' };
+      if (it.choice.value) party.on = ON[it.choice.value] === true;
+      return party;
+    })
+  });
+}
+
 function update(save) {
   var value = collect();
   if (save) RS.draft.set(value);
   var openItems = items.filter(function (it) { return !it.choice.value; });
-  /* the primary names the kind's main path (RS.cta) while it still holds:
-     something posted yourself, or something the bot carries out */
-  var main = RS.task.base === 'post_yourself' ? 'done' : 'approve';
+  /* All user items: the footer is Done / Fertig (the report back). Approve &
+     continue only when a bot item is on the main path. */
+  var allUser = items.every(function (it) { return isUser(it.w); });
   var picked = items.filter(function (it) { return it.choice.value; });
-  var onMain = !picked.length || picked.some(function (it) { return it.choice.value === main; });
-  RS.setSubmitLabel(onMain ? RS.cta(main) : RS.t(main === 'done' ? 'footer_done' : 'submit'));
+  var botApproves = picked.some(function (it) { return !isUser(it.w) && it.choice.value === 'approve'; });
+  var label = allUser ? RS.t('footer_done')
+    : (!picked.length || botApproves ? RS.cta('approve') : RS.t('submit'));
+  RS.setSubmitLabel(label);
+  refreshBanner(label);
   if (openItems.length) {
     RS.setResult(null);
     var shortStatus = RS.t('items_open_short', { n: RS.number(openItems.length) });

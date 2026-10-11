@@ -4,6 +4,7 @@
     {
       "id": "reply-ferry",
       "actor": "user",
+      "content": "reply",
       "source": "Example Harbour",
       "title": "Reply under the ferry delay post",
       "detail": "They asked which morning sailings are still running.",
@@ -15,6 +16,7 @@
     {
       "id": "reply-market",
       "actor": "user",
+      "content": "reply",
       "source": "Example Market",
       "title": "Reply under the Saturday stall question",
       "detail": "A neighbour asked whether the bread stall is back this week.",
@@ -26,6 +28,7 @@
     {
       "id": "reply-library",
       "actor": "user",
+      "content": "reply",
       "source": "Example Library",
       "title": "Reply under the late-opening post",
       "detail": "Someone asked if the reading room opens on Monday.",
@@ -37,6 +40,7 @@
     {
       "id": "reply-bakery",
       "actor": "user",
+      "content": "reply",
       "source": "Example Bakery",
       "title": "Reply under the new loaf post",
       "detail": "They want the price of the seeded loaf before they queue.",

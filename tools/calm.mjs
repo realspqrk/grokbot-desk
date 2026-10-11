@@ -1084,23 +1084,41 @@ export function calmEvaluator(options) {
     'borderBottomColor', 'borderLeftColor', 'outlineColor',
   ];
   /* C16 exception: the one task banner above the title may carry a status
-     tint per task kind; it is the only non-accent colour allowed beyond small
-     status dots. It holds no controls besides the details toggle of a long
-     why. */
+     tint per task kind (its own background and edge, and the inner tinted
+     box). Neutral text on that tint is ordinary text. Any other chromatic
+     colour, including inside the banner, is still off-accent. The banner
+     holds no controls besides one details toggle. */
   const taskBanners = [...document.querySelectorAll('[data-rs-task]')].filter(visible);
   const taskBanner = taskBanners.length === 1 ? taskBanners[0] : null;
+  const taskBannerControlSelector = [
+    'button', 'a[href]', 'input', 'select', 'textarea',
+    '[role="button"]', '[role="tab"]', '[role="radio"]', '[role="checkbox"]',
+    '[role="switch"]', '[role="menuitem"]', '[role="link"]',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(',');
   const taskBannerControls = taskBanners.flatMap((banner) => [
-    ...banner.querySelectorAll('button, a[href], input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])'),
+    ...banner.querySelectorAll(taskBannerControlSelector),
   ].map(identity));
+  const taskBannerSummaries = taskBanners.reduce(
+    (count, banner) => count + banner.querySelectorAll('summary').length,
+    0,
+  );
+  const taskTitle = document.querySelector('#rs-title');
+  const taskBannerAboveTitle = taskBanner && taskTitle
+    ? rectOf(taskBanner).bottom <= rectOf(taskTitle).top + 1
+    : null;
   const offAccent = [];
   for (const element of elements.filter((item) => visible(item) && outsideMockupText(item))) {
     const rect = rectOf(element);
     const statusException = element.hasAttribute('data-rs-status')
       && rect.width * rect.height < innerWidth * innerHeight
         * thresholds.statusViewportAreaMax;
-    if (statusException || taskBanner?.contains(element)) continue;
+    if (statusException) continue;
+    const bannerBox = taskBanner?.contains(element)
+      && (element === taskBanner || element.classList.contains('rs-task__inner'));
     const style = getComputedStyle(element);
     for (const property of colorProperties) {
+      if (bannerBox && (property === 'backgroundColor' || property.startsWith('border'))) continue;
       const color = parseColor(style[property]);
       if (!color || color.a <= 0.05) continue;
       const value = hsl(color);
@@ -1379,6 +1397,8 @@ export function calmEvaluator(options) {
       off_accent: offAccent,
       task_banners: taskBanners.length,
       task_banner_controls: taskBannerControls,
+      task_banner_summaries: taskBannerSummaries,
+      task_banner_above_title: taskBannerAboveTitle,
     },
     K7: {
       item_gaps: itemGaps,
@@ -1465,6 +1485,10 @@ export function judgeCalmFacts(facts, options = {}) {
       ? [] : [`K6 allows one tinted task banner, found ${facts.K6.task_banners}`]),
     ...((facts.K6.task_banner_controls ?? []).length
       ? [`K6 the task banner holds controls: ${facts.K6.task_banner_controls.join(', ')}`] : []),
+    ...((facts.K6.task_banner_summaries ?? 0) <= 1
+      ? [] : [`K6 the task banner holds ${facts.K6.task_banner_summaries} summaries`]),
+    ...(facts.K6.task_banner_above_title === false
+      ? ['K6 the task banner must sit above the title'] : []),
   ]);
 
   const k7Reasons = [];
