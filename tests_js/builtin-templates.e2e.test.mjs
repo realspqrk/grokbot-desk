@@ -226,7 +226,12 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
         await tabToSummary(page);
         const fits = await held(page);
         assert.equal(fits.more, false, `${colorScheme}: the closed report fits`);
-        assert.equal(fits.scroll, 0);
+        /* what the person sees: no fade, the focused summary and its ring
+           fully inside the report. Font metrics may leave a few pixels of
+           overflow below the fade threshold, so focus may scroll into that
+           overflow, never past it */
+        assert.ok(fits.ring <= fits.fadeTop + 0.5, `${colorScheme}: ring visible ${JSON.stringify(fits)}`);
+        assert.ok(fits.scroll <= fits.end, `${colorScheme}: no scroll beyond the content ${JSON.stringify(fits)}`);
         await page.keyboard.press('Enter');
         const opened = await held(page);
         assert.ok(opened.summary && opened.open && opened.more, `${colorScheme}: open, fade on, focus kept ${JSON.stringify(opened)}`);
