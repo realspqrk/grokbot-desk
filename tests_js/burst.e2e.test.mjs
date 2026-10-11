@@ -53,6 +53,7 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
   async function open(query, opts = {}) {
     const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 720 }, deviceScaleFactor: 1, colorScheme: opts.colorScheme || 'light', reducedMotion: 'reduce' });
     const page = await ctx.newPage();
+    if (opts.clock) await page.clock.install();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.addInitScript(() => {
@@ -92,15 +93,20 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
 
   test('a burst of 6 reports from 2 bots: the shown report stays, one announcement, grouped strip', async () => {
     const first = push(INBOX, 'Inbox 1');
-    const { ctx, page, errors } = await open(`run=${first.run_id}`);
+    const { ctx, page, errors } = await open(`run=${first.run_id}`, { clock: true });
     try {
       await activeIs(page, first.run_id);
+      /* the page's clock stands still while the five pushes land: each push
+         starts a CLI process, and on a slow runner two of them can be further
+         apart than the shortened quiet gap, which would split the burst */
+      await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1000);
       // untouched on purpose: in 1.0.0-beta.1 an untouched report was replaced
       const rest = [
         push(SOCIAL, 'Social 1'), push(INBOX, 'Inbox 2'), push(SOCIAL, 'Social 2'),
         push(INBOX, 'Inbox 3'), push(SOCIAL, 'Social 3'),
       ];
       await stripCountIs(page, fill('strip_count', { n: 1, m: 6 }));
+      await page.clock.resume();
       await page.waitForFunction(() => window.__announced.length > 0, null, { timeout: 8000 });
       await page.waitForTimeout(BURST_MS * 2);
       assert.equal(await page.evaluate(() => window.RS.activeRun), first.run_id, 'never yanked away');
