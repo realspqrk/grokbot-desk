@@ -69,10 +69,18 @@ Pick a built-in before writing your own:
    It returns one JSON line containing `run_id`, `url` and `result_path`. It opens the window if needed; an existing window receives the report quietly. Use `--focus` only when the user asked to bring it forward. Several open reports share one window with an avatar strip on top.
    Then run `python report_shell.py status` and check `window_alive`. If it is `false` (or `up` is `false`), no window is waiting: do not tell the user there is one. Read the warning `show` printed; if your runtime ends child processes when a command finishes, ask the user to start `python report_shell.py serve` in a terminal that stays open, then run `show` again.
 
-3. Tell the user in chat that a decision is waiting. Run `python report_shell.py wait RUN_ID --timeout 120`, using a timeout below your runtime's shell-call limit. Exit 5 means it is still waiting: call `wait` again later in a new shell call. Exit 0 means `submitted`, `cancelled` or `expired`; then read `result`. Use `--timeout 0` only in an interactive terminal without a shell-call limit.
+3. Tell the user in chat that a decision is waiting, then wait for it:
+   - First a short wait: `python report_shell.py wait RUN_ID --timeout 60`. Exit 0 means `submitted`, `cancelled` or `expired`: go to step 4.
+   - Exit 5 means the user has not decided yet. If your runtime wakes you when a background subagent or task finishes, hand the wait to one: it runs `python report_shell.py wait RUN_ID --until-expiry`, blocks on it, then reports the exit code and `result`. Background shells may not wake you, so do not rely on one. Otherwise, check on your next turn with `results --since` (below).
+   - `wait` ends by itself at the run's expiry plus 2 minutes. Exit 7 means the report expired and nothing wrote a result (no server was running): treat it as expired.
+   - Never use `--timeout 0` from a bot.
 
 4. Read: `python report_shell.py result RUN_ID`
    Act only on what the result says. `cancelled` or `expired` means: do nothing, and ask in chat if it still matters.
+
+5. Acknowledge in your own chat with one short line: topic + OK (for example "X replies: 5x posted, OK"). If the result asks for work, start it right away; otherwise that one line is all.
+
+Catch up on decisions you did not wait for: `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID ...]` lists results decided at or after `CURSOR` (ISO 8601 with offset), oldest first. Keep `cursor` and `seen` from its output and pass them next time (`--seen` once per run id), so a decision in the same second is neither lost nor listed twice. Every result names the `data_dir` in use; `paths` prints it too. Never guess the data directory.
 
 If `show` fails, read its error. Correct the payload field named in the error; `doctor` checks registry/setup warnings. `check <template>` checks the template and requires the development tools described above. Try once more after fixing the cause; do not retry in a loop.
 

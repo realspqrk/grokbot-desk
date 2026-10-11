@@ -2,6 +2,12 @@
 
 ## 1.0.0-beta.2 (unreleased)
 
+- `wait` never blocks forever: it ends at the run's expiry plus 2 minutes
+  and exits 7 when nothing wrote a result (no server was running).
+  `--until-expiry` waits exactly that long, for a background waiter.
+- `results --since` is inclusive (`>=`): a decision in the cursor's own
+  second is no longer lost. It prints `cursor` and `seen`; pass them back
+  with `--since` and `--seen RUN_ID` so nothing is listed twice.
 - `preview-post`: a mode per platform. `auto` (the default, so existing
   payloads work unchanged): the bot posts after `Approve & post`. `manual`:
   you post it yourself; the panel starts with `You post this yourself.` and

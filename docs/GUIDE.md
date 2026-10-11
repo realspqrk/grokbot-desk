@@ -118,7 +118,8 @@ Checklist (spec 5.2). The core already gives `lang="de"`, visible focus, token c
 - Labels say who acts next. `actor` is `bot` (default), `user` or, on approve-one and review-doc, `none`. Bot results stay `approve`, `reject`, `request_changes`, `defer`. User results are `done`, `skipped` and, on a list, `later`. Info-only is `acknowledged`. A missing `actor` keeps today's values. The bot never acts on `user` or `none`.
 - Bots read **only** the result file `<data dir>\results\<run_id>.json` on `<host>` (take the exact path from `result_path` in the `show` or `wait` output). Never scrape the page, the run store or the action log.
 - A result file is written once, atomically, and never changes. Its `data` was validated against `result.schema.json` before it was written.
-- Wait in short slices: agent runtimes often cap a single shell call (e.g. at a few minutes). Call `wait --timeout <s>` with a timeout below that cap and repeat it while it exits 5 (each repeat may be a new shell call); never one long blocking call (section A, step 3).
+- Waiting: start with `wait --timeout 60` (below the runtime's shell-call cap). On exit 5, if your runtime wakes you when a background subagent or task finishes, hand the wait to one that runs `wait <run_id> --until-expiry` and blocks on it; background shells may not wake you. Otherwise catch up on the next turn with `results --since`. `wait` always ends at the run's expiry plus 2 minutes (exit 7 when nothing wrote a result). Never use `--timeout 0` from a bot.
+- After a result: acknowledge in your own chat with topic + OK (e.g. "X replies: 5x posted, OK"); act right away if the result asks for action.
 - Act on `status`:
 
 | `status` | Meaning | Bot does |
@@ -203,7 +204,7 @@ Calm-UI helpers (template API, all scoped to the active report):
 - Preselected choices, more than 3 choices per item, more than 5 items per screen.
 - Full email bodies or secrets in the payload.
 - Building the result path by hand instead of using `result_path`; reading the action log; parsing the page.
-- `wait` without `--timeout` in a bot shell, or a timeout above the runtime's shell-call cap; polling the result file in a tight loop.
+- `wait --timeout 0` from a bot, a timeout above the runtime's shell-call cap, or a background shell that is expected to wake the bot; polling the result file in a tight loop.
 - A payload or image path that exists only on the bot's machine, not on `<host>`.
 - `--data -` from Windows PowerShell 5.1: the pipe re-encodes the JSON and umlauts arrive as `?` (verified). Use a file.
 - Parsing the page or the action log instead of the result file (`result` stdout is fine: it is ASCII-only JSON, non-ASCII characters are `\u` escapes).
@@ -219,11 +220,11 @@ Use the public `decide-list` example in [README.md](../README.md). Save its Pyth
 ```text
 python make_payload.py
 python report_shell.py show decide-list --data payload.json
-python report_shell.py wait RUN_ID --timeout 120
+python report_shell.py wait RUN_ID --timeout 60
 python report_shell.py result RUN_ID
 ```
 
-Replace `RUN_ID` with the value printed by `show`. Choose and send in the window before reading the result. Exit 5 from `wait` means it is still waiting; call it again later. On macOS use `./report-shell` (or `python3.12`) in place of `python report_shell.py`, and `python3.12` for `make_payload.py`.
+Replace `RUN_ID` with the value printed by `show`. Choose and send in the window before reading the result. Exit 5 from `wait` means it is still waiting: hand `wait RUN_ID --until-expiry` to a background subagent if your runtime wakes you when one finishes, or check later with `results --since`. On macOS use `./report-shell` (or `python3.12`) in place of `python report_shell.py`, and `python3.12` for `make_payload.py`.
 
 ## B. Commands
 
@@ -232,8 +233,10 @@ Replace `RUN_ID` with the value printed by `show`. Choose and send in the window
 | Command | Output | Exit codes |
 |---|---|---|
 | `show <template> --data <path\|-> [--focus] [--no-window]` | `{"run_id","url","result_path"}`. Validates, starts the server if needed, registers the run, opens the window if none is open (`--no-window`: never). `--data` may also hold only the `data` object; the core then wraps it (title = template `title_de`, `created` = now, `bot` = the template's namespace, or a built-in default bot id for `global` templates <!-- rename -->). | 0, 2, 3, 4 |
-| `wait <run_id> [--timeout <s>]` | `{"status","result_path"}` once the result file exists (checked every 200 ms; timeout 0 = no limit, never use 0 from a bot) | 0, 5, 6 |
-| `result <run_id>` | the result envelope | 0, 6 (also while no result exists yet) |
+| `wait <run_id> [--timeout <s> \| --until-expiry]` | `{"status","result_path","data_dir"}` once the result file exists (checked every 200 ms). Always ends at the run's expiry plus 2 minutes; `--until-expiry` waits exactly that long. Never use `--timeout 0` from a bot | 0, 2, 5, 6, 7 |
+| `result <run_id>` | the result envelope plus `data_dir` | 0, 6 (also while no result exists yet) |
+| `results --since <iso> [--bot <id>] [--seen <run_id>]... [--wait <s>]` | `{"data_dir","results":[{"run_id","bot","template","status","decided","result_path"}],"cursor","seen"}`: results decided at or after `--since`, oldest first, minus `--seen`; pass `cursor` and `seen` back next time. `--wait` blocks up to that many seconds (max 3600) for the first one | 0, 2 |
+| `paths` | the data directory in use and why, plus unused legacy directories | 0 |
 | `status` | `{"up","port","pid","open_runs","window_alive"}` | 0 |
 | `open` | `{"ok":true,"opened":true\|false}`; opens or focuses the window when runs are open | 0, 3, 4 |
 | `cancel <run_id>` | `{"status":"cancelled","result_path"}`; bot-side withdrawal | 0, 6 (unknown or already decided) |
@@ -256,9 +259,9 @@ The server stops by itself after 30 minutes with no open run and no window.
 | 2 | invalid payload (stderr names the JSON pointer, e.g. `/data/message`), unknown template, wrong `version`, `run_id` already used, media outside the roots, payload over 2 MB, invalid JSON (incl. nesting deeper than 64); also command-line usage errors | fix the payload; never retry unchanged |
 | 3 | neither Edge nor Chrome found (`refusing to open a browser tab`) | tell the person in chat; never fall back to another browser |
 | 4 | port held by a foreign process, or the server did not start within 3 s | tell the maintainer; never pick another port on your own |
-| 5 | `wait` timed out | call `wait` again later |
+| 5 | `wait` timed out | hand the wait to a background subagent, or catch up later with `results --since` |
 | 6 | unknown run (`wait`, `result`, `cancel`), no result yet (`result`), or already decided (`cancel`) | check the `run_id`; for `result`, try again later |
-| 7 | `check` failed, `new` name exists or invalid, broken template registry | fix the template |
+| 7 | `wait`: the run expired and no result was written (no server running). Otherwise: `check` failed, `new` name exists or invalid, broken template registry | `wait`: treat as expired. Otherwise: fix the template |
 
 ## D. Envelopes
 

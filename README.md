@@ -154,7 +154,7 @@ python report_shell.py wait RUN_ID --timeout 120
 python report_shell.py result RUN_ID
 ```
 
-Replace `RUN_ID` with the id printed by `show`. `wait` prints `{"status":"submitted","result_path":"..."}` when you submit. Other terminal statuses are `cancelled` and `expired`. `--timeout` is in seconds. `0` waits without a limit. `result` prints the full envelope. In a bot runtime, use a timeout below its shell-call limit; exit 5 means the report is still waiting, so call `wait` again later. Example result (ids and timestamps are illustrative):
+Replace `RUN_ID` with the id printed by `show`. `wait` prints `{"status":"submitted","result_path":"..."}` when you submit. Other terminal statuses are `cancelled` and `expired`. `--timeout` is in seconds; `wait` always ends at the report's expiry plus 2 minutes (exit 7 if nothing answered it), and `--until-expiry` waits exactly that long. `result` prints the full envelope. In a bot runtime, use a timeout below its shell-call limit and never `--timeout 0`; exit 5 means the report is still waiting. `results --since <time>` lists what was decided since then, so a bot can catch up on its next turn. Example result (ids and timestamps are illustrative):
 
 ```json
 {
