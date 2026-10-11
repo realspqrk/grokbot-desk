@@ -134,17 +134,20 @@ export function validateServerPort(port) {
   return port;
 }
 
-export async function startServer({ port, mediaRoots = [], env: environment = {} }) {
+export async function startServer({ port, mediaRoots = [], env: environment = {}, dataDir = null }) {
   validateServerPort(port);
   if (await hello(port)) throw new Error(`a report-shell server is already running on ${port}`);
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'rs-test-'));
-  copyUserTemplates(dataDir, environment);
-  if (mediaRoots.length) {
-    writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({
-      port,
-      media_roots: mediaRoots,
-      window: { x: 0, y: 0, width: 1500, height: 1000 },
-    }), 'utf8');
+  const ownsDataDir = dataDir == null;
+  if (ownsDataDir) {
+    dataDir = mkdtempSync(path.join(tmpdir(), 'rs-test-'));
+    copyUserTemplates(dataDir, environment);
+    if (mediaRoots.length) {
+      writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({
+        port,
+        media_roots: mediaRoots,
+        window: { x: 0, y: 0, width: 1500, height: 1000 },
+      }), 'utf8');
+    }
   }
   const env = {
     ...process.env,
@@ -168,14 +171,14 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
       closeSync(stderrFd);
     }
   } catch (error) {
-    rmSync(dataDir, { recursive: true, force: true });
+    if (ownsDataDir) rmSync(dataDir, { recursive: true, force: true });
     throw error;
   }
   const deadline = Date.now() + timeoutMs(env, 'RS_SERVER_START_TIMEOUT_MS', 15000);
   while (Date.now() < deadline) {
     if (processHasExited(proc)) {
       const error = serverStartupError('server exited before becoming ready', proc, stderrPath);
-      rmSync(dataDir, { recursive: true, force: true });
+      if (ownsDataDir) rmSync(dataDir, { recursive: true, force: true });
       throw error;
     }
     if (await hello(port)) break;
@@ -185,7 +188,7 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
     try { proc.kill(); } catch { /* report retained process status below */ }
     await awaitProcessExit(proc, 2000);
     const error = serverStartupError('server did not start', proc, stderrPath);
-    if (processHasExited(proc)) {
+    if (processHasExited(proc) && ownsDataDir) {
       rmSync(dataDir, { recursive: true, force: true });
     }
     throw error;
@@ -287,7 +290,9 @@ export async function stopServer(
           + `keeping temporary state at ${server.dataDir}`,
         );
       }
-      try { rmSync(server.dataDir, { recursive: true, force: true }); } catch { /* best effort */ }
+      if (!server.preserveData) {
+        try { rmSync(server.dataDir, { recursive: true, force: true }); } catch { /* best effort */ }
+      }
     })();
   }
   await server.stopPromise;

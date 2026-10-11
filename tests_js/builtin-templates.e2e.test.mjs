@@ -862,6 +862,65 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await preloadNone.page.locator('#panel-x .rs-pf__video-note').count(), 0);
       assert.equal(await preloadNone.page.locator('#panel-x .rs-pf__image-retry').count(), 0);
     } finally { await preloadNone.ctx.close(); }
+
+    const nonePlay = await open('preview-post', 'quote-video', { query: '&video_ms=300' });
+    try {
+      const ids = clipIds(nonePlay.run);
+      await nonePlay.page.route(new RegExp(`/media/${ids.video}`), (route) => route.fulfill({
+        status: 200, contentType: 'video/mp4', body: Buffer.from('not-a-video'),
+      }));
+      await nonePlay.page.evaluate(() => {
+        const frame = document.querySelector('#panel-x rs-post-frame');
+        const video = frame.querySelector('video');
+        video.setAttribute('preload', 'none');
+        const next = new URL(video.src, document.baseURI);
+        next.searchParams.set('rs_bad', '1');
+        video.src = next.href;
+        const ratio = frame.getAttribute('ratio');
+        frame.setAttribute('ratio', ratio === '16:9' ? '4:5' : '16:9');
+      });
+      await nonePlay.page.waitForTimeout(700);
+      const idle = await nonePlay.page.evaluate(() => {
+        const frame = document.querySelector('#panel-x rs-post-frame');
+        const poster = frame.querySelector('.rs-pf__poster');
+        return {
+          state: frame.getAttribute('data-image-state'),
+          note: frame.querySelectorAll('.rs-pf__video-note').length,
+          posterVisible: !!(poster && !poster.hidden && poster.getClientRects().length > 0),
+        };
+      });
+      assert.equal(idle.state, 'poster', idle.state);
+      assert.equal(idle.note, 0);
+      assert.equal(idle.posterVisible, true);
+      await nonePlay.page.evaluate(async () => {
+        const video = document.querySelector('#panel-x rs-post-frame video');
+        const play = HTMLMediaElement.prototype.play;
+        try { await play.call(video); } catch { /* the clip cannot play */ }
+      });
+      await nonePlay.page.waitForFunction(
+        () => document.querySelector('#panel-x rs-post-frame')?.getAttribute('data-image-state') === 'unavailable',
+        null, { timeout: 8000 },
+      );
+      const played = await nonePlay.page.evaluate(() => {
+        const frame = document.querySelector('#panel-x rs-post-frame');
+        const poster = frame.querySelector('.rs-pf__poster');
+        const video = frame.querySelector('video');
+        return {
+          state: frame.getAttribute('data-image-state'),
+          posterVisible: !!(poster && !poster.hidden && poster.getClientRects().length > 0),
+          videoHidden: video.hidden,
+          note: frame.querySelector('.rs-pf__video-note')?.textContent || '',
+          retry: frame.querySelectorAll('.rs-pf__image-retry').length,
+        };
+      });
+      assert.equal(played.state, 'unavailable');
+      assert.equal(played.posterVisible, true);
+      assert.equal(played.videoHidden, true);
+      assert.equal(played.note, de.pf_video_unavailable);
+      assert.equal(played.retry, 0);
+      const noneCounts = await calmCounts(nonePlay.page);
+      assert.ok(noneCounts.length && noneCounts.every((n) => n <= 3), `none play ${noneCounts}`);
+    } finally { await nonePlay.ctx.close(); }
   });
 
   test('preview-post: plain platform ids stay auto (no mode named); only manual platforms read "Mark as posted"', async () => {

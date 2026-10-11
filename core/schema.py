@@ -127,7 +127,8 @@ def check_schema(schema, pointer=""):
             raise SchemaError(_pointer(pointer, EXCLUSIVE), "only applies to objects")
     if URL_POLICY in schema:
         policy = schema[URL_POLICY]
-        if policy not in (True, "http", "https"):
+        # Identity, not equality: JSON 1 and 1.0 compare equal to True.
+        if policy is not True and policy not in ("http", "https"):
             raise SchemaError(
                 _pointer(pointer, URL_POLICY),
                 'must be true, "http", or "https"',

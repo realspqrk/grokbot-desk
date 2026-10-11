@@ -3,6 +3,7 @@ paths, and one attention request per burst of pushes."""
 import io
 import json
 import os
+import shutil
 import threading
 import time
 from contextlib import redirect_stdout
@@ -15,11 +16,13 @@ import pytest
 
 import core.cli as cli
 import core.server as server_module
-from conftest import ROOT
+from conftest import ROOT, install_minimal_template
+from core.actionlog import ActionLog
 from core.envelope import EnvelopeError, validate_payload
 from core.schema import SchemaError
 from core.paths import ensure_layout, load_config
 from core.registry import scan_registry
+from core.runs import RunStore
 from core.server import Handler, ReportHTTPServer
 from test_safety import request, valid_payload
 
@@ -283,6 +286,79 @@ def test_preview_post_summary_omits_inconsistent_and_legacy_results(tmp_path):
     assert code == 0
     for item in out["results"]:
         assert "summary" not in item, item["run_id"]
+
+
+def test_results_poll_returns_a_valid_preview_beside_a_malformed_one(tmp_path):
+    """A historical mode or decision that is not text is omitted, and the poll still returns."""
+    base = ensure_layout(tmp_path / "data")
+    stamp = "2026-10-11T11:00:00+02:00"
+
+    def write_result(run_id, data):
+        (base / "runs" / f"{run_id}.json").write_text(
+            json.dumps({"payload": {"run_id": run_id, "title": run_id}}), encoding="utf-8"
+        )
+        (base / "results" / f"{run_id}.json").write_text(json.dumps({
+            "run_id": run_id, "bot": "social-agent", "template": "preview-post",
+            "status": "submitted", "decided": stamp, "data": data,
+        }), encoding="utf-8")
+
+    valid = {
+        "decision": "approve", "platforms": ["linkedin"], "comment": "",
+        "per_platform": {"linkedin": {"mode": "auto", "decision": "approved"}},
+    }
+    write_result("valid-post", valid)
+    malformed = [
+        ([], "done"),
+        ({}, "done"),
+        (None, "done"),
+        (1, "done"),
+        (1.0, "approved"),
+        ("auto", []),
+        ("auto", {}),
+        ("auto", None),
+        ("manual", 0),
+    ]
+    for index, (mode, decision) in enumerate(malformed):
+        write_result(f"bad-{index}", {
+            "decision": "approve", "platforms": [], "comment": "",
+            "per_platform": {"x": {"mode": mode, "decision": decision}},
+        })
+    code, out = _run(cli.command_results, base, since=stamp, bot=None, wait=0)
+    assert code == 0
+    by_id = {item["run_id"]: item for item in out["results"]}
+    assert set(by_id) == {"valid-post", *(f"bad-{index}" for index in range(len(malformed)))}
+    assert by_id["valid-post"]["summary"] == "linkedin approved"
+    for run_id, item in by_id.items():
+        if run_id != "valid-post":
+            assert "summary" not in item
+
+
+def test_a_user_template_shadowing_preview_post_submits_its_own_result(tmp_path):
+    """The shipped agreement check follows the built-in directory, not the template id."""
+    staged = tmp_path / "staged"
+    install_minimal_template(staged, "preview-post")
+    user_root = tmp_path / "templates"
+    shutil.copytree(
+        staged / "templates" / "global" / "preview-post",
+        user_root / "preview-post",
+    )
+    registry = scan_registry(ROOT / "templates", user_root)
+    chosen = registry["preview-post"]
+    assert chosen.source == "user"
+    data_dir = ensure_layout(tmp_path / "data")
+    store = RunStore(
+        data_dir, registry, load_config(data_dir), ActionLog(data_dir),
+    )
+    detail = store.register(validate_payload(
+        dict(valid_payload(), template="preview-post", data={"message": "Hello"}),
+        registry,
+    ))
+    store.decide(detail["run_id"], "submitted", {"acknowledged": True})
+    saved = json.loads(
+        (data_dir / "results" / f"{detail['run_id']}.json").read_text(encoding="utf-8")
+    )
+    assert saved["status"] == "submitted"
+    assert saved["data"] == {"acknowledged": True}
 
 
 def test_preview_post_submit_rejects_an_inconsistent_result(live):

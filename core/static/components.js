@@ -712,6 +712,17 @@
       return poster;
     }
 
+    _beginVideoWatch(video) {
+      var self = this;
+      if (this._stall) { clearTimeout(this._stall); this._stall = null; }
+      this._stall = setTimeout(function () {
+        self._stall = null;
+        if (self._image !== video) return;
+        if (!video.error && video.readyState >= 1) return;
+        self._setVideoState('unavailable');
+      }, this._videoStallMs());
+    }
+
     _prepareVideo(video) {
       var self = this;
       this._image = video;
@@ -723,35 +734,49 @@
       video.removeAttribute('muted');
       this._ensurePoster(video);
       var preload = video.getAttribute('preload');
-      var deliberate = preload === 'none';
-      if (!deliberate && preload !== 'metadata') video.setAttribute('preload', 'metadata');
+      var idle = preload === 'none';
+      if (!idle && preload !== 'metadata') video.setAttribute('preload', 'metadata');
       if (!video._rsAvailabilityBound) {
         video._rsAvailabilityBound = true;
+        var nativePlay = video.play;
+        video.play = function () {
+          video._rsPlaybackRequested = true;
+          var result = nativePlay.apply(video, arguments);
+          if (self._image === video && video.getAttribute('preload') === 'none') {
+            if (video.error) self._setVideoState('unavailable');
+            else if (video.readyState < 1) self._beginVideoWatch(video);
+          }
+          return result;
+        };
         video.addEventListener('loadedmetadata', function () {
-          if (self._image === video) self._setVideoState('loaded');
+          if (self._image === video && !video.error) self._setVideoState('loaded');
         });
         video.addEventListener('error', function () {
-          if (self._image !== video || video.getAttribute('preload') === 'none') return;
+          if (self._image !== video || !video.error) return;
+          // An untouched preload=none clip has not asked for the file.
+          // A MediaError after Play is a real failure.
+          if (video.getAttribute('preload') === 'none' && !video._rsPlaybackRequested) return;
           self._setVideoState('unavailable');
+        });
+        video.addEventListener('play', function () {
+          video._rsPlaybackRequested = true;
+          if (self._image !== video || video.getAttribute('preload') !== 'none') return;
+          if (video.error) self._setVideoState('unavailable');
+          else if (video.readyState < 1) self._beginVideoWatch(video);
         });
       }
       // preload=none has not asked for the clip. That is not a failure and
       // not a loading wait. A separate poster image stays up either way.
-      if (deliberate) {
-        this._setVideoState(video.readyState >= 1 && !video.error ? 'loaded' : 'poster');
+      if (idle) {
+        var failed = !!(video.error && video._rsPlaybackRequested);
+        this._setVideoState(failed ? 'unavailable' : (video.readyState >= 1 && !video.error ? 'loaded' : 'poster'));
         return;
       }
       if (video.error) this._setVideoState('unavailable');
       else if (video.readyState >= 1) this._setVideoState('loaded');
       else {
         this._setVideoState('loading');
-        this._stall = setTimeout(function () {
-          self._stall = null;
-          if (self._image !== video) return;
-          if (video.getAttribute('preload') === 'none') return;
-          if (!video.error && video.readyState >= 1) return;
-          self._setVideoState('unavailable');
-        }, this._videoStallMs());
+        this._beginVideoWatch(video);
       }
     }
 

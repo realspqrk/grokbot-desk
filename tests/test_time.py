@@ -283,6 +283,61 @@ def test_registration_seq_survives_reload_and_ignores_a_skewed_clock(tmp_path):
     assert "seq" not in bare
 
 
+def test_legacy_records_keep_created_order_ahead_of_later_registrations(tmp_path):
+    """A saved run without seq is numbered on load, in created order, before later ones."""
+    data_dir = ensure_layout(tmp_path / "data")
+
+    def open_store():
+        return RunStore(
+            data_dir,
+            scan_registry(ROOT / "templates"),
+            load_config(data_dir),
+            ActionLog(data_dir),
+        )
+
+    store = open_store()
+
+    def add(run_id, bot, title, created):
+        store.register({
+            "schema": "report-shell/payload@1",
+            "template": "_starter",
+            "version": 1,
+            "run_id": run_id,
+            "bot": bot,
+            "title": title,
+            "created": created,
+            "expires_minutes": 240,
+            "data": {"message": "Hello"},
+        })
+
+    add("20261011-100000-inbox-aaaa", "example-inbox-bot", "Inbox older", "2026-10-11T10:00:00+02:00")
+    add("20261011-100001-inbox-bbbb", "example-inbox-bot", "Inbox newer", "2026-10-11T12:00:00+02:00")
+    add("20261011-100002-social-cccc", "example-social-bot", "Social skewed", "2026-10-11T08:00:00+02:00")
+    for run_id in ("20261011-100000-inbox-aaaa", "20261011-100001-inbox-bbbb"):
+        record = store._runs[run_id]
+        del record["seq"]
+        store._save(record)
+    reloaded = open_store()
+    order = {item["title"]: item["seq"] for item in reloaded.summaries({})}
+    assert order["Inbox older"] < order["Inbox newer"] < order["Social skewed"]
+    assert json.loads(
+        (data_dir / "runs" / "20261011-100000-inbox-aaaa.json").read_text(encoding="utf-8")
+    )["seq"] == order["Inbox older"]
+    reloaded.register({
+        "schema": "report-shell/payload@1",
+        "template": "_starter",
+        "version": 1,
+        "run_id": "20261011-100003-inbox-dddd",
+        "bot": "example-inbox-bot",
+        "title": "Inbox after",
+        "created": "2026-10-11T07:00:00+02:00",
+        "expires_minutes": 240,
+        "data": {"message": "Hello"},
+    })
+    again = {item["title"]: item["seq"] for item in reloaded.summaries({})}
+    assert again["Inbox after"] > again["Social skewed"]
+
+
 class _Stopping:
     def __init__(self):
         self.was_set = False

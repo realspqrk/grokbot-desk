@@ -2,7 +2,7 @@
 import json
 import os
 import threading
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 import base64
 from pathlib import Path
 
@@ -34,6 +34,20 @@ _POST_PHRASES = {
 }
 
 
+def _mode_decision(entry):
+    """(mode, decision) when both are strings, otherwise None.
+
+    A list or object must not be used as a dict key.
+    """
+    if not isinstance(entry, dict):
+        return None
+    mode = entry.get("mode")
+    decision = entry.get("decision")
+    if not isinstance(mode, str) or not isinstance(decision, str):
+        return None
+    return (mode, decision)
+
+
 def preview_post_consistent(data):
     """True when a preview-post result agrees with itself.
 
@@ -55,20 +69,17 @@ def preview_post_consistent(data):
         if platforms:
             return False
         for entry in per.values():
-            if not isinstance(entry, dict):
-                return False
-            if entry.get("mode") not in ("auto", "manual"):
-                return False
-            if entry.get("decision") != "changes_requested":
+            pair = _mode_decision(entry)
+            if pair is None or pair[0] not in ("auto", "manual") or pair[1] != "changes_requested":
                 return False
         return True
     if decision != "approve":
         return False
     approved = []
     for name, entry in per.items():
-        if not isinstance(name, str) or not isinstance(entry, dict):
+        if not isinstance(name, str):
             return False
-        pair = (entry.get("mode"), entry.get("decision"))
+        pair = _mode_decision(entry)
         if pair not in _POST_PHRASES:
             return False
         if pair == ("auto", "approved"):
@@ -85,8 +96,10 @@ def preview_post_summary(data):
     names.extend(name for name in per if name not in names)
     parts = []
     for name in names:
-        entry = per[name]
-        phrase = _POST_PHRASES[(entry.get("mode"), entry.get("decision"))]
+        pair = _mode_decision(per[name])
+        if pair not in _POST_PHRASES:
+            return None
+        phrase = _POST_PHRASES[pair]
         if phrase:
             parts.append(f"{name} {phrase}")
     return ", ".join(parts) or None
@@ -241,6 +254,42 @@ class RunStore:
                         "error": type(error).__name__,
                     },
                 )
+        self._migrate_legacy_seq()
+
+    def _valid_seq(self, record):
+        seq = record.get("seq")
+        return isinstance(seq, int) and not isinstance(seq, bool)
+
+    def _migrate_legacy_seq(self):
+        """Number records saved before seq existed, in created order.
+
+        Those numbers come first, so a later registration stays after them.
+        Records that already have a seq keep their order after that cohort.
+        """
+        legacy = []
+        sequenced = []
+        for record in self._runs.values():
+            if self._valid_seq(record):
+                sequenced.append(record)
+            else:
+                legacy.append(record)
+        if not legacy:
+            return
+
+        def created_key(record):
+            payload = record.get("payload") or {}
+            try:
+                created = to_vienna(payload["created"]).astimezone(timezone.utc)
+            except (TypeError, ValueError, OverflowError, KeyError):
+                created = datetime.max.replace(tzinfo=timezone.utc)
+            return (created, str(payload.get("run_id") or ""))
+
+        legacy.sort(key=created_key)
+        sequenced.sort(key=lambda record: record["seq"])
+        for index, record in enumerate([*legacy, *sequenced], start=1):
+            if record.get("seq") != index:
+                record["seq"] = index
+                self._save(record)
 
     def ids(self):
         return set(self._runs)
@@ -342,8 +391,8 @@ class RunStore:
                 template_identity=template.root_identity,
             )
             # Registration order. The page seeds the strip from this because
-            # a bot's created stamp can be skewed. Older records have no seq
-            # and the page falls back to created.
+            # a bot's created stamp can be skewed. A record saved before seq
+            # existed is numbered on load, in created order, ahead of these.
             created_utc = to_vienna(payload["created"]).astimezone(timezone.utc)
             expires = to_vienna(
                 created_utc + timedelta(minutes=payload["expires_minutes"])
@@ -457,12 +506,10 @@ class RunStore:
                 raise AlreadyDecided(run_id)
             payload = record["payload"]
             if status == "submitted":
-                schema = loads(
-                    self.registry[payload["template"]]
-                    .read_text("result.schema.json")
-                )
+                template = self.registry[payload["template"]]
+                schema = loads(template.read_text("result.schema.json"))
                 validate(data, schema, "/data")
-                if payload["template"] == "preview-post" and not preview_post_consistent(data):
+                if self._is_shipped_preview_post(template) and not preview_post_consistent(data):
                     raise SchemaError(
                         "/data/per_platform",
                         "mode, decision and platforms do not agree",
@@ -552,6 +599,24 @@ class RunStore:
 
     def has(self, run_id):
         return run_id in self._runs
+
+    def _is_shipped_preview_post(self, template):
+        """True only for the shipped preview-post directory.
+
+        A user template may reuse that id, and a template that extends the
+        built-in has its own directory and its own result schema. Neither is
+        this contract. The id string is not enough to tell them apart.
+        """
+        if template is None or template.source != "builtin" or template.root_identity is None:
+            return False
+        root = getattr(self.registry, "templates_root", None)
+        if root is None:
+            return False
+        try:
+            identity = directory_identity(Path(root) / "builtin" / "preview-post")
+        except OSError:
+            return False
+        return tuple(identity) == tuple(template.root_identity)
 
     def _current_template_root(self, template):
         """Registry template directory, only while it is still the pinned one.

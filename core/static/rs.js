@@ -688,16 +688,19 @@
   /* Open reports in a stable order. The page keeps registration order
      (summary seq, assigned when the run was registered) and groups it by
      bot: the bots in the order they first showed up, each bot's reports in
-     that same order. A record from before seq existed falls back to created.
+     that same order. A record saved before seq existed is numbered on load,
+     in created order, ahead of later registrations. One that still has no
+     seq stays in that created cohort, ahead of sequenced reports.
      Arrivals append; nothing jumps during a burst. Bot ids are dictionary
      keys, so these maps have no prototype (a bot id may be "constructor"). */
   function botKey(run) { return run.bot || run.bot_display || ''; }
   function dict() { return Object.create(null); }
 
   function registrationRank(run) {
-    if (typeof run.seq === 'number' && isFinite(run.seq)) return [0, run.seq];
     var parsed = Date.parse(run.created || '');
-    return [1, isNaN(parsed) ? 0 : parsed];
+    var created = isNaN(parsed) ? 0 : parsed;
+    if (typeof run.seq === 'number' && isFinite(run.seq)) return [1, run.seq];
+    return [0, created];
   }
 
   function syncOrder(runs) {

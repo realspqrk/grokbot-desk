@@ -12,7 +12,7 @@
 // Isolated server, temp RS_DATA_DIR, public fictional bots only.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
 
@@ -309,6 +309,46 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
       await discard(discarded.page);
       await activeIs(discarded.page, social2[0]);
     } finally { await discarded.ctx.close(); }
+  });
+
+  test('a reload keeps an older saved report ahead of later ones', async () => {
+    const older = push(INBOX, 'Inbox older');
+    const social = server.show(golden, {
+      bot: SOCIAL.bot, identity: SOCIAL.identity, title: 'Social later',
+      created: isoAt(Date.now() - 2 * 60 * 60 * 1000),
+    });
+    const newer = push(INBOX, 'Inbox newer');
+    const dataDir = server.dataDir;
+    const env = server.env;
+    server.preserveData = true;
+    await server.stop();
+    const file = path.join(dataDir, 'runs', `${older.run_id}.json`);
+    const record = JSON.parse(readFileSync(file, 'utf8'));
+    delete record.seq;
+    writeFileSync(file, JSON.stringify(record));
+    server = await startServer({ port: PORT + 30, dataDir, env });
+    const { ctx, page } = await open(`run=${social.run_id}`);
+    try {
+      await activeIs(page, social.run_id);
+      await groupsAre(page, 2);
+      const s = await strip(page);
+      assert.deepEqual(s.groups.map((g) => g.bot), [INBOX.bot, SOCIAL.bot]);
+      assert.equal(s.groups[0].run, older.run_id);
+      const listed = await page.evaluate(async () => {
+        const boot = JSON.parse(document.getElementById('rs-boot').textContent);
+        const res = await fetch('/api/runs', { headers: { 'X-RS-CSRF': boot.csrf } });
+        return (await res.json()).runs.map((r) => ({ title: r.title, seq: r.seq }));
+      });
+      const byTitle = Object.fromEntries(listed.map((r) => [r.title, r]));
+      assert.equal(typeof byTitle['Inbox older'].seq, 'number');
+      assert.ok(byTitle['Inbox older'].seq < byTitle['Social later'].seq);
+      assert.ok(byTitle['Social later'].seq < byTitle['Inbox newer'].seq);
+      await page.click(`#rs-strip .rs-strip__run[data-bot="${INBOX.bot}"]`);
+      await activeIs(page, older.run_id);
+      await page.click(`#rs-strip .rs-strip__run[data-bot="${INBOX.bot}"]`);
+      await activeIs(page, newer.run_id);
+    } finally { await ctx.close(); }
+    assert.ok(social.run_id && newer.run_id);
   });
 
   test('cold start orders bots by registration seq, not a skewed created stamp', async () => {

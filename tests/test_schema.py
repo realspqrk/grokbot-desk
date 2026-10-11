@@ -75,6 +75,18 @@ def test_exclusive_properties_reject_a_second_one():
     assert "image" in error.value.message
 
 
+@pytest.mark.parametrize("policy", [1, 1.0, False, None, [], {}, "file"])
+def test_url_keyword_accepts_only_true_or_a_scheme_string(policy):
+    """1 and 1.0 are not the boolean true, and a policy is not a free-form value."""
+    schema = {"type": "string", "x-rs-url": policy}
+    with pytest.raises(SchemaError) as checked:
+        check_schema(schema)
+    assert checked.value.pointer == "/x-rs-url"
+    with pytest.raises(SchemaError) as checked:
+        validate("https://example.com/a", schema)
+    assert checked.value.pointer == "/x-rs-url"
+
+
 def test_url_keyword_rejects_every_bad_vector_on_both_url_fields():
     vectors = json.loads((ROOT / "tests" / "fixtures" / "url_vectors.json").read_text(encoding="utf-8"))
     preview = json.loads(
