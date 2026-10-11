@@ -44,11 +44,11 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
   });
   beforeEach(async () => { if (server) await server.clearRuns(); });
 
-  /** n open runs, newest first (= server and strip order). */
+  /** n open runs, oldest first (= arrival and strip order, slice C). */
   function showRuns(n) {
     const now = Date.now();
     return BOTS.slice(0, n).map((b, i) => server.show(golden, {
-      bot: b.bot, identity: b.identity, title: b.title, created: isoAt(now - i * 60000),
+      bot: b.bot, identity: b.identity, title: b.title, created: isoAt(now - (n - 1 - i) * 60000),
     }));
   }
 
@@ -168,7 +168,7 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
       assert.equal(s.shown, true);
       assert.ok(s.bottom <= s.headerTop + 0.5, 'strip sits above the header');
       assert.equal(s.count, fill('strip_count', { n: 2, m: 3 }));
-      assert.deepEqual(s.items.map((x) => x.id), runs.map((r) => r.run_id), 'server order, newest first');
+      assert.deepEqual(s.items.map((x) => x.id), runs.map((r) => r.run_id), 'arrival order, oldest first');
       s.items.forEach((item, i) => {
         // name and title; " · new" while a waiting report is still unread
         const base = fill('strip_item', { bot: BOTS[i].identity.name, title: BOTS[i].title });

@@ -171,7 +171,10 @@
     requestGen: 0,     // activation request order; stale responses are ignored
     templateGen: 0,    // rendered-template lifetime; stale template calls are ignored
     gone: {},          // run id -> true once this page decided it (before SSE says so)
-    done: null         // null, 'closing' or 'kept': the calm done state after the last decision
+    done: null,        // null, 'closing' or 'kept': the calm done state after the last decision
+    order: [],         // open run ids in arrival order (slice C: arrivals append)
+    groups: [],        // bot ids in first-seen order while they have open runs
+    burst: null        // { ids, bots, timer, started }: arrivals not announced yet
   };
   var el = {};
 
@@ -682,40 +685,118 @@
      underlined, and "n of m open". It is one Tab stop (roving tabindex):
      Left/Right/Home/End switch along it, Ctrl+1..9 from anywhere. Decided
      reports leave the strip; with one open report there is none (K3). */
-  function openRuns() {
-    return state.runs.filter(function (r) {
-      return (r.state === undefined || r.state === 'open') && !state.gone[r.run_id];
+  /* Slice C: open reports in a stable order. The server lists newest first
+     by the bot-supplied creation time; the page keeps its own arrival order
+     instead (a bot's clock cannot move an entry) and groups it by bot: the
+     bots in the order they first showed up, each bot's reports in arrival
+     order. Arrivals append; nothing jumps during a burst. */
+  function botKey(run) { return run.bot || run.bot_display || ''; }
+
+  function syncOrder(runs) {
+    var open = {};
+    runs.forEach(function (r) { open[r.run_id] = r; });
+    var order = state.order.filter(function (id) { return open[id]; });
+    var have = {};
+    order.forEach(function (id) { have[id] = true; });
+    // new ids: oldest first (the server sends newest first)
+    runs.slice().reverse().forEach(function (r) {
+      if (!have[r.run_id]) { order.push(r.run_id); have[r.run_id] = true; }
     });
+    state.order = order;
+    var bots = {};
+    order.forEach(function (id) { bots[botKey(open[id])] = true; });
+    var groups = state.groups.filter(function (k) { return bots[k]; });
+    var seen = {};
+    groups.forEach(function (k) { seen[k] = true; });
+    order.forEach(function (id) {
+      var k = botKey(open[id]);
+      if (!seen[k]) { groups.push(k); seen[k] = true; }
+    });
+    state.groups = groups;
   }
 
-  function stripRuns() { return openRuns().slice(0, 12); }
+  function openRuns() {
+    var open = state.runs.filter(function (r) {
+      return (r.state === undefined || r.state === 'open') && !state.gone[r.run_id];
+    });
+    var rank = {};
+    state.order.forEach(function (id, i) { rank[id] = i; });
+    var group = {};
+    state.groups.forEach(function (k, i) { group[k] = i; });
+    function at(table, key) { return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : 1e9; }
+    return open.map(function (r, i) { return { r: r, i: i }; }).sort(function (x, y) {
+      return (at(group, botKey(x.r)) - at(group, botKey(y.r)))
+        || (at(rank, x.r.run_id) - at(rank, y.r.run_id))
+        || (y.i - x.i);
+    }).map(function (x) { return x.r; });
+  }
+
+  /* one strip entry per bot: { key, runs } in strip order (max 12) */
+  function stripGroups() {
+    var groups = [];
+    var byKey = {};
+    openRuns().forEach(function (r) {
+      var k = botKey(r);
+      if (!byKey[k]) { byKey[k] = { key: k, runs: [] }; groups.push(byKey[k]); }
+      byKey[k].runs.push(r);
+    });
+    return groups.slice(0, 12);
+  }
+
+  function groupOf(runId) {
+    return stripGroups().filter(function (g) {
+      return g.runs.some(function (r) { return r.run_id === runId; });
+    })[0] || null;
+  }
+
+  /* where a group leads: that bot's oldest open report; the current group
+     steps on to that bot's next report (wrapping) */
+  function groupTarget(g) {
+    var ids = g.runs.map(function (r) { return r.run_id; });
+    var at = ids.indexOf(state.activeId);
+    if (at < 0) return ids[0];
+    return ids[(at + 1) % ids.length];
+  }
 
   function stripButtons() {
     return Array.prototype.slice.call(el.strip.querySelectorAll('.rs-strip__run'));
   }
 
   function focusStrip(runId) {
-    var b = stripButtons().filter(function (x) { return x.getAttribute('data-run-id') === runId; })[0]
+    var g = groupOf(runId);
+    var b = (g && stripButtons().filter(function (x) { return x.getAttribute('data-bot') === g.key; })[0])
       || el.strip.querySelector('.rs-strip__run[tabindex="0"]');
     if (b && !el.stripNav.hidden) b.focus();
   }
 
   function renderStrip() {
-    var list = stripRuns();
-    var held = el.strip.contains(document.activeElement) ? document.activeElement.getAttribute('data-run-id') : null;
+    var groups = stripGroups();
+    var all = openRuns();
+    var heldEl = el.strip.contains(document.activeElement) ? document.activeElement : null;
+    var held = heldEl ? heldEl.getAttribute('data-bot') : null;
     var at = -1;
-    list.forEach(function (run, i) { if (run.run_id === state.activeId) at = i; });
+    groups.forEach(function (g, i) {
+      if (g.runs.some(function (r) { return r.run_id === state.activeId; })) at = i;
+    });
+    var position = -1;
+    all.forEach(function (r, i) { if (r.run_id === state.activeId) position = i; });
     el.strip.textContent = '';
-    list.forEach(function (run, i) {
+    groups.forEach(function (g, i) {
       var current = i === at;
-      var who = identityOf(run);
+      var lead = g.runs[0];
+      var who = identityOf(lead);
+      var waiting = g.runs.some(function (r) { return r.unread && r.run_id !== state.activeId; });
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'rs-strip__run';
-      b.setAttribute('data-run-id', run.run_id);
-      /* accessible name and tooltip: the bot and the report title */
-      var label = t('strip_item', { bot: who.name, title: run.title });
-      if (run.unread && !current) label += ' ' + t('sep') + ' ' + t('new');
+      b.setAttribute('data-bot', g.key);
+      b.setAttribute('data-run-id', current ? state.activeId : lead.run_id);
+      /* accessible name and tooltip: the bot and the report title, or the
+         bot and how many reports it has waiting ("Inbox Agent, 3 reports") */
+      var label = g.runs.length > 1
+        ? t('strip_group', { bot: who.name, n: number(g.runs.length) })
+        : t('strip_item', { bot: who.name, title: lead.title });
+      if (waiting) label += ' ' + t('sep') + ' ' + t('new');
       b.setAttribute('aria-label', label);
       b.title = label;
       if (current) b.setAttribute('aria-current', 'page');
@@ -724,20 +805,31 @@
       b.appendChild(avatarBox(who, 'md'));
       var dot = document.createElement('span');
       dot.className = 'rs-strip__dot';
-      if (run.unread && !current) dot.setAttribute('data-new', '');
+      if (waiting) dot.setAttribute('data-new', '');
       b.appendChild(dot);
+      if (g.runs.length > 1) {
+        var badge = document.createElement('span');
+        badge.className = 'rs-strip__badge';
+        badge.setAttribute('aria-hidden', 'true');
+        badge.textContent = number(g.runs.length);
+        b.appendChild(badge);
+      }
       b.addEventListener('click', function () {
-        if (run.run_id !== state.activeId) activate(run.run_id, { focusStrip: true });
+        var target = groupTarget(g);
+        if (target && target !== state.activeId) activate(target, { focusStrip: true });
       });
       el.strip.appendChild(b);
     });
-    el.stripCount.textContent = at >= 0
-      ? t('strip_count', { n: at + 1, m: list.length })
-      : t('strip_count_all', { m: list.length });
-    var on = list.length >= 2;
+    el.stripCount.textContent = position >= 0
+      ? t('strip_count', { n: position + 1, m: all.length })
+      : t('strip_count_all', { m: all.length });
+    var on = all.length >= 2;
     el.stripNav.hidden = !on;
     el.app.setAttribute('data-strip', on ? 'on' : 'off');
-    if (held) focusStrip(held);
+    if (held) {
+      var again = stripButtons().filter(function (x) { return x.getAttribute('data-bot') === held; })[0];
+      if (again && !el.stripNav.hidden) again.focus();
+    }
   }
 
   function onStripKey(e) {
@@ -756,8 +848,11 @@
     var target = buttons[j];
     buttons.forEach(function (b) { b.tabIndex = b === target ? 0 : -1; });
     target.focus();
-    var id = target.getAttribute('data-run-id');
-    if (id !== state.activeId) activate(id, { focusStrip: true });
+    /* a step along the strip goes to that bot's oldest open report; its own
+       group (a single one: Home/End) stays where it is */
+    var g = stripGroups()[j];
+    if (!g || g.runs.some(function (r) { return r.run_id === state.activeId; })) return;
+    activate(g.runs[0].run_id, { focusStrip: true });
   }
 
   // ----------------------------------------------------- submit bar --
@@ -1354,6 +1449,53 @@
     setReady(true);
   }
 
+  // ----------------------------------------------------- bursts -----
+  /* Slice C: reports from several bots often come in a burst. Each arrival
+     is collected; once the burst has been quiet for BURST_SETTLE_MS (or has
+     run for BURST_MAX_MS) one polite announcement says what came ("5 new
+     reports from 2 bots"); a single arrival names its report; a single
+     arrival that is shown at once needs none. Never one toast per report. */
+  var BURST_SETTLE_MS = 1500;
+  var BURST_MAX_MS = 10000;
+  function burstSettleMs() {
+    var test = query.get('client') === 'test';
+    return test && /^\d{1,5}$/.test(query.get('burst_ms') || '') ? Number(query.get('burst_ms')) : BURST_SETTLE_MS;
+  }
+
+  function noteArrivals(fresh, shownId) {
+    var b = state.burst;
+    if (!b) b = state.burst = { ids: [], runs: {}, bots: {}, botCount: 0, shown: null, timer: null, started: Date.now() };
+    fresh.slice().reverse().forEach(function (r) {
+      if (b.runs[r.run_id]) return;
+      b.ids.push(r.run_id);
+      b.runs[r.run_id] = r;
+      var k = botKey(r);
+      if (!b.bots[k]) { b.bots[k] = identityOf(r).name; b.botCount += 1; }
+    });
+    if (shownId) b.shown = shownId;
+    if (b.timer) clearTimeout(b.timer);
+    var wait = Math.max(0, Math.min(burstSettleMs(), b.started + BURST_MAX_MS - Date.now()));
+    b.timer = setTimeout(flushBurst, wait);
+  }
+
+  function flushBurst() {
+    var b = state.burst;
+    state.burst = null;
+    if (!b || !b.ids.length) return;
+    var n = b.ids.length;
+    if (n === 1) {
+      if (b.shown === b.ids[0]) return;
+      toast(t('new_run_arrived', { title: b.runs[b.ids[0]].title }));
+      return;
+    }
+    if (b.botCount === 1) {
+      var only = Object.keys(b.bots)[0];
+      toast(t('burst_arrived_bot', { n: number(n), bot: b.bots[only] }));
+    } else {
+      toast(t('burst_arrived', { n: number(n), k: number(b.botCount) }));
+    }
+  }
+
   // ----------------------------------------------------- run list ----
   function applyRuns(runs) {
     var first = state.known === null;
@@ -1364,6 +1506,7 @@
     runs.forEach(function (r) { state.known[r.run_id] = true; });
     Object.keys(known).forEach(function (id) { state.known[id] = true; });
 
+    syncOrder(runs);
     var a = state.active;
     if (a && a.state === 'open' && !findRun(a.run_id)) {
       // decided elsewhere (CLI cancel, expiry): fetch its state
@@ -1382,14 +1525,16 @@
       showEmpty();
       return;
     }
-    // switching rule (spec 2.8): a new run becomes active only when no run is
-    // active (or the active one is decided) or the active run is untouched.
-    var newest = fresh[0];
-    if (newest) {
-      // an open Verwerfen confirmation pins the active run
-      var idle = !a || a.state !== 'open' || (!state.touched && !state.discardTarget);
-      if (idle) { activate(newest.run_id); return; }
-      toast(t('new_run_arrived', { title: newest.title }));
+    /* switching rule (spec 2.8, slice C): an open report on screen always
+       stays, touched or not; an arrival becomes active only when nothing
+       open is shown (empty, or the shown report is decided or gone) and no
+       other report is loading. The oldest arrival goes first; the rest wait
+       in the strip and the burst is announced once (noteArrivals). */
+    if (fresh.length) {
+      var oldest = fresh[fresh.length - 1];
+      var idle = !state.pending && (!a || a.state !== 'open');
+      noteArrivals(fresh, idle ? oldest.run_id : null);
+      if (idle) { activate(oldest.run_id); return; }
     }
     if (!a && !state.pending && !runs.length) { showEmpty(); return; }
     if (a && a.state !== 'open') setBanner(a.state);
@@ -1565,10 +1710,11 @@
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !e.isComposing) {
       var m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || '');
       if (!m) return;
-      var run = stripRuns()[Number(m[1]) - 1];
-      if (!run) return;
+      var g = stripGroups()[Number(m[1]) - 1];
+      if (!g) return;
       e.preventDefault();
-      if (run.run_id !== state.activeId) activate(run.run_id, { focusTitle: true });
+      var target = groupTarget(g);
+      if (target && target !== state.activeId) activate(target, { focusTitle: true });
     }
   }
 

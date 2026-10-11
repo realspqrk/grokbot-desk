@@ -280,6 +280,25 @@ button, input, textarea, select { font: inherit; color: inherit; }
   box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper);
 }
 .rs-strip__dot[data-new] { background: var(--rs-ink); }
+/* slice C: one avatar per bot; with more than one open report a quiet count
+   (ink on paper, never the accent: C16/K1) sits at its top right */
+.rs-strip__badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: var(--space-4);
+  height: var(--space-4);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--rs-ink);
+  border-radius: var(--space-2);
+  background: var(--rs-paper);
+  color: var(--rs-ink);
+  font-size: var(--rs-fs-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: calc(var(--space-4) - 2px);
+  text-align: center;
+  box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper);
+}
 
 .rs-strip__count {
   flex: none;

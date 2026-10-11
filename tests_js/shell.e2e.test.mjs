@@ -14,6 +14,9 @@ import round5Corpus from './fixtures/twitter-text-round5.mjs';
 const PORT = Number(process.env.RS_E2E_PORT || 18900);
 if (PORT === 18742) throw new Error('refusing the product port');
 const ORIGIN = `http://127.0.0.1:${PORT}`;
+// slice C: the strip has one entry per bot, so a test that switches between
+// two reports by their strip entries gives the second one its own bot
+const SECOND_BOT = 'example-second-bot';
 const STARTER = path.join(ROOT, 'templates/builtin/_starter');
 const golden = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/golden.json'), 'utf8'));
 const expect = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/expect/golden.json'), 'utf8'));
@@ -372,7 +375,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   test('scoped API: stale side effects cannot affect the active run or its requests', async () => {
     await server.clearRuns();
     const a = server.show(golden, { title: 'Scoped A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { title: 'Scoped B', created: isoAt(Date.now()) });
+    const b = server.show(golden, { bot: SECOND_BOT, title: 'Scoped B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     const sideEffects = [];
     try {
@@ -603,7 +606,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     const { ctx, page, log } = await open('run=' + a.run_id);
     try {
       await page.click('#rs-discard'); // A untouched, confirmation open
-      const b = server.show(golden, { title: 'Neu B', created: isoAt(Date.now()) });
+      const b = server.show(golden, { bot: SECOND_BOT, title: 'Neu B', created: isoAt(Date.now()) });
       await page.waitForSelector(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await page.waitForTimeout(300); // a switch would have started by now
       assert.equal(await activeId(page), a.run_id, 'no automatic switch under the confirmation');
@@ -699,7 +702,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   test('switching during submit keeps the selected run busy until its own submit completes', async () => {
     await server.clearRuns();
     const a = server.show(golden, { title: 'Submit A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { title: 'Submit B', created: isoAt(Date.now()) });
+    const b = server.show(golden, { bot: SECOND_BOT, title: 'Submit B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     const held = [];
     try {
@@ -732,7 +735,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   test('switching during cancel keeps the selected run busy until its own cancel completes', async () => {
     await server.clearRuns();
     const a = server.show(golden, { title: 'Cancel A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { title: 'Cancel B', created: isoAt(Date.now()) });
+    const b = server.show(golden, { bot: SECOND_BOT, title: 'Cancel B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     const held = [];
     try {
@@ -803,7 +806,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   test('failed run switch keeps the rendered form live and submits its exact edited draft', async () => {
     await server.clearRuns();
     const a = server.show(golden, { title: 'Switch bleibt A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { title: 'Switch scheitert B', created: isoAt(Date.now()) });
+    const b = server.show(golden, { bot: SECOND_BOT, title: 'Switch scheitert B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     try {
       await page.click('rs-action-row button[value="erledigt"]');
@@ -842,7 +845,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   test('finding 5: an HTTP 500 run switch reports a retryable load error and preserves the URL', async () => {
     await server.clearRuns();
     const a = server.show(golden, { title: 'Aktiv A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { title: 'Fehler B', created: isoAt(Date.now()) });
+    const b = server.show(golden, { bot: SECOND_BOT, title: 'Fehler B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     try {
       await page.click('rs-action-row button[value="erledigt"]');
@@ -862,7 +865,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   test('delayed successful switch retires the old result only when the replacement commits', async () => {
     await server.clearRuns();
     const a = server.show(golden, { title: 'Verzögert A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { title: 'Verzögert B', created: isoAt(Date.now()) });
+    const b = server.show(golden, { bot: SECOND_BOT, title: 'Verzögert B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     let held;
     try {
@@ -909,7 +912,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   test('finding 1: a successful run switch updates the URL and reload keeps that run', async () => {
     await server.clearRuns();
     const a = server.show(golden, { title: 'URL A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { title: 'URL B', created: isoAt(Date.now()) });
+    const b = server.show(golden, { bot: SECOND_BOT, title: 'URL B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     try {
       await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
@@ -1046,44 +1049,46 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await activeId(page), a.run_id);
       await page.waitForFunction(() => document.title === 'Bericht A · Operations Agent', null, { timeout: 3000 });
 
-      // A untouched -> B takes over
-      const b = server.show(golden, { title: 'Bericht B', created: iso(t0 + 60000) });
-      await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', b.run_id);
-      await page.waitForFunction(() => !document.title.startsWith('●'));
-      assert.equal(await page.title(), 'Bericht B · Operations Agent');
-
-      // B touched -> C waits in the strip with its "new" dot, title gets "● "
-      await page.click('rs-action-row button[value="erledigt"]');
-      const c = server.show(golden, { title: 'Bericht C', created: iso(t0 + 120000) });
-      await page.waitForSelector(`.rs-strip__run[data-run-id="${c.run_id}"] .rs-strip__dot[data-new]`);
-      assert.equal(await activeId(page), b.run_id);
+      // slice C: A stays even untouched; B waits in the strip with its "new"
+      // dot, the title gets "● "
+      const b = server.show(golden, { bot: SECOND_BOT, identity: { name: 'Second Agent' }, title: 'Bericht B', created: iso(t0 + 60000) });
+      await page.waitForSelector(`.rs-strip__run[data-run-id="${b.run_id}"] .rs-strip__dot[data-new]`);
+      await page.waitForTimeout(300); // a switch would have started by now
+      assert.equal(await activeId(page), a.run_id, 'an untouched report is not replaced');
+      assert.equal(await page.title(), '● Bericht A · Operations Agent');
       assert.equal(
-        await page.getAttribute(`.rs-strip__run[data-run-id="${c.run_id}"]`, 'aria-label'),
-        `Operations Agent ${de.sep} Bericht C ${de.sep} ${de.new}`,
+        await page.getAttribute(`.rs-strip__run[data-run-id="${b.run_id}"]`, 'aria-label'),
+        `Second Agent ${de.sep} Bericht B ${de.sep} ${de.new}`,
       );
-      assert.equal(await page.title(), '● Bericht B · Operations Agent');
-      const order = await page.$$eval('.rs-strip__run', (x) => x.map((e) => [e.dataset.runId, e.getAttribute('aria-keyshortcuts')]));
-      assert.deepEqual(order, [[c.run_id, 'Control+1'], [b.run_id, 'Control+2'], [a.run_id, 'Control+3']]);
 
-      // Ctrl+1 -> C (read: the dot turns to a ring, the prefix goes away)
+      // touched A, C arrives: arrivals append, nothing jumps
+      await page.click('rs-action-row button[value="erledigt"]');
+      const c = server.show(golden, { bot: 'example-third-bot', identity: { name: 'Third Agent' }, title: 'Bericht C', created: iso(t0 + 120000) });
+      await page.waitForSelector(`.rs-strip__run[data-run-id="${c.run_id}"] .rs-strip__dot[data-new]`);
+      assert.equal(await activeId(page), a.run_id);
+      const order = await page.$$eval('.rs-strip__run', (x) => x.map((e) => [e.dataset.runId, e.getAttribute('aria-keyshortcuts')]));
+      assert.deepEqual(order, [[a.run_id, 'Control+1'], [b.run_id, 'Control+2'], [c.run_id, 'Control+3']]);
+
+      // Ctrl+3 -> C (read: the dot turns to a ring)
       const read = page.waitForRequest((r) => r.url() === ORIGIN + '/read');
-      await page.keyboard.press('Control+1');
+      await page.keyboard.press('Control+3');
       await read;
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', c.run_id);
-      await page.waitForFunction(() => document.title === 'Bericht C · Operations Agent', null, { timeout: 3000 });
+      await page.waitForFunction(() => document.title.includes('Bericht C'), null, { timeout: 3000 });
       assert.equal(await page.$(`.rs-strip__run[data-run-id="${c.run_id}"] .rs-strip__dot[data-new]`), null);
       assert.equal(await page.getAttribute(`.rs-strip__run[data-run-id="${c.run_id}"]`, 'aria-current'), 'page');
 
-      // Ctrl+2 -> B with its draft restored
+      // Ctrl+2 -> B; then the "● " prefix goes away (nothing unread)
       await page.keyboard.press('Control+2');
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', b.run_id);
-      assert.equal(await page.getAttribute('rs-action-row button[value="erledigt"]', 'aria-checked'), 'true');
-      assert.equal(await page.isDisabled('#rs-submit'), false);
+      await page.waitForFunction(() => !document.title.startsWith('●'), null, { timeout: 3000 });
 
-      // Ctrl+3 -> A
-      await page.keyboard.press('Control+3');
+      // Ctrl+1 -> A with its draft restored
+      await page.keyboard.press('Control+1');
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', a.run_id);
       await page.waitForFunction(() => document.title === 'Bericht A · Operations Agent', null, { timeout: 3000 });
+      assert.equal(await page.getAttribute('rs-action-row button[value="erledigt"]', 'aria-checked'), 'true');
+      assert.equal(await page.isDisabled('#rs-submit'), false);
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
     await server.clearRuns();
