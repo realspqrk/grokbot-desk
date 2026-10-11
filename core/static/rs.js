@@ -267,6 +267,140 @@
   // ------------------------------------------------------ core API ----
   function activeRunId() { return state.activeId; }
 
+  /* http(s) links never navigate this window. The address is posted to
+     /open-url, which opens it in the OS browser when it occurs in the
+     run's payload. Anchors are not draggable, a drag is cancelled, and
+     dropping an external URL on the page is cancelled. A primary click,
+     a middle click, Enter (including Shift and Alt), and a modified click
+     all post the address; Ctrl+Enter and Cmd+Enter stay the submit
+     shortcut and do not open the link. rel=noopener and the server
+     allowlist do not by themselves stop the window from navigating.
+     The context menu is suppressed: a menu "Open" would load the address
+     inside the app profile, and a browser that still offers that item
+     from a menu the page cannot see is outside this guarantee. */
+  var URL_RE = /https?:\/\/[^\s<>"'\\]+/gi;
+  var URL_TRAIL = '.,;:!?';
+  function trimUrl(url) {
+    while (url && URL_TRAIL.indexOf(url.charAt(url.length - 1)) >= 0) url = url.slice(0, -1);
+    while (url.charAt(url.length - 1) === ')' && countChar(url, '(') < countChar(url, ')')) url = url.slice(0, -1);
+    while (url.charAt(url.length - 1) === ']' && countChar(url, '[') < countChar(url, ']')) url = url.slice(0, -1);
+    return url;
+  }
+  function countChar(text, ch) {
+    var n = 0;
+    for (var i = 0; i < text.length; i++) if (text.charAt(i) === ch) n++;
+    return n;
+  }
+  function hasControl(url) {
+    for (var i = 0; i < url.length; i++) {
+      var code = url.charCodeAt(i);
+      if (code < 32 || (code >= 127 && code <= 159)) return true;
+    }
+    return false;
+  }
+  function openableUrl(url) {
+    if (typeof url !== 'string' || !url || url.length > 2048) return false;
+    if (hasControl(url) || /\s/.test(url) || url.indexOf('\\') >= 0) return false;
+    var colon = url.indexOf(':');
+    if (colon < 4) return false;
+    var scheme = url.slice(0, colon).toLowerCase();
+    if (scheme !== 'http' && scheme !== 'https') return false;
+    if (url.charAt(colon + 1) !== '/' || url.charAt(colon + 2) !== '/') return false;
+    var parsed;
+    try { parsed = new URL(url); } catch (e) { return false; }
+    if (parsed.username || parsed.password) return false;
+    if (!parsed.hostname) return false;
+    var rest = url.slice(colon + 3);
+    var cut = rest.search(/[/?#]/);
+    var authority = cut < 0 ? rest : rest.slice(0, cut);
+    if (authority.charAt(0) === '[') {
+      var end = authority.indexOf(']');
+      if (end < 0) return false;
+      if (authority.length > end + 1 && (authority.charAt(end + 1) !== ':' || !parsed.port)) return false;
+    } else if (authority.indexOf(':') >= 0 && !parsed.port) return false;
+    return true;
+  }
+  function externalAnchor(url, text) {
+    var a = document.createElement('a');
+    a.className = 'rs-ext';
+    a.draggable = false;
+    a.setAttribute('draggable', 'false');
+    a.setAttribute('href', url);
+    a.setAttribute('rel', 'noopener noreferrer');
+    a.setAttribute('data-rs-view-action', '');
+    a.textContent = text == null || text === '' ? url : text;
+    return a;
+  }
+  function appendLinkedText(parent, text) {
+    var source = String(text);
+    var re = new RegExp(URL_RE.source, 'gi');
+    var last = 0;
+    var match;
+    while ((match = re.exec(source))) {
+      var raw = match[0];
+      var trimmed = trimUrl(raw);
+      var start = match.index;
+      if (start > last) parent.appendChild(document.createTextNode(source.slice(last, start)));
+      if (openableUrl(trimmed)) {
+        parent.appendChild(externalAnchor(trimmed, trimmed));
+        last = start + trimmed.length;
+        re.lastIndex = last;
+      } else {
+        parent.appendChild(document.createTextNode(raw));
+        last = start + raw.length;
+      }
+    }
+    if (last < source.length) parent.appendChild(document.createTextNode(source.slice(last)));
+  }
+  function fillText(node, text) {
+    if (!node) return;
+    node.textContent = '';
+    appendLinkedText(node, text == null ? '' : text);
+  }
+  function appendLinks(node, text) {
+    if (!node || text == null || text === '') return;
+    var holder = document.createElement('span');
+    appendLinkedText(holder, String(text));
+    Array.prototype.forEach.call(holder.querySelectorAll('a.rs-ext'), function (anchor) {
+      node.appendChild(anchor);
+    });
+  }
+  function externalLink(url, text) {
+    return openableUrl(url) ? externalAnchor(url, text) : null;
+  }
+  function linkFromEvent(event) {
+    var target = event.target && event.target.closest ? event.target.closest('a.rs-ext') : null;
+    if (!target || !el.mount || !el.mount.contains(target)) return null;
+    return target;
+  }
+  var linkOpenedAt = 0;
+  function openLink(url) {
+    var now = Date.now();
+    if (now - linkOpenedAt < 400) return;
+    linkOpenedAt = now;
+    openUrlFor(activeRunId(), url);
+  }
+  function activateLink(event) {
+    var anchor = linkFromEvent(event);
+    if (!anchor) return;
+    if (event.type === 'auxclick' && event.button !== 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openLink(anchor.getAttribute('href'));
+  }
+
+  function openUrlFor(runId, url) {
+    if (!runId) return Promise.resolve({ ok: false });
+    return post('/open-url', { run_id: runId, url: String(url) }).then(function (r) {
+      if (state.activeId === runId) toast(t(r.ok ? 'open_done' : 'open_failed'));
+      return { ok: r.ok };
+    }, function () {
+      if (state.activeId === runId) toast(t('open_failed'));
+      return { ok: false };
+    });
+  }
+  function openUrl(url) { return openUrlFor(activeRunId(), url); }
+
   function copyFor(runId, text) {
     if (!runId) return Promise.resolve({ ok: false });
     if (state.activeId === runId) markTouched();
@@ -769,6 +903,8 @@
     el.alt.disabled = busy;
     var s = state.status;
     el.status.textContent = s ? s.text : '';
+    if (s && s.label) el.status.setAttribute('aria-label', s.label);
+    else el.status.removeAttribute('aria-label');
     if (s && s.tone) el.status.setAttribute('data-tone', s.tone); else el.status.removeAttribute('data-tone');
     el.bar.hidden = !open;
   }
@@ -1007,6 +1143,12 @@
       reveal: function (mediaId) {
         return live() ? revealFor(run.run_id, mediaId) : Promise.resolve({ ok: false, stale: true });
       },
+      openUrl: function (url) {
+        return live() ? openUrlFor(run.run_id, url) : Promise.resolve({ ok: false, stale: true });
+      },
+      fillText: fillText,
+      appendLinks: appendLinks,
+      externalLink: externalLink,
       setResult: function (value) {
         if (!live()) return;
         state.result = value === undefined ? null : value;
@@ -1022,9 +1164,13 @@
         set: function (value) { if (live()) draftSet(run.run_id, value); },
         clear: function () { if (live()) draftSet(run.run_id, null); }
       },
-      setStatus: function (text, tone) {
+      setStatus: function (text, tone, label) {
         if (!live()) return;
-        state.status = text ? { text: String(text), tone: tone || null } : null;
+        state.status = text ? {
+          text: String(text),
+          tone: tone || null,
+          label: label ? String(label) : null
+        } : null;
         renderBar();
       },
       setSubmitLabel: function (text) {
@@ -1474,6 +1620,43 @@
       el.theme.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
     });
 
+    el.mount.addEventListener('click', activateLink);
+    el.mount.addEventListener('auxclick', activateLink);
+    el.mount.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      var anchor = linkFromEvent(event);
+      if (!anchor) return;
+      event.preventDefault();
+      /* Ctrl+Enter and Cmd+Enter stay the submit shortcut. They must not
+         navigate and must not open the link. */
+      if (event.ctrlKey || event.metaKey) return;
+      event.stopPropagation();
+      openLink(anchor.getAttribute('href'));
+    });
+    el.mount.addEventListener('mousedown', function (event) {
+      if (event.button === 1 && linkFromEvent(event)) event.preventDefault();
+    });
+    el.mount.addEventListener('dragstart', function (event) {
+      if (linkFromEvent(event)) event.preventDefault();
+    });
+    el.mount.addEventListener('contextmenu', function (event) {
+      if (linkFromEvent(event)) event.preventDefault();
+    });
+    function externalUrlDrop(event) {
+      var transfer = event.dataTransfer;
+      if (!transfer || !transfer.types) return false;
+      var types = Array.prototype.slice.call(transfer.types);
+      if (types.indexOf('text/uri-list') < 0) return false;
+      var target = event.target;
+      if (target && target.closest && target.closest('input, textarea, [contenteditable="true"]')) return false;
+      return true;
+    }
+    document.addEventListener('dragover', function (event) {
+      if (externalUrlDrop(event)) event.preventDefault();
+    });
+    document.addEventListener('drop', function (event) {
+      if (externalUrlDrop(event)) event.preventDefault();
+    });
     el.submit.addEventListener('click', function () { submit(); });
     el.discard.addEventListener('click', discard);
     el.discardDialog.addEventListener('close', onDiscardClose);
@@ -1522,6 +1705,10 @@
     toast: toast,
     media: media,
     reveal: reveal,
+    openUrl: openUrl,
+    fillText: fillText,
+    appendLinks: appendLinks,
+    externalLink: externalLink,
     submit: function () { return submit(); },
     get data() { return state.active ? state.active.data : null; },
     get activeRun() { return state.activeId; },

@@ -16,6 +16,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import __version__
 from .actionlog import ActionLog
+from .browse import open_url
+from .urls import url_allowed
 from .check import contract_findings
 from .envelope import EnvelopeError, MAX_PAYLOAD, validate_payload_bytes
 from .identity import SHIPPED_REGISTRY, display_names, load_registry
@@ -697,6 +699,10 @@ class Handler(BaseHTTPRequestHandler):
             if not self._action_body(value, {"run_id": str, "media_id": str}):
                 return
             self._copy_path(value)
+        elif path == "/open-url":
+            if not self._action_body(value, {"run_id": str, "url": str}):
+                return
+            self._open_url(value)
         elif path == "/reveal":
             if not self._action_body(value, {"run_id": str, "media_id": str}):
                 return
@@ -784,6 +790,31 @@ class Handler(BaseHTTPRequestHandler):
         if warnings:
             answer["warnings"] = list(warnings)
         self._json(200, answer)
+
+    def _open_url(self, value):
+        """Open one http(s) URL from this run's payload in the system browser.
+
+        The page never navigates itself. The URL must occur verbatim in the
+        run's payload data, be http or https, have a hostname and a valid
+        port, carry no credentials in the authority and no control characters,
+        and be at most 2048 characters.
+        """
+        run_id, url = value["run_id"], value["url"]
+        try:
+            data = self.server.runs.detail(run_id)["data"]
+        except UnknownRun:
+            self._json(404, {"error": "unknown_run"})
+            return
+        if not url_allowed(url, data):
+            self._json(400, {"error": "invalid_url", "pointer": "/url"})
+            return
+        try:
+            open_url(url)
+        except (OSError, ValueError):
+            self._json(500, {"error": "open_failed"})
+            return
+        self.server.action_log.write(run_id, "open_url", {"url": url})
+        self._json(200, {"ok": True})
 
     def _copy(self, value):
         text = value.get("text")

@@ -3,7 +3,7 @@
   "required": ["decision", "comment", "comments"],
   "additionalProperties": false,
   "properties": {
-    "decision": {"enum": ["approve", "request_changes"], "description": "approve: the document can go ahead as is (plus any section comments). request_changes: revise it first."},
+    "decision": {"enum": ["approve", "request_changes", "done", "skipped", "acknowledged"], "description": "approve: the document can go ahead (bot). request_changes: revise it first. done / skipped: the person did it or skipped it (actor user). acknowledged: info only (actor none)."},
     "comment": {"type": "string", "maxLength": 4000, "description": "Overall comment; empty when approving."},
     "comments": {
       "type": "array",

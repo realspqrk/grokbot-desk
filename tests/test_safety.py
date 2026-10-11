@@ -838,7 +838,7 @@ def test_guarded_action_routes_reject_non_object_json_bodies(server_process):
         "X-RS-CSRF": csrf,
         "Content-Type": "application/json",
     }
-    for route in ("/submit", "/cancel", "/read", "/log", "/reveal", "/copy", "/copy-image"):
+    for route in ("/submit", "/cancel", "/read", "/log", "/reveal", "/copy", "/copy-image", "/copy-path", "/open-url"):
         status, body = request(port, "POST", route, b"[]", headers)
         assert status == 400, route
         assert json.loads(body)["pointer"] == "/"

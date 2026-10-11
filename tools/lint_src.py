@@ -36,20 +36,26 @@ def _scan_python(path, relative, local_modules):
     in_tests_or_tools = relative.parts and relative.parts[0] in {"tests", "tools"}
     if in_tests_or_tools:
         allowed_external.add("pytest")
-    for node in ast.walk(tree):
+    def visit(node, function_name):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            function_name = node.name
         if isinstance(node, (ast.Import, ast.ImportFrom)):
-            if isinstance(node, ast.ImportFrom) and node.level:
-                continue
-            names = [alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""]
-            for name in names:
-                top = name.split(".", 1)[0]
-                if top == "webbrowser":
-                    findings.append(_finding("C3", relative, node.lineno, "webbrowser is forbidden"))
-                if top and top not in sys.stdlib_module_names and top not in allowed_external and top not in local_modules:
-                    findings.append(_finding("C15a", relative, node.lineno, f"non-stdlib import: {top}"))
+            if not (isinstance(node, ast.ImportFrom) and node.level):
+                names = [alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""]
+                for name in names:
+                    top = name.split(".", 1)[0]
+                    if top == "webbrowser":
+                        findings.append(_finding("C3", relative, node.lineno, "webbrowser is forbidden"))
+                    if top and top not in sys.stdlib_module_names and top not in allowed_external and top not in local_modules:
+                        findings.append(_finding("C15a", relative, node.lineno, f"non-stdlib import: {top}"))
         if isinstance(node, ast.Call):
             name = _call_name(node.func)
-            if name == "os.startfile":
+            # The report window is never opened with startfile. The one
+            # exception is open_url, which hands an allowlisted http(s)
+            # address to the host's default browser.
+            if name == "os.startfile" and not (
+                relative.as_posix() == "core/platform_windows.py" and function_name == "open_url"
+            ):
                 findings.append(_finding("C3", relative, node.lineno, "os.startfile is forbidden"))
             if name.endswith(("Popen", "run", "call", "check_call", "check_output")):
                 shell_true = any(
@@ -63,6 +69,10 @@ def _scan_python(path, relative, local_modules):
                     findings.append(_finding("C3", relative, node.lineno, "shell URL/default-browser launch is forbidden"))
                 if any(value.strip().lower() == "start" for value in _constants(node)):
                     findings.append(_finding("C3", relative, node.lineno, "start command is forbidden"))
+        for child in ast.iter_child_nodes(node):
+            visit(child, function_name)
+
+    visit(tree, "")
     return findings
 
 

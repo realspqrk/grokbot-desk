@@ -20,7 +20,7 @@ BUILTIN = ROOT / "templates" / "builtin"
 IDS = ("decide-list", "approve-one", "preview-post")
 FIXTURES = {
     "decide-list": {
-        "valid": ("golden", "edge-single", "edge-unicode", "edge-max"),
+        "valid": ("golden", "edge-single", "edge-unicode", "edge-max", "edge-replies"),
         "invalid": {
             "invalid-six-items": "/items",
             "invalid-bad-choice": "/items/1/choices/0",
@@ -275,14 +275,14 @@ def test_preview_post_mode_is_per_platform_and_plain_ids_stay_auto():
 def test_preview_post_result_names_mode_and_decision_per_platform():
     result = schema("preview-post", "result.schema.json")
     both = {
-        "x": {"mode": "manual", "decision": "posted_manually"},
+        "x": {"mode": "manual", "decision": "done"},
         "linkedin": {"mode": "auto", "decision": "approved"},
     }
     validate({"decision": "approve", "platforms": ["linkedin"], "comment": "", "per_platform": both}, result)
     # everything posted by hand: nothing left for the bot to post
     validate({
         "decision": "approve", "platforms": [], "comment": "",
-        "per_platform": {"x": {"mode": "manual", "decision": "posted_manually"}},
+        "per_platform": {"x": {"mode": "manual", "decision": "done"}},
     }, result)
     validate({
         "decision": "request_changes", "platforms": [], "comment": "Shorter, please",
@@ -304,7 +304,7 @@ def test_preview_post_result_names_mode_and_decision_per_platform():
         "platforms": ["linkedin", "instagram", "facebook"],
         "comment": "",
         "per_platform": {
-            "x": {"mode": "manual", "decision": "posted_manually"},
+            "x": {"mode": "manual", "decision": "done"},
             "linkedin": {"mode": "auto", "decision": "approved"},
             "instagram": {"mode": "auto", "decision": "approved"},
             "facebook": {"mode": "auto", "decision": "approved"},
@@ -347,6 +347,85 @@ def test_preview_post_expect_generator_reproduces_committed_files(tmp_path):
     assert result.returncode == 0, result.stderr
     for path in sorted((BUILTIN / "preview-post" / "fixtures" / "expect").glob("*.json")):
         assert load(expect_dir / path.name) == load(path), path.name
+
+
+def test_actor_fields_are_optional_and_user_results_validate():
+    """Existing payloads omit actor and keep today's results. Opting in adds values."""
+    for template in ("decide-list", "approve-one", "review-doc"):
+        validate(fixture(template, "golden"), schema(template))
+    replies = fixture("decide-list", "edge-replies")
+    assert [item["actor"] for item in replies["items"]] == ["user"] * 4
+    validate(replies, schema("decide-list"))
+    validate(
+        {"items": [
+            {"id": "reply-ferry", "choice": "done", "note": ""},
+            {"id": "reply-market", "choice": "skipped", "note": ""},
+            {"id": "reply-library", "choice": "later", "note": ""},
+            {"id": "reply-bakery", "choice": "done", "note": ""},
+        ], "note": ""},
+        schema("decide-list", "result.schema.json"),
+    )
+    validate(
+        {"summary": "Ship the note.", "actor": "user", "action": "send"},
+        schema("approve-one"),
+    )
+    validate({"decision": "done", "comment": ""}, schema("approve-one", "result.schema.json"))
+    validate({"decision": "acknowledged", "comment": ""}, schema("approve-one", "result.schema.json"))
+    listing = fixture("review-doc", "edge-listing")
+    assert listing["copy"][0]["label"] == "Copy tagline"
+    validate(listing, schema("review-doc"))
+    validate(
+        {"decision": "skipped", "comment": "", "comments": []},
+        schema("review-doc", "result.schema.json"),
+    )
+    posts = fixture("pick-option", "edge-posts")
+    assert all(option["copy"] for option in posts["options"])
+    validate(posts, schema("pick-option"))
+
+
+def test_decide_list_url_matches_the_opener():
+    from core.urls import openable
+
+    good = (
+        "https://example.com/a@b",
+        "https://example.com/a?x=@",
+        "https://example.com/a?x=@#f@",
+        "https://example.com:443/a",
+        "http://127.0.0.1:8080/a",
+        "https://[::1]/a",
+    )
+    bad = (
+        "https:///a",
+        "https://example.com\\abc",
+        "https://user@example.com/a",
+        "https://user:secret@example.com/a",
+        "https://example.com:abc",
+        "https://example.com:99999",
+        "https://example.com:/a",
+        "https://[oops",
+        "https://example.com/\x00a",
+        "https://example.com/a\x7f",
+        "https://example.com/a\u0085",
+    )
+    spec = schema("decide-list")
+    for url in good:
+        assert openable(url), url
+        validate({"items": [{"id": "a", "title": "One", "url": url}]}, spec)
+    for url in bad:
+        assert openable(url) is False, url
+        with pytest.raises(SchemaError):
+            validate({"items": [{"id": "a", "title": "One", "url": url}]}, spec)
+
+
+def test_length_facts_match_the_copy_they_describe():
+    for path in (BUILTIN / "pick-option" / "fixtures").glob("*.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for option in data.get("options") or []:
+            copy = option.get("copy")
+            for fact in option.get("facts") or []:
+                if fact.get("label") != "Length" or not isinstance(copy, str):
+                    continue
+                assert fact["value"].split()[0] == str(len(copy)), path.name
 
 
 def test_preview_post_fixture_media_are_template_relative_and_present():

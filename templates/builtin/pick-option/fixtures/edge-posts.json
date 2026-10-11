@@ -1,0 +1,37 @@
+{
+  "question": "Which post should we publish for the Harbor Mug?",
+  "context": "Scores are from a small review panel. Each copy button is the full post.",
+  "options": [
+    {
+      "id": "plain",
+      "name": "Plain",
+      "summary": "Short and direct. No offer.",
+      "facts": [
+        {"label": "Score", "value": "7.2"},
+        {"label": "Length", "value": "83 characters"}
+      ],
+      "copy": "The Harbor Mug keeps tea hot until the meeting ends. Stoneware, 350 ml, with a lid."
+    },
+    {
+      "id": "offer",
+      "name": "Offer",
+      "summary": "Names the three-mug price.",
+      "facts": [
+        {"label": "Score", "value": "8.4"},
+        {"label": "Length", "value": "89 characters"}
+      ],
+      "copy": "The Harbor Mug keeps tea hot until the meeting ends. €24, or €21 each when you buy three."
+    },
+    {
+      "id": "story",
+      "name": "Story",
+      "summary": "A little scene, then the product.",
+      "facts": [
+        {"label": "Score", "value": "6.8"},
+        {"label": "Length", "value": "102 characters"}
+      ],
+      "copy": "The meeting ran long and the tea was still hot. That is the Harbor Mug: stoneware, 350 ml, with a lid."
+    }
+  ],
+  "suggested": "offer"
+}

@@ -143,9 +143,79 @@ def test_results_since_lists_new_decisions_oldest_first(live):
     assert [item["run_id"] for item in out["results"]] == [a["run_id"], b["run_id"]]
     code, out = _run(cli.command_results, live.data_dir, since=start.isoformat(), bot="social-agent", wait=0)
     assert [item["run_id"] for item in out["results"]] == [b["run_id"]]
-    cursor = out["results"][-1]["decided"]
-    code, out = _run(cli.command_results, live.data_dir, since=cursor, bot=None, wait=0)
-    assert out["results"] == []
+    assert out["cursor"] == out["results"][-1]["decided"] and out["seen"] == [b["run_id"]]
+    code, out = _run(
+        cli.command_results, live.data_dir, since=out["cursor"], bot=None, wait=0, seen=out["seen"]
+    )
+    assert b["run_id"] not in [item["run_id"] for item in out["results"]]
+
+
+def test_results_since_keeps_a_decision_in_the_cursor_second(live):
+    """`decided` has whole seconds: a decision in the cursor's own second must
+    still be listed (>=), and the ones already seen drop out by run_id."""
+    _, a = live.push(dict(valid_payload(), bot="inbox-agent"))
+    _, b = live.push(dict(valid_payload(), bot="inbox-agent"))
+    stamp = "2026-10-11T11:00:00+02:00"
+    for run in (a, b):
+        live.runs.decide(run["run_id"], "cancelled")
+        path = live.data_dir / "results" / f"{run['run_id']}.json"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        path.write_text(json.dumps(dict(value, decided=stamp)), encoding="utf-8")
+    code, out = _run(cli.command_results, live.data_dir, since=stamp, bot=None, wait=0, seen=[a["run_id"]])
+    assert code == 0 and [item["run_id"] for item in out["results"]] == [b["run_id"]]
+    assert out["cursor"] == stamp and out["seen"] == [b["run_id"]]
+    code, out = _run(
+        cli.command_results, live.data_dir, since=stamp, bot=None, wait=0, seen=[a["run_id"], b["run_id"]]
+    )
+    assert out["results"] == [] and "cursor" not in out
+
+
+def _open_run(base, run_id, expires):
+    (base / "runs" / f"{run_id}.json").write_text(
+        json.dumps({"state": "open", "expires": expires.isoformat(timespec="seconds")}),
+        encoding="utf-8",
+    )
+
+
+def _wait(base, run_id, **options):
+    args = SimpleNamespace(run_id=run_id, timeout=options.get("timeout", 0),
+                           until_expiry=options.get("until_expiry", False))
+    with redirect_stdout(io.StringIO()), patch.object(cli, "error", side_effect=lambda m, c: c):
+        return cli.command_wait(args, base)
+
+
+def test_wait_ends_at_expiry_plus_grace_with_exit_7(tmp_path):
+    base = ensure_layout(tmp_path / "data")
+    now = datetime.now(timezone.utc)
+    _open_run(base, "r1", now - timedelta(seconds=cli.WAIT_EXPIRY_GRACE_S + 5))
+    assert _wait(base, "r1") == 7
+    assert _wait(base, "r1", until_expiry=True) == 7
+    assert _wait(base, "r1", timeout=30) == 7
+    assert not (base / "results" / "r1.json").exists(), "wait never writes a result"
+
+
+def test_wait_timeout_before_expiry_still_exits_5(tmp_path):
+    base = ensure_layout(tmp_path / "data")
+    _open_run(base, "r2", datetime.now(timezone.utc) + timedelta(hours=1))
+    assert _wait(base, "r2", timeout=0.3) == 5
+
+
+def test_wait_until_expiry_returns_the_result_when_it_lands(tmp_path):
+    base = ensure_layout(tmp_path / "data")
+    _open_run(base, "r3", datetime.now(timezone.utc) + timedelta(hours=1))
+    result = base / "results" / "r3.json"
+    timer = threading.Timer(0.4, lambda: result.write_text(json.dumps({"status": "submitted"}), encoding="utf-8"))
+    timer.start()
+    try:
+        assert _wait(base, "r3", until_expiry=True) == 0
+    finally:
+        timer.cancel()
+
+
+def test_wait_until_expiry_and_timeout_exclude_each_other(tmp_path):
+    base = ensure_layout(tmp_path / "data")
+    _open_run(base, "r4", datetime.now(timezone.utc) + timedelta(hours=1))
+    assert _wait(base, "r4", timeout=5, until_expiry=True) == 2
 
 
 def test_results_since_rejects_a_stamp_without_offset(tmp_path):

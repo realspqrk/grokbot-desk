@@ -18,6 +18,10 @@
     "choice_approve",
     "choice_reject",
     "choice_defer",
+    "posted",
+    "skip",
+    "later",
+    "footer_done",
     "choice_group_label",
     "due",
     "add_note",
@@ -25,7 +29,10 @@
     "note_for",
     "note_overall",
     "items_open_named",
+    "items_open_short",
     "items_all_decided",
+    "links_label",
+    "sep_list",
     "sep_names",
     "copy"
   ]

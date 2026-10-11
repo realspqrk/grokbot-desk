@@ -2,7 +2,7 @@
 
 Built-in template. The agent shows one post draft as realistic **X, LinkedIn, Instagram and Facebook** previews from one payload, one platform tab at a time. The reviewer sees the composed text per platform with the image, the platform's own fold label, a counter, the lints and copy icons, then approves some platforms or requests changes with a comment. Nothing is published and nothing is fetched: the window only previews, copies and reports the decision back.
 
-Each platform has a **mode**: `auto` (the default: the bot posts it after `Approve & post`) or `manual` (the reviewer posts it by hand: the panel is built for copying, and the reviewer ticks `Mark as posted`). The bot decides the mode per platform from its own instructions and experience (who actually posts where) and never posts a platform marked manual.
+Each platform has a **mode**: `auto` (the default: the bot posts it after `Approve & post`) or `manual` (the reviewer posts it by hand: the panel is built for copying, and the reviewer ticks `Posted ✓`). The bot decides the mode per platform from its own instructions and experience (who actually posts where) and never posts a platform marked manual.
 
 ```
 py -3 report_shell.py show preview-post --data payload.json
@@ -17,10 +17,10 @@ py -3 report_shell.py wait <run_id> --timeout 120
   - the preview with avatar (or initials), name and handle (X shows `@handle`, Instagram the bare handle, LinkedIn the headline), the composed text, the image in its ratio, or a link card when there is no image;
   - LinkedIn and Instagram show where the feed folds the text, as the platform's own muted inline label (`…more` after 210 code points on LinkedIn, `… more` after 125 on Instagram) with a hint below; the rest stays readable and copyable;
   - auto: the checkbox `Approve for X` (LinkedIn, Instagram, Facebook) with the blocking reason under it;
-  - manual: first the note `You post this yourself.` and the copies (`Copy text`, `Copy hashtags`, `Copy comment`, `Copy image` and `Show in folder` when the post has an image), then the checkbox `Mark as posted on X`, so Tab reaches the copies before the decision;
+  - manual: first the note `You post this yourself.` and the copies (`Copy text`, `Copy hashtags`, `Copy comment`, `Copy image` and `Show in folder` when the post has an image), then the checkbox `Posted ✓`, so Tab reaches the copies before the decision;
   - the counter (`245 / 280`; Instagram also `Hashtags 3 / 30`; LinkedIn also the first-comment counter) and the lint badges;
   - the copy icons `Copy text`, `Copy hashtags`, `Copy comment`.
-- **Footer:** `Discard`, the quiet alternative `Request changes` and the one primary (Ctrl+Enter works too). The primary names what happens: `Approve & post` (only auto platforms ticked, or nothing yet in a report with auto platforms), `Mark as posted` (only manual ones) or `Confirm` (both). The status reads `Approve at least one platform` or `2 of 4 platforms approved`; with a manual platform in the report `Approve or mark at least one platform` and `2 of 4 platforms done`.
+- **Footer:** `Discard`, the quiet alternative `Request changes` and the one primary (Ctrl+Enter works too). The primary names what happens: `Done` (nothing ticked, and the report has a manual platform: submitting reports every manual platform as skipped and does not release an auto platform), `Approve & post` (only auto platforms ticked, or nothing yet when every platform is auto), `Posted ✓` (only manual ones ticked) or `Confirm` (both). An all-auto report stays disabled until a platform is ticked. `Posted ✓` is never the label for a report that only skips. The status reads `Unticked platforms are reported as skipped` while nothing is ticked and a manual platform is present, otherwise `Approve at least one platform` or `2 of 4 platforms approved`; with a manual platform ticked, `2 of 4 platforms done`. An unticked manual platform is `skipped`.
 - **Request changes** opens the comment field (`What should change?`, up to 2000 characters) above the tabs; the primary becomes `Send request` and stays disabled until the comment has text. `Cancel` returns to approving. The mode is part of the draft, so a reload never turns a change request into an approval.
 
 ## Composed text, copy and counters
@@ -92,7 +92,7 @@ Image paths (`image.path`, `author.avatar`) are absolute paths under a media roo
   "platforms": ["linkedin", "instagram"],
   "comment": "",
   "per_platform": {
-    "x": { "mode": "manual", "decision": "posted_manually" },
+    "x": { "mode": "manual", "decision": "done" },
     "linkedin": { "mode": "auto", "decision": "approved" },
     "instagram": { "mode": "auto", "decision": "approved" },
     "facebook": { "mode": "auto", "decision": "not_approved" }
@@ -113,14 +113,14 @@ Image paths (`image.path`, `author.avatar`) are absolute paths under a media roo
 ```
 
 - **What the bot posts:** exactly `platforms`, the auto platforms the reviewer approved. Post only auto + approved; a manual platform is never in `platforms`, even when it was marked as posted.
-- `per_platform` names every payload platform with its `mode` and `decision`: `approved` (auto, the bot posts it), `posted_manually` (manual, the reviewer posted it: record it, do not post), `not_approved` (not ticked: do nothing) or `changes_requested` (with the comment as `note`).
+- `per_platform` names every payload platform with its `mode` and `decision`: `approved` (auto, the bot posts it), `done` (manual, the reviewer posted it: record it, do not post), `skipped` (manual, not posted), `not_approved` (auto, not ticked: do nothing) or `changes_requested` (with the comment as `note`).
 - `approve`: 0–4 unique auto platforms in `platforms`, in payload order (empty when everything ticked was posted by hand); at least one platform is ticked. Only approvable platforms can be ticked (within the limit; Instagram with an image that loaded). The page sends `""` as the comment.
 - `request_changes`: `comment` 1–2000 with at least one non-whitespace character; `platforms` is always `[]`; every platform is `changes_requested`.
 - The server validates the shape only; that each approved platform was approvable is enforced by the page. A discarded or expired report gives `cancelled` / `expired`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)
 
-`reveal`, `request_changes`, `request_changes_label`, `send_request`, `cancel`, `approve`, `approve_post` (Approve & post), `mark_posted` (Mark as posted), `mark_posted_on` (Mark as posted on {platform}), `confirm_decision` (Confirm), `manual_note` (You post this yourself.), `mode_manual` (manual), `copy_image`, `decided_count`, `select_platform_manual`, `approve_for` (Approve for {platform}), `approve_count`, `approved`, `not_approved`, `blocked`, `platforms_label`, `platform_x|linkedin|instagram|facebook`, `copy_text`, `copy_hashtags`, `copy_comment`, `copy`, `hashtags`, `pf_handle` (@{handle}), `lint_found` (**new**: “{text}” found / „{text}“ gefunden), `lint_ig_needs_image`, `lint_over_hashtags`, `over_limit_blocks`, `select_platform`, `comment_required`, `approval_waits_image`, `approval_image_failed`, `meta_persona`, `meta_post_id`. The components add their own (`Copied ✓`, counter texts, `now`, `No image`, the fold labels and hint). Avatars have an empty `alt`: they sit next to the name.
+`reveal`, `request_changes`, `request_changes_label`, `send_request`, `cancel`, `approve`, `approve_post` (Approve & post), `posted` (Posted ✓), `skip` (Skip), `mark_posted` (Posted ✓), `mark_posted_on` (Posted ✓), `confirm_decision` (Confirm), `manual_note` (You post this yourself.), `mode_manual` (manual), `copy_image`, `decided_count`, `select_platform_manual`, `approve_for` (Approve for {platform}), `approve_count`, `approved`, `not_approved`, `blocked`, `platforms_label`, `platform_x|linkedin|instagram|facebook`, `copy_text`, `copy_hashtags`, `copy_comment`, `copy`, `hashtags`, `pf_handle` (@{handle}), `lint_found` (**new**: “{text}” found / „{text}“ gefunden), `lint_ig_needs_image`, `lint_over_hashtags`, `over_limit_blocks`, `select_platform`, `comment_required`, `approval_waits_image`, `approval_image_failed`, `meta_persona`, `meta_post_id`. The components add their own (`Copied ✓`, counter texts, `now`, `No image`, the fold labels and hint). Avatars have an empty `alt`: they sit next to the name.
 
 ## Test hooks
 
@@ -130,7 +130,7 @@ Image paths (`image.path`, `author.avatar`) are absolute paths under a media roo
 
 ## Keyboard path (golden, one open report)
 
-Tab ×2 passes the `…` menu and reaches the selected tab (X, manual): Tab ×5 passes its copies (text, hashtags, comment, image, folder), Tab reaches `Mark as posted on X` and Space ticks it; Shift+Tab ×6 returns to the tab and ArrowRight selects the next one. For each auto platform: Tab, Space approves; Tab ×3 passes its three copy icons; Shift+Tab ×4 returns to the tab and ArrowRight selects the next one. On the last tab: Tab, Space, then Tab ×6 passes the copies, `Discard` and `Request changes` and reaches the primary (`Confirm`, as both modes are ticked); Enter submits.
+Tab ×2 passes the `…` menu and reaches the selected tab (X, manual): Tab ×5 passes its copies (text, hashtags, comment, image, folder), Tab reaches `Posted ✓` and Space ticks it; Shift+Tab ×6 returns to the tab and ArrowRight selects the next one. For each auto platform: Tab, Space approves; Tab ×3 passes its three copy icons; Shift+Tab ×4 returns to the tab and ArrowRight selects the next one. On the last tab: Tab, Space, then Tab ×6 passes the copies, `Discard` and `Request changes` and reaches the primary (`Confirm`, as both modes are ticked); Enter submits.
 
 ## Files
 

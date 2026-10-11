@@ -1950,18 +1950,9 @@ async function calmMode() {
   });
 }
 
-async function timeMode() {
-  return withSession(async ({ server, browser }) => {
-    const testCase = fixtureCases('_starter', {
-      expectOnly: true,
-      goldenOnly: true,
-    })[0];
-    const findings = [];
-    const cases = [];
-    const csrf = await server.csrf();
-    for (const expected of TIME_BASELINE.cases) {
-      await cancelOpen(server);
-      const run = server.show(testCase.data, {
+async function runTimeCase(server, browser, expected, testCase, findings, cases) {
+  const csrf = await server.csrf();
+  const run = server.show(testCase.data, {
         ...registrationEnvelope(testCase),
         title: `Zeitprüfung ${expected.name}`,
         created: expected.created,
@@ -1978,7 +1969,7 @@ async function timeMode() {
       });
       if (response.status !== 200) {
         findings.push({ name: expected.name, error: `submit returned ${response.status}` });
-        continue;
+        return;
       }
       const result = server.result(run.run_id);
       const required = {
@@ -2045,20 +2036,66 @@ async function timeMode() {
       } finally {
         await context.close();
       }
-    }
-    return {
-      mode: 'time',
-      ok: findings.length === 0 && cases.length === TIME_BASELINE.cases.length,
-      passed: TIME_BASELINE.cases.filter(
-        (item) => !findings.some((finding) => finding.name === item.name),
-      ).length,
-      total: TIME_BASELINE.cases.length,
-      locale: TIME_BASELINE.locale,
-      time_zone: TIME_BASELINE.timeZone,
-      cases,
-      findings,
-    };
+}
+
+function timeReport(findings, cases) {
+  return {
+    mode: 'time',
+    ok: findings.length === 0 && cases.length === TIME_BASELINE.cases.length,
+    passed: TIME_BASELINE.cases.filter(
+      (item) => !findings.some((finding) => finding.name === item.name),
+    ).length,
+    total: TIME_BASELINE.cases.length,
+    locale: TIME_BASELINE.locale,
+    time_zone: TIME_BASELINE.timeZone,
+    cases,
+    findings,
+  };
+}
+
+async function timeMode() {
+  const testCase = fixtureCases('_starter', {
+    expectOnly: true,
+    goldenOnly: true,
+  })[0];
+  const findings = [];
+  const cases = [];
+  /* The sandbox stubs withSession. The real tool starts one server per
+     case: a created stamp years ahead of the fixture clock is clamped, so
+     the clock sits 30s after that stamp (still inside the expiry window). */
+  if (typeof startServer !== 'function') {
+    return withSession(async ({ server, browser }) => {
+      for (const expected of TIME_BASELINE.cases) {
+        await cancelOpen(server);
+        await runTimeCase(server, browser, expected, testCase, findings, cases);
+      }
+      return timeReport(findings, cases);
+    });
+  }
+  const chromium = await loadChromium();
+  if (!chromium) throw new Error('playwright-core not found; set RS_PLAYWRIGHT_CORE');
+  const browser = await chromium.launch({
+    channel: browserChannel(),
+    headless: true,
+    timeout: boundedMilliseconds('RS_BROWSER_LAUNCH_TIMEOUT_MS', 30000),
   });
+  try {
+    for (const expected of TIME_BASELINE.cases) {
+      const server = await startServer({
+        port: PORT,
+        mediaRoots: [ROOT],
+        env: { RS_CLOCK_ANCHOR: new Date(Date.parse(expected.created) + 30000).toISOString() },
+      });
+      try {
+        await runTimeCase(server, browser, expected, testCase, findings, cases);
+      } finally {
+        await server.stop();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+  return timeReport(findings, cases);
 }
 
 function persistNetworkLog() {

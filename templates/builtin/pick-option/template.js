@@ -4,8 +4,11 @@
    2 to 4 options side by side as one radio group (rs-action-row): each card
    is a radio, Tab enters the group once, the arrow keys move and pick, Space
    or a click picks. Rows line up across the cards (name, summary, facts).
-   Nothing is preselected; the agent's suggestion is only marked. The note
-   sits behind "Add note"; the primary names the picked option. */
+   A copy control, and any link taken from that option's text, sits in the
+   same grid directly under its own card at every width, outside the radio
+   button, and is named for the option. Nothing is preselected; the agent's
+   suggestion is only marked. The note sits behind "Add note"; the primary
+   names the picked option. */
 var data = RS.data;
 function part(name) { return root.querySelector('[data-po="' + name + '"]'); }
 function make(tag, cls, text) {
@@ -20,8 +23,8 @@ var note = root.querySelector('#po-note');
 var noteOpen = part('note-open');
 var noteBox = part('note-box');
 
-part('question').textContent = data.question;
-if (data.context) part('context').textContent = data.context;
+RS.fillText(part('question'), data.question);
+if (data.context) RS.fillText(part('context'), data.context);
 else part('context').remove();
 
 /* the schema rejects a repeated id (x-rs-unique-key); should one still
@@ -47,6 +50,7 @@ options.forEach(function (o, i) {
   var card = make('button', 'po__card');
   card.type = 'button';
   card.value = o.id;
+  card.setAttribute('data-i', String(i));
   var head = make('span', 'po__head');
   var mark = make('span', 'po__mark');
   mark.setAttribute('aria-hidden', 'true');
@@ -91,6 +95,30 @@ options.forEach(function (o, i) {
   card.setAttribute('aria-labelledby', labelledBy.join(' '));
   if (described.length) card.setAttribute('aria-describedby', described.join(' '));
   row.appendChild(card);
+
+  var beside = make('div', 'po__beside');
+  beside.setAttribute('data-i', String(i));
+  RS.appendLinks(beside, o.name);
+  RS.appendLinks(beside, o.summary || '');
+  (o.facts || []).forEach(function (fact) {
+    RS.appendLinks(beside, fact.label);
+    RS.appendLinks(beside, fact.value);
+  });
+  if (o.copy) {
+    var copy = document.createElement('rs-copy');
+    copy.className = 'po__copy';
+    copy.setAttribute('data-copy-id', 'option-' + (i + 1));
+    copy.setAttribute('label', RS.t('copy_named', { name: o.name }));
+    copy.setAttribute('caption', '');
+    copy.setAttribute('block', '');
+    if (o.copy.length > 180) copy.setAttribute('max-lines', '6');
+    copy.text = o.copy;
+    beside.appendChild(copy);
+  }
+  if (beside.childNodes.length) {
+    row.appendChild(beside);
+    row.setAttribute('data-beside', '');
+  }
 });
 
 function showNote(focus) {

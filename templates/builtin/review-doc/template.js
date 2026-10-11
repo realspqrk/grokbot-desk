@@ -2,12 +2,14 @@
    block comments only, no literal UI strings: every visible word comes from
    RS.t or the payload.
    The document is parsed here (a safe Markdown subset, or plain text) and
-   built from DOM nodes with textContent only: raw HTML stays text, a link
-   shows its address as quiet text and is never opened, and an image loads
+   built from DOM nodes with textContent only: raw HTML stays text, an
+   http(s) Markdown link opens in the system browser, and an image loads
    only through the template's media field (RS.media).
-   Approve = the core primary. "Request changes" = the footer's quiet
-   alternative: it opens the overall comment and the primary becomes
-   "Send request". Each section heading carries a "Comment" action (shown on
+   Bot: "Looks good" is the primary and "Changes" the quiet alternative
+   (or Approve & post / send / continue when action is set). User: "Done"
+   and "Skip". Info only: "Got it" and "Request changes". The alternative
+   opens the overall comment and the primary becomes "Send request", except
+   Skip, which sends at once. Each section heading carries a "Comment" action (shown on
    hover/focus) that opens a comment for that section. */
 var data = RS.data;
 var MAX_SECTIONS = 200;
@@ -363,12 +365,23 @@ function renderInline(nodes, parent, depth) {
     if (n.t === 'text') parent.appendChild(document.createTextNode(n.v));
     else if (n.t === 'br') parent.appendChild(document.createElement('br'));
     else if (n.t === 'code') parent.appendChild(make('code', 'rd__code', n.v));
-    else if (n.t === 'url') parent.appendChild(make('span', 'rd__address', n.v));
+    else if (n.t === 'url') {
+      var auto = RS.externalLink(n.v, n.v);
+      parent.appendChild(auto || make('span', 'rd__address', n.v));
+    }
     else if (n.t === 'img') parent.appendChild(renderImage(n));
     else if (n.t === 'link') {
       var label = make('span', 'rd__link');
       renderInline(n.kids, label, depth + 1);
-      parent.appendChild(label);
+      var anchor = RS.externalLink(n.href, '');
+      if (anchor) {
+        anchor.classList.add('rd__link');
+        anchor.textContent = '';
+        while (label.firstChild) anchor.appendChild(label.firstChild);
+        parent.appendChild(anchor);
+      } else {
+        parent.appendChild(label);
+      }
       if (n.href && n.href !== plain(n.kids)) parent.appendChild(make('span', 'rd__url', n.href));
     } else {
       var el = document.createElement(n.t);
@@ -395,11 +408,37 @@ function renderList(items, from, base) {
       continue;
     }
     li = document.createElement('li');
-    renderInline(parseInline(it.text), li);
+    var task = /^\[([ xX])\](?:[ \t]+([\s\S]*))?$/.exec(it.text);
+    var body = it.text;
+    var host = li;
+    if (task) {
+      var on = task[1] !== ' ';
+      body = task[2] || '';
+      li.className = 'rd__task rd__task--' + (on ? 'on' : 'off');
+      var tick = make('span', 'rd__tick');
+      tick.setAttribute('role', 'img');
+      tick.setAttribute('aria-label', RS.t(on ? 'task_done' : 'task_open'));
+      tick.appendChild(RS.icon('check'));
+      li.appendChild(tick);
+      host = document.createElement('span');
+      li.appendChild(host);
+    }
+    renderInline(parseInline(body), host);
     list.appendChild(li);
     k++;
   }
   return { el: list, next: k };
+}
+var blockCopies = { code: 0, quote: 0 };
+function blockCopy(kind, text, describedId) {
+  blockCopies[kind] += 1;
+  var copy = document.createElement('rs-copy');
+  copy.setAttribute('data-copy-id', kind + '-' + blockCopies[kind]);
+  copy.setAttribute('data-rs-described', describedId);
+  copy.setAttribute('label', RS.t('copy'));
+  copy.setAttribute('no-value', '');
+  copy.text = text;
+  return copy;
 }
 function renderBlock(b) {
   if (b.type === 'p') {
@@ -421,19 +460,27 @@ function renderBlock(b) {
   }
   if (b.type === 'code') {
     var pre = make('pre', 'rd__pre');
+    pre.id = 'rd-code-' + (blockCopies.code + 1);
     pre.appendChild(make('code', null, b.text));
-    return pre;
+    var codeWrap = make('div', 'rd__copyblock');
+    codeWrap.appendChild(blockCopy('code', b.text, pre.id));
+    codeWrap.appendChild(pre);
+    return codeWrap;
   }
   if (b.type === 'hr') return make('hr', 'rd__hr');
   if (b.type === 'quote') {
     var q = make('blockquote', 'rd__quote');
+    q.id = 'rd-quote-' + (blockCopies.quote + 1);
     b.paras.forEach(function (text) {
       if (!text.trim()) return;
       var qp = make('p', 'rd__p');
       renderInline(parseInline(text), qp);
       q.appendChild(qp);
     });
-    return q;
+    var quoteWrap = make('div', 'rd__copyblock');
+    quoteWrap.appendChild(blockCopy('quote', b.paras.join('\n\n'), q.id));
+    quoteWrap.appendChild(q);
+    return quoteWrap;
   }
   if (b.type === 'list') {
     var base = Math.min.apply(null, b.items.map(function (it) { return it.indent; }));
@@ -539,12 +586,37 @@ blocks.forEach(function (b) {
     target = make('div', 'rd__section rd__section--lead');
     doc.appendChild(target);
   }
-  target.appendChild(renderBlock(b));
+  var rendered = renderBlock(b);
+  target.appendChild(rendered);
+  rendered.querySelectorAll('rs-copy[data-rs-described]').forEach(function (copy) {
+    var button = copy.querySelector('button');
+    if (button) button.setAttribute('aria-describedby', copy.getAttribute('data-rs-described'));
+  });
 });
 
 /* lead: the agent's summary, then quiet reading facts */
-if (data.summary) part('summary').textContent = data.summary;
+if (data.summary) RS.fillText(part('summary'), data.summary);
 else part('summary').remove();
+if (data.copy && data.copy.length) {
+  var copies = make('div', 'rd__copies');
+  data.copy.forEach(function (entry, i) {
+    var copy = document.createElement('rs-copy');
+    copy.setAttribute('data-copy-id', 'copy-' + (i + 1));
+    copy.setAttribute('label', entry.label);
+    copy.setAttribute('caption', '');
+    copy.setAttribute('block', '');
+    if (entry.text.length > 80) copy.setAttribute('max-lines', '6');
+    copy.text = entry.text;
+    copies.appendChild(copy);
+  });
+  /* The bold verdict leads the texts to paste. It is the first paragraph
+     that contains strong; everything else stays in the article. */
+  var strong = part('doc').querySelector('strong');
+  var paragraph = strong;
+  while (paragraph && paragraph.tagName !== 'P') paragraph = paragraph.parentNode;
+  if (paragraph && paragraph.tagName === 'P') part('lead').appendChild(paragraph);
+  part('lead').appendChild(copies);
+}
 var words = (data.doc.match(/[^\s#>*_`|~-]+/g) || []).length;
 var facts = [
   words === 1 ? RS.t('rd_words_one') : RS.t('rd_words', { n: RS.number(words) }),
@@ -564,6 +636,13 @@ RS.addMenuItem(RS.t(isText ? 'copy_text' : 'rd_copy_markdown'), function () {
 /* ------------------------------------------------------------ decision -- */
 var overall = root.querySelector('#rd-comment');
 var requesting = false;
+var actor = data.actor === 'user' || data.actor === 'none' ? data.actor : 'bot';
+function botPrimary() {
+  if (data.action === 'post') return RS.t('approve_post');
+  if (data.action === 'send') return RS.t('approve_send');
+  if (data.action) return RS.t('approve_continue');
+  return RS.t('looks_good');
+}
 
 function sectionComments() {
   return sections.filter(function (s) { return s.input.value.trim(); }).map(function (s) {
@@ -590,9 +669,22 @@ function update(save) {
     RS.setStatus(ready ? null : RS.t('comment_required'));
     return;
   }
-  RS.setSubmitLabel(RS.t('approve'));
-  RS.setAlternative(RS.t('request_changes'), function () { setRequesting(true, true); });
-  RS.setResult({ decision: 'approve', comment: '', comments: list });
+  if (actor === 'user') {
+    RS.setSubmitLabel(RS.t('done_check'));
+    RS.setAlternative(RS.t('skip'), function () {
+      RS.setResult({ decision: 'skipped', comment: '', comments: sectionComments() });
+      RS.submit();
+    });
+    RS.setResult({ decision: 'done', comment: '', comments: list });
+  } else if (actor === 'none') {
+    RS.setSubmitLabel(RS.t('got_it'));
+    RS.setAlternative(RS.t('request_changes_ask'), function () { setRequesting(true, true); });
+    RS.setResult({ decision: 'acknowledged', comment: '', comments: list });
+  } else {
+    RS.setSubmitLabel(botPrimary());
+    RS.setAlternative(RS.t(data.action ? 'request_changes' : 'changes'), function () { setRequesting(true, true); });
+    RS.setResult({ decision: 'approve', comment: '', comments: list });
+  }
   if (!list.length) RS.setStatus(RS.t('rd_waiting'));
   else if (list.length === 1) RS.setStatus(RS.t('rd_with_comments_one'));
   else RS.setStatus(RS.t('rd_with_comments', { n: RS.number(list.length) }));

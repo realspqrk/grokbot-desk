@@ -453,6 +453,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transition: background-color var(--rs-dur) var(--rs-ease);
 }
 .rs-link:hover { background: var(--rs-hover); color: var(--rs-ink); }
+a.rs-ext {
+  color: var(--rs-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--rs-line-strong);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+a.rs-ext:hover { color: var(--rs-ink); }
 .rs-link > .rs-ico { width: 16px; height: 16px; }
 
 /* Item actions (copy, note) show on hover and on keyboard focus only (K2). */

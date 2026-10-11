@@ -12,7 +12,14 @@
 var data = RS.data;
 var source = data.items || [];
 var CHOICES = { approve: 'choice_approve', reject: 'choice_reject', defer: 'choice_defer' };
+var USER_CHOICES = ['done', 'skipped', 'later'];
+var USER_LABELS = { done: 'posted', skipped: 'skip', later: 'later' };
 var DEFAULT_CHOICES = ['approve', 'reject', 'defer'];
+function isUser(w) { return w.actor === 'user'; }
+function choiceValues(w) { return isUser(w) ? USER_CHOICES : (w.choices || DEFAULT_CHOICES); }
+function choiceLabel(w, value) {
+  return RS.t(isUser(w) ? USER_LABELS[value] : CHOICES[value]);
+}
 /* A copy value wider than this, or with a line break, gets its own quoted line. */
 var SHORT_COPY = 40;
 /* Above this many (estimated) lines the quoted value is clamped (rs-copy max-lines). */
@@ -49,12 +56,15 @@ function buildCopy(entry, id) {
   return copy;
 }
 
-function sourceTitle(box, w, titleCls) {
+function sourceTitle(box, w, titleCls, linkify) {
   if (w.source) {
     box.appendChild(make('span', 'dl-source', w.source));
-    box.appendChild(document.createTextNode(' '));
+    box.appendChild(document.createTextNode(RS.t('sep_list')));
   }
-  box.appendChild(make('span', titleCls, w.title));
+  var title = make('span', titleCls);
+  if (linkify) RS.fillText(title, w.title);
+  else title.textContent = w.title;
+  box.appendChild(title);
 }
 
 function dueBadge(w) {
@@ -63,8 +73,48 @@ function dueBadge(w) {
   return due;
 }
 
+/* The payload url is the one link for that address. The same address in the
+   title or detail stays plain text, so it is not a second control. */
+function dropDuplicate(prose, url) {
+  if (!url) return;
+  Array.prototype.forEach.call(prose.querySelectorAll('a.rs-ext'), function (anchor) {
+    if (anchor.closest('.dl-url') || anchor.getAttribute('href') !== url) return;
+    anchor.parentNode.replaceChild(document.createTextNode(anchor.textContent), anchor);
+  });
+}
+
+/* Two or more links in one item are one roving toolbar, so they count as
+   one control. A single link stays an ordinary tab stop. */
+function bindLinkToolbar(prose) {
+  var links = prose.querySelectorAll('a.rs-ext');
+  if (links.length < 2) return;
+  prose.setAttribute('role', 'toolbar');
+  prose.setAttribute('aria-label', RS.t('links_label'));
+  Array.prototype.forEach.call(links, function (anchor, index) {
+    anchor.tabIndex = index === 0 ? 0 : -1;
+  });
+  prose.addEventListener('keydown', function (event) {
+    var step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    var home = event.key === 'Home';
+    var end = event.key === 'End';
+    if (!step && !home && !end) return;
+    var list = Array.prototype.filter.call(prose.querySelectorAll('a.rs-ext'), function (anchor) {
+      return anchor.getClientRects().length > 0;
+    });
+    var index = list.indexOf(document.activeElement);
+    if (index < 0 || list.length < 2) return;
+    event.preventDefault();
+    event.stopPropagation();
+    var next = home ? 0 : end ? list.length - 1 : (index + step + list.length) % list.length;
+    Array.prototype.forEach.call(list, function (anchor, i) {
+      anchor.tabIndex = i === next ? 0 : -1;
+    });
+    list[next].focus();
+  });
+}
+
 /* ---------------------------------------------------------------- intro -- */
-if (data.intro) part('intro').textContent = data.intro;
+if (data.intro) RS.fillText(part('intro'), data.intro);
 else part('intro').remove();
 if (source.some(function (w) { return !!w.kind; })) root.querySelector('.dl').setAttribute('data-dl-kinds', '');
 
@@ -106,12 +156,27 @@ source.forEach(function (w, i) {
     eyebrow.appendChild(due);
   }
   card.appendChild(eyebrow);
+  var prose = make('div', 'dl-prose');
   var title = make('p', 'dl-card__title');
   title.id = bodyId + '-title';
   card.setAttribute('aria-labelledby', title.id);
-  sourceTitle(title, w, 'dl-card__what');
-  card.appendChild(title);
-  if (w.detail) card.appendChild(make('p', 'dl-card__detail', w.detail));
+  sourceTitle(title, w, 'dl-card__what', true);
+  prose.appendChild(title);
+  if (w.detail) {
+    var detail = make('p', 'dl-card__detail');
+    RS.fillText(detail, w.detail);
+    prose.appendChild(detail);
+  }
+  if (w.url) {
+    var urlLine = make('p', 'dl-url');
+    var urlLink = RS.externalLink(w.url, w.url);
+    if (urlLink) urlLine.appendChild(urlLink);
+    else urlLine.textContent = w.url;
+    prose.appendChild(urlLine);
+  }
+  dropDuplicate(prose, w.url);
+  bindLinkToolbar(prose);
+  card.appendChild(prose);
 
   if (w.copy && w.copy.length) {
     var copies = make('div', 'dl-copies');
@@ -125,8 +190,8 @@ source.forEach(function (w, i) {
   var choice = make('rs-action-row', 'dl-choice');
   choice.setAttribute('data-item', w.id);
   choice.setAttribute('label', RS.t('choice_group_label', { what: w.title }));
-  choice.options = (w.choices || DEFAULT_CHOICES).map(function (c) {
-    return { value: c, label: RS.t(CHOICES[c]) };
+  choice.options = choiceValues(w).map(function (c) {
+    return { value: c, label: choiceLabel(w, c) };
   });
   var addNote = make('button', 'rs-link rs-on-hover dl-add-note');
   addNote.type = 'button';
@@ -226,7 +291,11 @@ root.addEventListener('click', function (e) {
 /* ------------------------------------------------------ handled (closed) -- */
 var done = data.done || [];
 if (done.length) {
-  done.forEach(function (d) { part('done-list').appendChild(make('li', null, d.text)); });
+  done.forEach(function (d) {
+    var item = document.createElement('li');
+    RS.fillText(item, d.text);
+    part('done-list').appendChild(item);
+  });
   part('handled-summary').textContent = RS.t('handled_summary', { parts: RS.t('handled_done', { n: RS.number(done.length) }) });
 } else {
   part('handled').remove();
@@ -280,12 +349,18 @@ function update(save) {
   var value = collect();
   if (save) RS.draft.set(value);
   var openItems = items.filter(function (it) { return !it.choice.value; });
+  var allUser = items.length > 0 && items.every(function (it) { return isUser(it.w); });
+  RS.setSubmitLabel(allUser ? RS.t('footer_done') : null);
   if (openItems.length) {
     RS.setResult(null);
-    RS.setStatus(RS.t('items_open_named', {
+    var shortStatus = RS.t('items_open_short', { n: RS.number(openItems.length) });
+    var fullStatus = RS.t('items_open_named', {
       n: RS.number(openItems.length), total: RS.number(items.length),
       names: openItems.map(function (it) { return it.name; }).join(RS.t('sep_names'))
-    }));
+    });
+    /* The visible line is the count. The accessible name starts with that
+       same text and then the names, so the full list is not painted. */
+    RS.setStatus(shortStatus, null, shortStatus + RS.t('sep_list') + fullStatus);
   } else {
     RS.setResult(value);
     RS.setStatus(RS.t('items_all_decided'));

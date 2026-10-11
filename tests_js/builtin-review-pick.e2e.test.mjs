@@ -78,11 +78,26 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
           urls: [...d.querySelectorAll('.rd__url')].map((n) => n.textContent),
         };
       });
-      for (const tag of ['script', 'a', 'img', 'b']) assert.ok(!doc.tags.includes(tag), `unexpected <${tag}>`);
+      for (const tag of ['script', 'img', 'b']) assert.ok(!doc.tags.includes(tag), `unexpected <${tag}>`);
+      assert.ok(doc.tags.includes('a'), 'a markdown http link is a real anchor');
       assert.ok(doc.text.includes('<script>alert(1)</script>'));
       assert.ok(doc.text.includes('<b>every day from 8:00 to 20:00</b>'));
+      assert.ok(doc.text.includes('<a href="https://larkspur.example/rules">'), 'raw HTML stays text');
       assert.deepEqual(doc.missing, [de.rd_image_missing.replace('{alt}', 'Photo of the gate')]);
       assert.deepEqual(doc.urls, ['https://larkspur.example/contact']);
+      const href = await page.getAttribute('.rd__doc a.rs-ext', 'href');
+      assert.equal(href, 'https://larkspur.example/contact');
+      const opened = [];
+      await page.route('**/open-url', async (route) => {
+        opened.push(JSON.parse(route.request().postData()));
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      });
+      const stayed = page.url();
+      await page.click('.rd__doc a.rs-ext');
+      assert.equal(page.url(), stayed, 'the app window does not navigate');
+      assert.equal(opened.length, 1);
+      assert.equal(opened[0].url, 'https://larkspur.example/contact');
+      assert.equal(opened[0].run_id, run.run_id);
       const origin = new URL(server.url()).origin;
       assert.deepEqual(requests.filter((u) => !u.startsWith(origin) && !u.startsWith('data:')), []);
       assert.deepEqual(errors, []);
@@ -112,7 +127,7 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
     const { ctx, page, errors } = await open(run.run_id);
     try {
       assert.equal(await page.locator('.rd__comment-open').count(), 5);
-      assert.equal(await page.textContent('#rs-submit-label'), de.approve);
+      assert.equal(await page.textContent('#rs-submit-label'), de.looks_good);
       await page.click('[data-section="4"] .rd__comment-open');
       assert.equal(await page.evaluate(() => document.activeElement.id), 'rd-c-4');
       await page.keyboard.type('Per season, please.');
@@ -126,7 +141,7 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       assert.equal(await page.isVisible('[data-section="4"] .rd__comment-open'), false);
       assert.equal(await page.textContent('#rs-submit-label'), de.send_request);
       await page.click('[data-rd="request-cancel"]');
-      assert.equal(await page.textContent('#rs-submit-label'), de.approve);
+      assert.equal(await page.textContent('#rs-submit-label'), de.looks_good);
       assert.equal(await page.textContent('#rs-status'), de.rd_with_comments_one);
       await page.click('#rs-alt');
       await page.fill('#rd-comment', 'Fix the fee note.');
@@ -290,6 +305,100 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
         const lefts = await opened.page.evaluate(() => [...new Set([...document.querySelectorAll('.po__card')].map((c) => Math.round(c.getBoundingClientRect().left)))]);
         assert.equal(lefts.length, columns, `${viewport.width}px`);
       } finally { await opened.ctx.close(); }
+    }
+  });
+
+  test('review-doc: edge-listing leads with the verdict, then the texts to paste', async () => {
+    const run = show('review-doc', fixture('review-doc', 'edge-listing'));
+    const { ctx, page, errors } = await open(run.run_id);
+    try {
+      const view = await page.evaluate(() => {
+        const doc = document.querySelector('.rd__doc');
+        const strong = document.querySelector('.rd__lead strong');
+        const copies = document.querySelector('.rd__copies');
+        const rows = [...doc.querySelectorAll('tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim());
+        const checks = [...doc.querySelectorAll('li')].map((li) => li.innerText.replace(/\s+/g, ' ').trim());
+        return {
+          summary: document.querySelector('.rd__summary').textContent,
+          verdict: strong ? strong.textContent : '',
+          verdictBeforeCopies: !!(strong && copies && (strong.compareDocumentPosition(copies) & Node.DOCUMENT_POSITION_FOLLOWING)),
+          copiesBeforeDoc: !!(copies && (copies.compareDocumentPosition(doc) & Node.DOCUMENT_POSITION_FOLLOWING)),
+          rows,
+          checks,
+        };
+      });
+      assert.match(view.summary, /You paste the corrected tagline/);
+      assert.match(view.summary, /Looks good means those three are live/);
+      assert.match(view.verdict, /fix the tagline, the description and the price/);
+      assert.equal(view.verdictBeforeCopies, true);
+      assert.equal(view.copiesBeforeDoc, true);
+      assert.ok(view.rows.some((row) => row.includes('Description') && row.includes('Stoneware mug')));
+      assert.ok(view.rows.some((row) => row.includes('€21 each for three')));
+      assert.ok(view.checks.some((line) => line.includes('The corrected tagline is live')));
+      assert.ok(view.checks.some((line) => line.includes('The price is €21 each for three')));
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('pick-option: each copy sits under its own card and names the option, below both breakpoints', async () => {
+    const posts = fixture('pick-option', 'edge-posts');
+    const four = {
+      question: posts.question,
+      options: posts.options.concat([{
+        id: 'short',
+        name: 'Short',
+        summary: 'One line.',
+        facts: [{ label: 'Score', value: '5.0' }],
+        copy: 'Tea stays hot.',
+      }]),
+    };
+    for (const [data, widths] of [[posts, [3, 2, 1]], [four, [4, 2, 1]]]) {
+      const run = show('pick-option', data);
+      const viewports = [{ width: 1280, height: 720 }, { width: 600, height: 900 }, { width: 280, height: 900 }];
+      for (let i = 0; i < viewports.length; i++) {
+        const opened = await open(run.run_id, viewports[i]);
+        try {
+          const view = await opened.page.evaluate(() => {
+            const container = document.querySelector('.po').getBoundingClientRect().width;
+            const cards = [...document.querySelectorAll('.po__card')];
+            return {
+              container,
+              lefts: new Set(cards.map((card) => Math.round(card.getBoundingClientRect().left))).size,
+              pairs: cards.map((card) => {
+                const extra = card.nextElementSibling;
+                const box = card.getBoundingClientRect();
+                const copy = extra.getBoundingClientRect();
+                const button = extra.querySelector('button');
+                const caption = extra.querySelector('.rs-copy__caption');
+                const between = cards.some((other) => {
+                  if (other === card) return false;
+                  const otherBox = other.getBoundingClientRect();
+                  return otherBox.top >= box.bottom - 1 && otherBox.top < copy.top - 1 && Math.abs(otherBox.left - box.left) < 8;
+                });
+                return {
+                  name: card.querySelector('.po__name').textContent,
+                  sibling: extra.classList.contains('po__beside') && extra.getAttribute('data-i') === card.getAttribute('data-i') && !card.contains(extra),
+                  aligned: Math.abs(copy.left - box.left) < 8,
+                  below: copy.top >= box.bottom - 2 && copy.top - box.bottom < 80,
+                  between,
+                  label: button.getAttribute('aria-label'),
+                  caption: caption.textContent,
+                };
+              }),
+            };
+          });
+          assert.equal(view.lefts, widths[i], `${viewports[i].width}px container ${view.container}`);
+          for (const pair of view.pairs) {
+            assert.equal(pair.sibling, true, pair.name);
+            assert.equal(pair.aligned, true, `${pair.name} at ${viewports[i].width}`);
+            assert.equal(pair.below, true, `${pair.name} at ${viewports[i].width}`);
+            assert.equal(pair.between, false, pair.name);
+            const expected = de.copy_named.replace('{name}', pair.name);
+            assert.equal(pair.label, expected, pair.name);
+            assert.equal(pair.caption, expected, pair.name);
+          }
+        } finally { await opened.ctx.close(); }
+      }
     }
   });
 });

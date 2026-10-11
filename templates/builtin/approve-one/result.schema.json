@@ -1,12 +1,12 @@
 {
-  "description": "approve or reject: the comment is optional. request_changes (only offered with allow_changes): the comment is required.",
+  "description": "approve, reject, done, skipped or acknowledged: the comment is optional. request_changes (bot with allow_changes, or actor none): the comment is required. done and skipped are the user actor. acknowledged is actor none.",
   "oneOf": [
     {
       "type": "object",
       "required": ["decision", "comment"],
       "additionalProperties": false,
       "properties": {
-        "decision": {"enum": ["approve", "reject"]},
+        "decision": {"enum": ["approve", "reject", "done", "skipped", "acknowledged"]},
         "comment": {"type": "string", "maxLength": 2000, "description": "Optional note, may be empty."}
       }
     },

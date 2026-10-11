@@ -76,13 +76,22 @@ Pick a built-in before writing your own:
 
 If `show` fails, read its error. Correct the payload field named in the error; `doctor` checks registry/setup warnings. `check <template>` checks the template and requires the development tools described above. Try once more after fixing the cause; do not retry in a loop.
 
+## Labels say who acts next
+
+Set `actor` from who actually does the next step. `bot` means you act after the result. `user` means the person does it (posts it, sends it, finishes it). `none` means the report is information only.
+
+- On a `user` or `none` item, do not act. Record the result and stop.
+- `decide-list`: omit `actor` (or set `bot`) for Approve / Reject / Defer. Set `actor` to `user` when the person posts it. Add `url` for the post they reply under, and `copy` for the text they paste. When every item is `user`, the footer says Done: that reports the status back, it is not a new instruction to you.
+- `approve-one` and `review-doc`: omit `actor` for today's Approve / Reject (or Looks good / Changes). Set `user` for Done ✓ / Skip (`done` / `skipped`). Set `none` for Got it (`acknowledged`). An optional `action` of `post` or `send` names the bot's primary button; any other verb reads Approve & continue.
+- User result values are `done`, `skipped` and, on a list, `later`. Info-only is `acknowledged`. Bot values stay `approve`, `reject`, `request_changes`, `defer`.
+
 ## Social posts: who posts where
 
 In `preview-post`, give each platform a `mode`: `{"platform": "linkedin", "mode": "auto"}` means you post it after the user approves; `{"platform": "x", "mode": "manual"}` means the user posts it by hand (the window shows copy buttons for the text, hashtags, comment and image, and the user marks it as posted). A plain id such as `"linkedin"` means `auto`.
 
 - Decide the mode per platform from your own instructions and experience: who actually posts where. If you cannot post to a platform, or the user posts there themselves, mark it `manual`.
 - Post only what the result lists in `platforms`: those are the `auto` platforms the user approved (`per_platform.<p>.decision` is `approved`).
-- Never post a platform marked `manual`, even when the user marked it as posted (`posted_manually`): record that it is done. `not_approved` means do nothing; `changes_requested` carries the user's `note`.
+- Never post a platform marked `manual`. `done` means the user posted it: record that, do not post. `skipped` means they did not. `not_approved` means do nothing; `changes_requested` carries the user's `note`.
 
 ## Your identity
 

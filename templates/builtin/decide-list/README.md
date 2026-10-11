@@ -52,14 +52,14 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | `items[].id` | `^[a-z0-9-]{1,40}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/items/1/id`; echoed in the result |
 | `items[].kind` | optional, 1–24 (a short category above the title, e.g. `Expense`) |
 | `items[].source` | optional, 1–60 (requester, sender or counterparty) |
-| `items[].title` | required, 1–140 (one line) |
+| `items[].title` | required, 1–140 (one line). An http(s) address in the title or detail becomes a link |
 | `items[].detail` | optional, 1–600 (a snippet, never a full document) |
+| `items[].actor` | optional `bot` (default) or `user`. `bot`: Approve, Reject, Defer. `user`: the person does it, so the choices are Posted ✓, Skip and Later (`done`, `skipped`, `later`) and `choices` is ignored. The bot never acts on a user item |
+| `items[].url` | optional http(s) address, 8–2048 characters. A hostname is required. No backslash or control character. Credentials are rejected only in the authority (`user@host`); `@` may appear in the path, query or fragment. Shown as one link on its own line (that link opens the post) when it can be opened. The same address is not linked again in the title or detail. A URL the opener would reject is plain text |
 | `items[].due` | optional `YYYY-MM-DD` (shown as `due Oct 14` / `fällig 14.10.`) |
 | `items[].copy[]` | optional, at most 4 of `{label 1–24, text 1–5000}`; each value is shown in full next to its button (long or multi-line values on their own line, clamped with *Show all*) |
 | `items[].choices` | optional, 1–3 unique of `approve`, `reject`, `defer`, in this order; default all three |
 | `done[]` | optional, at most 12 of `{text 1–140}`; not rendered when empty |
-
-No links: put a reference number into a copy value instead.
 
 ## Result `data` (`result.schema.json`)
 
@@ -73,7 +73,7 @@ No links: put a reference number into a copy value instead.
 }
 ```
 
-`items` has one entry per payload item, in payload order; `choice` is always one of that item's choices, `note` ≤500 (may be empty). `note` is the overall note (≤2000, may be empty). A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
+`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`). For a `user` item, `choice` is `done`, `skipped` or `later`. `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Done (Fertig): it reports the status back. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)
 
@@ -81,19 +81,22 @@ No links: put a reference number into a copy value instead.
 |---|---|---|
 | `section_todo` | Needs you | Wartet auf dich |
 | `choice_approve`, `choice_reject`, `choice_defer` | Approve, Reject, Defer | Genehmigen, Ablehnen, Zurückstellen |
+| `posted`, `skip`, `later` | Posted ✓, Skip, Later (user items) | Gepostet ✓, Überspringen, Später |
+| `footer_done` | Done (footer when every item is a user item) | Fertig |
+| `links_label` | Links (name of a row that holds more than one link) | Links |
 | `choice_group_label` | Decision: {what} (name of each choice row) | Entscheidung: {what} |
 | `due` | due {date} | fällig {date} |
 | `add_note`, `note_for` | Add note; Note on: {what} | Notiz hinzufügen; Notiz zu: {what} |
 | `add_note_overall`, `note_overall` | Add a note for your agent; Note to your agent | Notiz an den Bot hinzufügen; Notiz an den Bot |
 | `handled_summary`, `handled_done`, `section_done` | Sorted by your agent: {parts}; {n} done; Taken care of | Vom Bot sortiert: {parts}; {n} erledigt; Erledigt |
-| `items_open_named`, `sep_names`, `items_all_decided` | {n} of {total} still open: {names}; `, `; All decided | {n} von {total} noch offen: {names}; `, `; Alles entschieden |
+| `items_open_short`, `items_open_named`, `sep_list`, `sep_names`, `items_all_decided` | visible `{n} open` (the accessible name is that text, then ` · `, then `{n} of {total} still open: {names}`); ` · `; `, `; All decided | sichtbar `{n} offen` (der Name ist dieser Text, dann ` · `, dann `{n} von {total} noch offen: {names}`); ` · `; `, `; Alles entschieden |
 
 Copy button labels come from the payload (`copy[].label`).
 
 ## Test hooks
 
 - Copy buttons: `data-copy-id="item-<n>-copy-<m>"` (both 1-based).
-- Items `.dl-item[data-item-id="<id>"]` (`data-current`, `data-decided`), rows `.dl-row`, cards `.dl-card` (only the current card is in the document). Choice rows `rs-action-row[data-item="<id>"]`. Item notes `#dl-note-<n>` behind `.dl-add-note`; overall note `#dl-note` behind `[data-dl="overall-open"]`.
+- Items `.dl-item[data-item-id="<id>"]` (`data-current`, `data-decided`), rows `.dl-row`, cards `.dl-card` (only the current card is in the document). The post address, when it can be opened, is `.dl-url a.rs-ext`. Choice rows `rs-action-row[data-item="<id>"]`. Item notes `#dl-note-<n>` behind `.dl-add-note`; overall note `#dl-note` behind `[data-dl="overall-open"]`.
 
 ## Keyboard path (golden, one open report)
 

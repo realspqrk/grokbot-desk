@@ -1,5 +1,5 @@
 {
-  "description": "approve: platforms lists the auto platforms the reviewer released for the bot to post (each was approvable: within its limit, Instagram with an image); manual platforms the reviewer posted by hand are never in it. per_platform names every payload platform with its mode and decision (approved, posted_manually, not_approved). request_changes: a comment is required, no platform is released and every platform is changes_requested with the comment as its note.",
+  "description": "approve: platforms lists the auto platforms the reviewer released for the bot to post (each was approvable: within its limit, Instagram with an image); manual platforms the reviewer posted by hand are never in it. per_platform names every payload platform with its mode and decision (approved or not_approved for auto; done or skipped for manual). request_changes: a comment is required, no platform is released and every platform is changes_requested with the comment as its note.",
   "oneOf": [
     {
       "type": "object",
@@ -53,7 +53,8 @@
                 "decision": {
                   "enum": [
                     "approved",
-                    "posted_manually",
+                    "done",
+                    "skipped",
                     "not_approved",
                     "changes_requested"
                   ]
@@ -82,7 +83,8 @@
                 "decision": {
                   "enum": [
                     "approved",
-                    "posted_manually",
+                    "done",
+                    "skipped",
                     "not_approved",
                     "changes_requested"
                   ]
@@ -111,7 +113,8 @@
                 "decision": {
                   "enum": [
                     "approved",
-                    "posted_manually",
+                    "done",
+                    "skipped",
                     "not_approved",
                     "changes_requested"
                   ]
@@ -140,7 +143,8 @@
                 "decision": {
                   "enum": [
                     "approved",
-                    "posted_manually",
+                    "done",
+                    "skipped",
                     "not_approved",
                     "changes_requested"
                   ]
@@ -201,7 +205,8 @@
                 "decision": {
                   "enum": [
                     "approved",
-                    "posted_manually",
+                    "done",
+                    "skipped",
                     "not_approved",
                     "changes_requested"
                   ]
@@ -230,7 +235,8 @@
                 "decision": {
                   "enum": [
                     "approved",
-                    "posted_manually",
+                    "done",
+                    "skipped",
                     "not_approved",
                     "changes_requested"
                   ]
@@ -259,7 +265,8 @@
                 "decision": {
                   "enum": [
                     "approved",
-                    "posted_manually",
+                    "done",
+                    "skipped",
                     "not_approved",
                     "changes_requested"
                   ]
@@ -288,7 +295,8 @@
                 "decision": {
                   "enum": [
                     "approved",
-                    "posted_manually",
+                    "done",
+                    "skipped",
                     "not_approved",
                     "changes_requested"
                   ]

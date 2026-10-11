@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
@@ -390,15 +390,48 @@ def command_show(args, base, port):
     return 0
 
 
+# How long `wait` keeps going past a run's expiry. The server writes the
+# expired result itself; past this grace nobody will (the server is gone).
+WAIT_EXPIRY_GRACE_S = 120
+
+
+def _seconds_until_expiry(run_path):
+    """Seconds from now until the run's expiry plus grace, or None when the
+    run file has no readable expiry (an old or a damaged record)."""
+    try:
+        record = json_loads(run_path.read_text(encoding="utf-8"))
+        expires = to_vienna(record["expires"]).astimezone(timezone.utc)
+    except (OSError, ValueError, KeyError, TypeError, OverflowError):
+        return None
+    return (expires - datetime.now(timezone.utc)).total_seconds() + WAIT_EXPIRY_GRACE_S
+
+
 def command_wait(args, base):
+    """Block until the run has a result. Exit 5 at --timeout; exit 7 once the
+    run's expiry plus grace has passed with no result written (nothing will
+    answer it any more), so a waiter never blocks forever."""
     run_path = Path(base) / "runs" / f"{args.run_id}.json"
     result_path = Path(base) / "results" / f"{args.run_id}.json"
     if not run_path.exists() and not result_path.exists():
         return error(f"unknown run: {args.run_id}", 6)
-    deadline = time.monotonic() + args.timeout if args.timeout else None
+    if getattr(args, "until_expiry", False) and args.timeout:
+        return error("--until-expiry and --timeout exclude each other", 2)
+    now = time.monotonic()
+    deadline = now + args.timeout if args.timeout else None
+    remaining = None if result_path.exists() else _seconds_until_expiry(run_path)
+    expiry_deadline = None if remaining is None else now + max(0.0, remaining)
     while not result_path.exists():
-        if deadline is not None and time.monotonic() >= deadline:
+        current = time.monotonic()
+        if deadline is not None and current >= deadline and (
+            expiry_deadline is None or deadline <= expiry_deadline
+        ):
             return error(f"timeout waiting for run: {args.run_id}", 5)
+        if expiry_deadline is not None and current >= expiry_deadline:
+            if result_path.exists():
+                break
+            return error(
+                f"run expired without a result: {args.run_id} (data dir {Path(base)})", 7
+            )
         time.sleep(.2)
     value = json_loads(result_path.read_text(encoding="utf-8"))
     output({"status": value["status"], "result_path": str(result_path), "data_dir": str(Path(base))})
@@ -420,14 +453,16 @@ def command_result(args, base):
 
 
 def _decided_after(value, since):
+    # inclusive: `decided` has whole seconds, so two decisions can share the
+    # cursor's second; the caller drops the ones it saw by run_id (--seen)
     try:
-        return to_vienna(value["decided"]).astimezone(timezone.utc) > since
+        return to_vienna(value["decided"]).astimezone(timezone.utc) >= since
     except (KeyError, TypeError, ValueError):
         return False
 
 
-def _results_since(base, since, bot=None):
-    items = []
+def _results_since(base, since, bot=None, seen=()):
+    items, listed = [], set(seen)
     for path in (Path(base) / "results").glob("*.json"):
         try:
             value = json_loads(path.read_text(encoding="utf-8"))
@@ -437,6 +472,9 @@ def _results_since(base, since, bot=None):
             continue
         if bot and value.get("bot") != bot:
             continue
+        if value.get("run_id") in listed:
+            continue
+        listed.add(value.get("run_id"))
         items.append({
             "run_id": value.get("run_id"),
             "bot": value.get("bot"),
@@ -450,20 +488,29 @@ def _results_since(base, since, bot=None):
 
 
 def command_results(args, base):
-    """Results decided after --since, oldest first; with --wait the command
-    blocks up to that many seconds until at least one arrives. A bot keeps the
-    newest `decided` it saw as its cursor for the next call."""
+    """Results decided at or after --since, oldest first, minus the run ids
+    given with --seen; with --wait the command blocks up to that many seconds
+    until at least one arrives. A bot keeps `cursor` (the newest `decided`)
+    and passes the run ids decided in that same second as --seen next time."""
     try:
         since = to_vienna(args.since).astimezone(timezone.utc)
     except (TypeError, ValueError, OverflowError):
         return error("--since must be ISO 8601 with an offset", 2)
     deadline = time.monotonic() + max(0.0, min(args.wait, 3600.0))
     while True:
-        items = _results_since(base, since, args.bot)
+        items = _results_since(base, since, args.bot, getattr(args, "seen", None) or ())
         if items or time.monotonic() >= deadline:
             break
         time.sleep(.5)
-    output({"data_dir": str(Path(base)), "results": items})
+    answer = {"data_dir": str(Path(base)), "results": items}
+    if items:
+        answer["cursor"] = items[-1]["decided"]
+        newest = to_vienna(items[-1]["decided"]).astimezone(timezone.utc)
+        answer["seen"] = [
+            item["run_id"] for item in items
+            if to_vienna(item["decided"]).astimezone(timezone.utc) == newest
+        ]
+    output(answer)
     return 0
 
 
@@ -682,12 +729,14 @@ def build_parser():
     wait = commands.add_parser("wait")
     wait.add_argument("run_id")
     wait.add_argument("--timeout", type=float, default=0)
+    wait.add_argument("--until-expiry", action="store_true")
     result = commands.add_parser("result")
     result.add_argument("run_id")
     results = commands.add_parser("results")
     results.add_argument("--since", required=True)
     results.add_argument("--bot")
     results.add_argument("--wait", type=float, default=0)
+    results.add_argument("--seen", action="append", default=[])
     commands.add_parser("paths")
     commands.add_parser("status")
     commands.add_parser("open")

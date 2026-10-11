@@ -49,7 +49,7 @@ What the person sees:
 - Choice labels are German verbs of at most 2 words (`Erledigt`, `Später`, `Ignorieren`, `Ja`, `Nein`, `Freigeben`, `Änderungen anfordern`).
 - At most 3 choices per item. Use `rs-action-row` (radio-group semantics, arrow keys).
 - No pre-selected choice. "Do nothing" is the default: a report that is discarded (`Verwerfen`) or expires gives the bot a `cancelled` or `expired` result, and the bot then does nothing.
-- Keep `An Bot senden` disabled until the input is complete: the template calls `RS.setResult(null)` until every required choice is made, and `RS.setStatus(...)` says what is missing (e.g. `Noch 2 von 5 offen`).
+- Keep `An Bot senden` disabled until the input is complete: the template calls `RS.setResult(null)` until every required choice is made, and `RS.setStatus(...)` says what is missing. A long list stays in the accessible name; the visible line can be short (e.g. `4 open` / `4 offen`).
 - The window never executes destructive work in v1. It records decisions; the bot executes them after reading the result file.
 
 ## 3. Copy-first
@@ -90,6 +90,7 @@ German is the default; set `RS_LANG=en` before starting the server to select Eng
 - No CDN, web fonts, remote images, link unfurling or any network call from the page. The Content-Security-Policy blocks it, and the template lint rejects `http:`, `https:` and `//` anywhere in `template.html`, `template.css` and `template.js`. That includes `//` line comments: write `/* ... */` comments only.
 - System fonts only (the core sets them).
 - A link in a post preview is rendered from the payload (`url`, `title`, `domain`); nothing is fetched.
+- http(s) addresses in item text, review-doc Markdown, pick-option text and a payload `url` field are real links. The page does not let those links navigate this window: the anchors are not draggable, a drag is cancelled, and dropping a URL on the page is cancelled. A primary click, a middle click, Enter, and a modified click (Shift, Ctrl, Alt) call `RS.openUrl(url)`, which posts `{run_id, url}` to `/open-url`. Modified Enter does the same, except Ctrl+Enter or Cmd+Enter, which stays the submit shortcut and does not navigate. The server opens the host's default browser only when that exact address occurs in the run's payload, is http or https, is at most 2048 characters, has a hostname and a valid port, and has no credentials in the authority. `rel="noopener noreferrer"` and the server allowlist do not by themselves stop the window from navigating; the page handlers do. A right-click on these links is cancelled so the menu cannot open the address in the app profile. A browser that still offers Open from a menu the page cannot see is outside this guarantee.
 - Images go through the media roots:
   - The payload holds an absolute Windows path on `<host>` in a field the template's `schema.json` marks with `"x-rs-media": true`.
   - At `show` the path must resolve (after realpath) under one of the media roots in `config.json` `media_roots` (in `<data dir>`). Defaults are the user's Downloads folder and `<data dir>/media`; add any shared-drive folder explicitly to `config.json` `media_roots`.
@@ -114,6 +115,7 @@ Checklist (spec 5.2). The core already gives `lang="de"`, visible focus, token c
 ## 8. Results
 
 - Design `result.schema.json` **first**, then the UI. Keep it small: echo the payload's item ids, use enums for choices, give free-text fields a `maxLength`. Example (`decide-list`): `{"items":[{"id","choice","note"}], "note"}`.
+- Labels say who acts next. `actor` is `bot` (default), `user` or, on approve-one and review-doc, `none`. Bot results stay `approve`, `reject`, `request_changes`, `defer`. User results are `done`, `skipped` and, on a list, `later`. Info-only is `acknowledged`. A missing `actor` keeps today's values. The bot never acts on `user` or `none`.
 - Bots read **only** the result file `<data dir>\results\<run_id>.json` on `<host>` (take the exact path from `result_path` in the `show` or `wait` output). Never scrape the page, the run store or the action log.
 - A result file is written once, atomically, and never changes. Its `data` was validated against `result.schema.json` before it was written.
 - Wait in short slices: agent runtimes often cap a single shell call (e.g. at a few minutes). Call `wait --timeout <s>` with a timeout below that cap and repeat it while it exits 5 (each repeat may be a new shell call); never one long blocking call (section A, step 3).
@@ -134,11 +136,11 @@ Pick a built-in before writing one:
 
 | Need | Built-in |
 |---|---|
-| approve, reject or defer several items | `decide-list` |
-| one yes/no decision, optionally request changes | `approve-one` |
-| preview and approve a social post (per platform `auto`: the bot posts it, or `manual`: the user posts it from copy buttons) | `preview-post` |
-| review a document or report | `review-doc` |
-| compare 2–4 options and pick one | `pick-option` |
+| approve, reject or defer several items, or mark items the person posts (`actor: user`) | `decide-list` |
+| one yes/no decision, optionally request changes; `actor` can be `user` or `none` | `approve-one` |
+| preview and approve a social post (per platform `auto`: the bot posts it, or `manual`: the user posts it, result `done` / `skipped`) | `preview-post` |
+| review a short, scannable document (TL;DR, a table, bold verdicts, check states, copy buttons) | `review-doc` |
+| compare 2–4 options and pick one, with optional copy text per option | `pick-option` |
 
 Run `py -3 report_shell.py templates` (or `templates --json`) to see what is installed. Use `new` only when no built-in fits.
 
@@ -157,7 +159,7 @@ Run `py -3 report_shell.py templates` (or `templates --json`) to see what is ins
 | `template.json` | exactly the fields `id` (= folder name), `namespace` (= the namespace argument passed to `new`, stored as metadata; the folder remains `<data dir>/templates/<name>`), `version` (integer, payloads must send the same), `title_de`, `description`, `components` (only `rs-card`, `rs-action-row`, `rs-copy`, `rs-badge`, `rs-counter`, `rs-post-frame`, `rs-confirm`), `strings` (every `de.json` key used) |
 | `template.html` | a partial: no `<html>`, `<head>`, `<body>`, `<script>`, `<link>`, `<style>`; no literal text; no `on*=` handlers; custom elements only from the list above |
 | `template.css` | `var(--rs-*)` tokens only, spacing only `var(--space-*)`, `0` or `1px`; no `#hex`, `rgb(`, `hsl(`; no URLs |
-| `template.js` | the body of `function (RS, root)`; RS API only (`RS.data`, `RS.run`, `RS.t`, `RS.time`, `RS.date`, `RS.number`, `RS.count`, `RS.copy`, `RS.copyImage`, `RS.toast`, `RS.media`, `RS.reveal`, `RS.icon`, `RS.setResult`, `RS.setStatus`, `RS.setSubmitLabel`, `RS.setAlternative`, `RS.focusAlternative`, `RS.addMenuItem`, `RS.addMenuMeta`, `RS.onChange`, `RS.draft`, `RS.submit`; see the helper notes below the table); never `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `new Function`, `import()`, `navigator.clipboard`; no literal UI strings; block comments only |
+| `template.js` | the body of `function (RS, root)`; RS API only (`RS.data`, `RS.run`, `RS.t`, `RS.time`, `RS.date`, `RS.number`, `RS.count`, `RS.copy`, `RS.copyImage`, `RS.toast`, `RS.media`, `RS.reveal`, `RS.openUrl`, `RS.fillText`, `RS.appendLinks`, `RS.externalLink`, `RS.icon`, `RS.setResult`, `RS.setStatus`, `RS.setSubmitLabel`, `RS.setAlternative`, `RS.focusAlternative`, `RS.addMenuItem`, `RS.addMenuMeta`, `RS.onChange`, `RS.draft`, `RS.submit`; see the helper notes below the table); never `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `new Function`, `import()`, `navigator.clipboard`; no literal UI strings; block comments only |
 | `schema.json`, `result.schema.json` | only `type, properties, required, additionalProperties, items, minItems, maxItems, uniqueItems, enum, const, minLength, maxLength, pattern, minimum, maximum, oneOf, default, description, x-rs-*`. `"x-rs-unique-key": "<property>"` on an array of objects rejects an item whose `<property>` repeats an earlier item's (e.g. option ids; finding `/data/options/1/id`); `"x-rs-media": true` marks an image path (section 6) |
 | `fixtures\` | `golden.json`, at least 2 `edge-*.json`, at least 2 `invalid-*.json` (each must be rejected) |
 | `fixtures\expect\golden.json` | `copies` (by `data-copy-id`), `counters` (by `data-counter-id`), `flow` (mouse steps), `keyboard` (keys only), `result` (the exact result `data`) |
@@ -175,6 +177,8 @@ Calm-UI helpers (template API, all scoped to the active report):
 - `RS.addMenuItem(label, onClick)`: an entry in the header `…` panel (e.g. *Show in folder*). Cleared on every report switch.
 - `RS.addMenuMeta(text)`: a quiet metadata line (not an action) in the header `…` panel, below the agent and time (e.g. *Persona: …*). Cleared on every report switch.
 - `RS.icon(name)`: a decorative inline SVG (`copy`, `check`, `plus`, `hash`, `ring`, `done`, `chevron`, `dot`, `more`, …).
+- `RS.openUrl(url)`: ask the server to open that http(s) address in the system browser (`POST /open-url`). `RS.fillText(el, text)` replaces an element's contents with the text and turns addresses in it into those links. `RS.appendLinks(el, text)` appends only the extracted http(s) links, not the surrounding words. `RS.externalLink(url, text)` returns one link, or null when `url` cannot be opened (not http(s), no hostname, a bad port, credentials in the authority, a control character, or a backslash).
+- Reports meant to be read (`review-doc`) stay short and scannable: TL;DR first, then a table, bold verdicts, check states (`- [x]` / `- [ ]`), and the long detail last.
 - `RS.run.result`: for a **submitted** report, the immutable result `data` (otherwise `null`). Show it read-only instead of the draft; the shell locks decisions and text but keeps tabs, disclosures and item rows (`aria-expanded`) working, and copies and buttons marked `data-rs-view-action` (view-only, e.g. `rs-post-frame`'s *Reload image*).
 
 4. New German strings: a template branch never edits `core\` (that includes `core\i18n\de.json`). Ask the maintainer of the installation to add the shared key (English key, German value) to `de.json`; `check` fails until the key exists there, then list it in `template.json` `strings`.
@@ -191,7 +195,7 @@ Calm-UI helpers (template API, all scoped to the active report):
 
 ## 10. Anti-patterns
 
-- Opening report HTML via `file://`, `Invoke-Item`, `Start-Process <url>`, `start <url>`, `os.startfile` or `webbrowser.open` (that opens a tab in the default browser). Only `report_shell.py show` / `open` open the window.
+- Opening report HTML via `file://`, `Invoke-Item`, `Start-Process <url>`, `start <url>`, `os.startfile` or `webbrowser.open` (that opens a tab in the default browser). Only `report_shell.py show` / `open` open the window. A link inside a report is `RS.openUrl`: the server opens the system browser; a template does not.
 - Starting `msedge.exe` or `chrome.exe` yourself, or a second window per update. One window; new runs arrive over SSE.
 - Editing the core (`core\`, `tokens.css`, components, `rs.js`) from a template, or copying core CSS into a template.
 - Colour literals in template CSS. Literal German text in `template.html` or `template.js`.

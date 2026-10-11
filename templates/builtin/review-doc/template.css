@@ -65,6 +65,29 @@
 .rd__url::after { content: ")"; }
 
 .rd__list { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
+.rd__task {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  list-style: none;
+  margin-left: calc(var(--space-4) * -1);
+}
+.rd__tick {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  border: 1px solid var(--rs-line-strong);
+  border-radius: var(--rs-r-sm);
+  display: inline-grid;
+  place-items: center;
+  color: var(--rs-paper);
+}
+.rd__tick > .rs-ico { width: 14px; height: 14px; }
+.rd__task--off .rd__tick > .rs-ico { visibility: hidden; }
+.rd__task--on .rd__tick { background: var(--rs-ink); border-color: var(--rs-ink); }
+.rd__copies { display: flex; flex-direction: column; gap: var(--space-3); max-width: var(--rs-measure); }
+.rd__copyblock { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; }
 .rd__list .rd__list { margin-top: var(--space-1); }
 .rd__list > li::marker { color: var(--rs-muted); }
 
@@ -106,7 +129,11 @@
   text-align: left;
   vertical-align: top;
 }
-.rd__table th { color: var(--rs-muted); }
+.rd__table th {
+  font-weight: var(--rs-fw-strong);
+  color: var(--rs-ink);
+  background: var(--rs-hover);
+}
 .rd__table .rd__cell--right { text-align: right; }
 .rd__table .rd__cell--center { text-align: center; }
 .rd__table th:last-child,

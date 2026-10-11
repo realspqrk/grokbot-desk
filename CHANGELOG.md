@@ -6,12 +6,27 @@
   payloads work unchanged): the bot posts after `Approve & post`. `manual`:
   you post it yourself; the panel starts with `You post this yourself.` and
   copy buttons for the text, hashtags, comment and the image (copied as a
-  picture, plus `Show in folder`), then `Mark as posted`. The tab names the
-  mode quietly (`X · manual`).
+  picture, plus `Show in folder`), then `Posted ✓`. The tab names the
+  mode quietly (`X · manual`). A manual decision is `done` (posted) or
+  `skipped` (not posted). `posted_manually` is not a result value.
 - The `preview-post` result keeps `platforms` as the list the bot may post
   (auto and approved only) and adds `per_platform` with each platform's mode
-  and decision (`approved`, `posted_manually`, `not_approved`,
+  and decision (`approved`, `done`, `skipped`, `not_approved`,
   `changes_requested` with the comment as `note`).
+- Labels say who acts next. `decide-list` items take an optional `actor`
+  (`bot` or `user`, default `bot`) and an optional `url`. User items use
+  Posted ✓ / Skip / Later (`done` / `skipped` / `later`); when every item
+  is a user item the footer reads Done. `approve-one` and `review-doc` take
+  an optional `actor` (`bot`, `user` or `none`, default `bot`) and an
+  optional `action` verb. Existing payloads keep today's results.
+- Links in item text, review-doc Markdown, pick-option text and `url`
+  fields open in the system browser via `POST /open-url` (`RS.openUrl`).
+  The server accepts only an http(s) address that appears in that run's
+  payload.
+- `review-doc` copies each code block and blockquote, and an optional
+  `copy` list near the top. `pick-option` options take an optional `copy`
+  string. Default review styling makes tables, bold, lists and check
+  states scannable.
 - Copy an image as a picture: `POST /copy-image`, `RS.copyImage(id)` and
   `<rs-copy media="…">` (macOS via AppKit; Windows via GDI+, no WebP).
 - macOS: tested on a real Mac (macOS 26, Apple silicon, Google Chrome). The

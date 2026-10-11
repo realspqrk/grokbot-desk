@@ -21,7 +21,10 @@ Pick this template when the person has to **read** something. For one yes/no dec
 
 | Field | Rule |
 |---|---|
-| `summary` | optional, 1–600 characters, plain text: what the document is and what to look at |
+| `summary` | optional, 1–600 characters, plain text: what the document is and what to look at. An http(s) address becomes a link |
+| `actor` | optional `bot` (default), `user` or `none`. `bot`: Looks good / Changes, or Approve & post / send / continue when `action` is set. `user`: Done ✓ / Skip (`done` / `skipped`). `none`: Got it / Request changes (`acknowledged` / `request_changes`). The bot never acts on `user` or `none` |
+| `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. `post` and `send` name the bot primary; any other verb reads Approve & continue |
+| `copy` | optional, at most 4 of `{label 1–24, text 1–5000}`, shown near the top as fix texts to copy |
 | `format` | optional, `markdown` (default) or `text` |
 | `doc` | required, 1–60 000 characters |
 | `images` | optional, at most 8 `{ "key", "path", "alt" }`; `key` matches `^[a-z0-9][a-z0-9_-]{0,31}$` and is unique (`x-rs-unique-key`), `path` is a media path (`x-rs-media`: absolute, under a media root, png/jpg/jpeg/webp/gif, at most 20 MB), `alt` 1–200 characters |
@@ -33,7 +36,8 @@ Rendered: ATX headings (`#` to `######`) and setext headings, paragraphs (a sing
 Safe by construction:
 
 - **No raw HTML.** Tags such as `<b>` or `<script>` are shown as text; the page builds every node itself and uses `textContent` only.
-- **No links.** `[label](address)` shows the label, then the address as quiet text in brackets. Nothing is clickable, nothing is fetched.
+- **http(s) links open in the system browser.** `[label](https://…)` is a real link; activating it calls `RS.openUrl`. The address is also shown as quiet text when it differs from the label. Other targets stay text. Nothing is fetched. A right-click does not open the address inside the app profile.
+- **Copy.** Each fenced code block and each blockquote has a copy control. Write the report short and scannable: TL;DR first, a table, bold verdicts, check states (`- [x]` / `- [ ]`), details last.
 - **No external images.** `![alt](key)` shows an image only when `key` names an entry in `images`; the page loads it through the media route (`RS.media`). Any other target, including a web address, becomes a quiet *Image not shown: alt*.
 - **Bounded nesting.** Links and emphasis nested more than 16 levels deep stay literal text (the Markdown source as written), so every accepted document renders and can be approved.
 
@@ -57,7 +61,7 @@ When the document has at least two headings of level 1–2, each of those headin
 
 | Field | Rule |
 |---|---|
-| `decision` | `approve` or `request_changes` |
+| `decision` | `approve` or `request_changes` for `bot`; `done` or `skipped` for `user`; `acknowledged` or `request_changes` for `none` |
 | `comment` | overall comment, at most 4000 characters; `""` for `approve` |
 | `comments` | section comments in document order, at most 200: `section` (1-based position among the sections), `heading` (plain text, at most 200 characters), `comment` (1–2000 characters). Empty sections are left out. |
 

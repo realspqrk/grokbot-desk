@@ -7,13 +7,13 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 200,
-      "description": "The decision in one sentence, shown above the options (plain text)."
+      "description": "The decision in one sentence, shown above the options (plain text). http(s) addresses become links."
     },
     "context": {
       "type": "string",
       "minLength": 1,
       "maxLength": 600,
-      "description": "Optional quiet line below the question: constraints, what the agent already checked."
+      "description": "Optional quiet line below the question: constraints, what the agent already checked. http(s) addresses become links."
     },
     "options": {
       "type": "array",
@@ -28,7 +28,8 @@
         "properties": {
           "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$", "description": "Returned as the result's choice; unique within the payload (a repeated id is rejected)."},
           "name": {"type": "string", "minLength": 1, "maxLength": 48, "description": "Short name; also part of the primary button label."},
-          "summary": {"type": "string", "minLength": 1, "maxLength": 240, "description": "One or two sentences."},
+          "summary": {"type": "string", "minLength": 1, "maxLength": 240, "description": "One or two sentences. An http(s) address in it is also shown as a link under the card."},
+          "copy": {"type": "string", "minLength": 1, "maxLength": 4000, "description": "Optional text to copy for this option, longer than the summary. Shown under the card with a copy control."},
           "facts": {
             "type": "array",
             "maxItems": 6,

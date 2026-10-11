@@ -192,7 +192,7 @@ Five built-in templates:
 | `pick-option` | Compare 2 to 4 options side by side and pick one. A note is optional. |
 | `decide-list` | Approve, reject, or defer up to 5 items, one at a time. |
 | `approve-one` | One yes/no decision, with an optional request for changes. |
-| `preview-post` | Preview one social post (X, LinkedIn, Instagram, Facebook) and approve it per platform, or request changes. Per platform `auto` (the bot posts after your approval) or `manual` (you post it yourself from copy buttons for text, hashtags and image, then mark it as posted). |
+| `preview-post` | Preview one social post (X, LinkedIn, Instagram, Facebook) and approve it per platform, or request changes. Per platform `auto` (the bot posts after your approval) or `manual` (you post it yourself from copy buttons for text, hashtags and image, then Posted ✓). |
 
 Run `python report_shell.py templates` to list what is installed. If none of these fits, `python report_shell.py new example/my-template` writes a template into your data directory, and `python report_shell.py check my-template` checks it. See the [template guide](docs/GUIDE.md).
 

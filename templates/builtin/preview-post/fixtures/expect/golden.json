@@ -149,7 +149,7 @@
     "per_platform": {
       "x": {
         "mode": "manual",
-        "decision": "posted_manually"
+        "decision": "done"
       },
       "linkedin": {
         "mode": "auto",

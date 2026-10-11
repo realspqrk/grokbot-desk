@@ -13,6 +13,19 @@ def test_lint_finds_nonstdlib_and_default_browser_patterns(tmp_path):
     assert {"C15a", "C3"} <= rules
 
 
+def test_lint_allows_startfile_only_for_the_url_opener(tmp_path):
+    windows = tmp_path / "core"
+    windows.mkdir()
+    (windows / "platform_windows.py").write_text(
+        "import os\n\ndef open_url(url):\n    os.startfile(url)\n\ndef other():\n    os.startfile('report.html')\n",
+        encoding="utf-8",
+    )
+    findings = scan_repo(tmp_path)
+    assert len(findings) == 1
+    assert findings[0]["message"] == "os.startfile is forbidden"
+    assert findings[0]["line"] == 7
+
+
 def test_lint_allows_pytest_only_in_tests(tmp_path):
     tests = tmp_path / "tests"
     tests.mkdir()

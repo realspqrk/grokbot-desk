@@ -18,8 +18,13 @@
    Mode per platform (payload: a plain id is auto; {platform, mode}):
    auto, the bot posts after "Approve & post"; manual, the reviewer posts it
    by hand: copies first (text, hashtags, comment, image, folder), the note
-   "You post this yourself." and "Mark as posted". The result lists only
-   auto approvals in `platforms` (what the bot may post) and every platform
+   "You post this yourself." and "Posted". A ticked manual platform is
+   `done`; an unticked one is `skipped`. When nothing is ticked and the
+   report has a manual platform, the primary reads Done and submitting
+   reports every manual platform as skipped (auto platforms stay
+   not_approved, and `platforms` is empty). An all-auto report stays
+   disabled until a platform is ticked. The result lists only auto
+   approvals in `platforms` (what the bot may post) and every platform
    with its mode and decision in `per_platform`. */
 var data = RS.data;
 var ORDER = ['x', 'linkedin', 'instagram', 'facebook'];
@@ -236,7 +241,7 @@ platforms.forEach(function (p) {
   });
 
   var input = part('approve', col);
-  part('approve-label', col).textContent = RS.t(manual(p) ? 'mark_posted_on' : 'approve_for', { platform: name });
+  part('approve-label', col).textContent = RS.t(manual(p) ? 'posted' : 'approve_for', { platform: name });
   var reason = part('blocked', col);
   if (blocked) {
     part('blocked-text', reason).textContent = blocked;
@@ -361,7 +366,10 @@ function renderTicks() {
     }
     box.setAttribute('data-rs-status', state);
     tabs[p].setAttribute('data-rs-approval-state', on ? 'approved' : 'pending');
-    ticks[p].text.textContent = RS.t(state === 'open' ? 'not_approved' : state);
+    var spoken = state === 'blocked' ? 'blocked'
+      : manual(p) ? (state === 'open' ? 'skip' : 'posted')
+      : (state === 'open' ? 'not_approved' : 'approved');
+    ticks[p].text.textContent = RS.t(spoken);
   });
 }
 
@@ -375,22 +383,23 @@ function perPlatform(list, note) {
       entry.decision = 'changes_requested';
       entry.note = note;
     } else if (list.indexOf(p) >= 0) {
-      entry.decision = manual(p) ? 'posted_manually' : 'approved';
+      entry.decision = manual(p) ? 'done' : 'approved';
     } else {
-      entry.decision = 'not_approved';
+      entry.decision = manual(p) ? 'skipped' : 'not_approved';
     }
     out[p] = entry;
   });
   return out;
 }
 
-/* The primary names what happens: "Approve & post" (the bot posts),
-   "Mark as posted" (the reviewer did), "Confirm" for both at once. */
+/* The primary names what happens: "Done" (nothing ticked, and a manual
+   platform is present: submitting only reports skips), "Approve & post"
+   (the bot posts), "Posted ✓" (the reviewer did), "Confirm" for both. */
 function submitLabel(list) {
-  var ticked = list.length ? list : platforms;
-  var auto = ticked.some(function (p) { return !manual(p); });
-  var hand = list.length ? list.some(manual) : !auto;
-  return RS.t(auto && hand ? 'confirm_decision' : hand ? 'mark_posted' : 'approve_post');
+  if (!list.length) return RS.t(anyManual ? 'footer_done' : 'approve_post');
+  var auto = list.some(function (p) { return !manual(p); });
+  var hand = list.some(manual);
+  return RS.t(auto && hand ? 'confirm_decision' : hand ? 'posted' : 'approve_post');
 }
 
 function saveSelection() { if (RS.run.state === 'open') update(true); }
@@ -420,13 +429,25 @@ function update(save) {
       { platform: NAMES[waiting] }));
     return;
   }
-  /* only auto approvals are the bot's to post; a manual one never is */
-  RS.setResult(list.length ? {
-    decision: 'approve', platforms: list.filter(function (p) { return !manual(p); }), comment: '',
-    per_platform: perPlatform(list)
-  } : null);
-  if (list.length) RS.setStatus(RS.t(anyManual ? 'decided_count' : 'approve_count', { n: list.length, total: platforms.length }));
-  else RS.setStatus(RS.t(anyManual ? 'select_platform_manual' : 'select_platform'));
+  /* only auto approvals are the bot's to post; a manual one never is.
+     Nothing ticked, with a manual platform: report every skip. Nothing
+     ticked and every platform is auto: stay disabled. */
+  if (list.length) {
+    RS.setResult({
+      decision: 'approve', platforms: list.filter(function (p) { return !manual(p); }), comment: '',
+      per_platform: perPlatform(list)
+    });
+    RS.setStatus(RS.t(anyManual ? 'decided_count' : 'approve_count', { n: list.length, total: platforms.length }));
+  } else if (anyManual) {
+    RS.setResult({
+      decision: 'approve', platforms: [], comment: '',
+      per_platform: perPlatform([])
+    });
+    RS.setStatus(RS.t('report_skips'));
+  } else {
+    RS.setResult(null);
+    RS.setStatus(RS.t('select_platform'));
+  }
 }
 
 function setRequesting(on, focus) {
@@ -445,7 +466,7 @@ function sentTicks(result) {
   if (!result.per_platform) return result.platforms || [];
   return platforms.filter(function (p) {
     var entry = result.per_platform[p];
-    return !!entry && (entry.decision === 'approved' || entry.decision === 'posted_manually');
+    return !!entry && (entry.decision === 'approved' || entry.decision === 'done');
   });
 }
 var draft = sent ? { approve: sentTicks(sent), comment: sent.comment || '', requesting: sent.decision === 'request_changes' }

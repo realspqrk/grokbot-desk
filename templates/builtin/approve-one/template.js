@@ -9,7 +9,19 @@
    "Request changes" opens the same field as a required comment. What is
    visible is what is sent: a hidden note is never part of the result. */
 var data = RS.data;
-var LABELS = { approve: 'choice_approve', reject: 'choice_reject', request_changes: 'request_changes' };
+var actor = data.actor === 'user' || data.actor === 'none' ? data.actor : 'bot';
+function botApproveLabel() {
+  if (data.approve_label) return data.approve_label;
+  if (data.action === 'post') return RS.t('approve_post');
+  if (data.action === 'send') return RS.t('approve_send');
+  if (data.action) return RS.t('approve_continue');
+  return RS.t('choice_approve');
+}
+var LABELS = actor === 'user'
+  ? { done: 'done_check', skipped: 'skip', request_changes: 'request_changes' }
+  : actor === 'none'
+    ? { acknowledged: 'got_it', request_changes: 'request_changes_ask' }
+    : { approve: 'choice_approve', reject: 'choice_reject', request_changes: 'request_changes' };
 var STATES = { ok: 'ok', warn: 'warn', fail: 'danger' };
 var CHECK_TEXT = { ok: 'check_ok', warn: 'check_warn', fail: 'check_fail' };
 /* A copy value wider than this, or with a line break, gets its own quoted line. */
@@ -32,13 +44,15 @@ function lineCount(text) {
 }
 
 /* ---- what it is about: summary, facts, copies ---- */
-part('summary').textContent = data.summary;
+RS.fillText(part('summary'), data.summary);
 
 var facts = data.facts || [];
 if (facts.length) {
   facts.forEach(function (f) {
     part('facts').appendChild(make('dt', null, f.label));
-    part('facts').appendChild(make('dd', f.mono ? 'ao__mono' : null, f.value));
+    var value = make('dd', f.mono ? 'ao__mono' : null);
+    RS.fillText(value, f.value);
+    part('facts').appendChild(value);
   });
 } else {
   part('facts').remove();
@@ -68,7 +82,11 @@ if (copies.length) {
 var points = data.points || [];
 if (points.length) {
   if (data.points_title) part('points-title').textContent = data.points_title;
-  points.forEach(function (p) { part('points').appendChild(make('li', null, p)); });
+  points.forEach(function (p) {
+    var item = document.createElement('li');
+    RS.fillText(item, p);
+    part('points').appendChild(item);
+  });
 } else {
   part('points-box').remove();
 }
@@ -106,10 +124,14 @@ var comment = root.querySelector('#ao-comment');
 var box = part('comment-box');
 var noteOpen = part('note-open');
 var noteShown = false;
-var values = ['approve', 'reject'];
-if (data.allow_changes === true) values.push('request_changes');
+var values = actor === 'user' ? ['done', 'skipped']
+  : actor === 'none' ? ['acknowledged', 'request_changes']
+  : ['approve', 'reject'];
+if (actor !== 'none' && data.allow_changes === true) values.push('request_changes');
 choice.setAttribute('label', RS.t('decision_label'));
-choice.options = values.map(function (v) { return { value: v, label: RS.t(LABELS[v]) }; });
+choice.options = values.map(function (v) {
+  return { value: v, label: v === 'approve' ? botApproveLabel() : RS.t(LABELS[v]) };
+});
 
 function render() {
   var changes = choice.value === 'request_changes';
@@ -135,7 +157,13 @@ function update(save) {
     RS.setStatus(has ? null : RS.t('comment_required'));
     return;
   }
-  RS.setSubmitLabel(decision === 'approve' ? (data.approve_label || RS.t('choice_approve')) : RS.t('send_rejection'));
+  var primary = decision === 'approve' ? botApproveLabel()
+    : decision === 'reject' ? RS.t('send_rejection')
+    : decision === 'done' ? RS.t('done_check')
+    : decision === 'skipped' ? RS.t('skip')
+    : decision === 'acknowledged' ? RS.t('got_it')
+    : RS.t('choice_approve');
+  RS.setSubmitLabel(primary);
   RS.setResult({ decision: decision, comment: box.hidden ? '' : comment.value });
   RS.setStatus(null);
 }

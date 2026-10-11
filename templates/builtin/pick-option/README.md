@@ -39,7 +39,8 @@ Pick this template when the person chooses **one** of a few alternatives. For a 
 | `options` | required, 2–4 items, shown in this order |
 | `options[].id` | `^[a-z0-9][a-z0-9_-]{0,31}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/options/1/id` |
 | `options[].name` | 1–48 characters; also used in the primary label |
-| `options[].summary` | optional, 1–240 characters |
+| `options[].summary` | optional, 1–240 characters. An http(s) address in the question, context, name, summary or a fact becomes a link under that option's card (the link only, not the surrounding words) |
+| `options[].copy` | optional, 1–4000 characters: the full text to copy, with a copy control in the same grid as that option's card, directly under it at every width, outside the selection button. The control is named for the option (`Copy: Offer` / `Kopieren: Offer`) |
 | `options[].facts` | optional, at most 6 `{ "label" (1–32), "value" (1–80) }`. Use the same labels in the same order in every option so the rows line up; a missing fact leaves its row empty |
 | `suggested` | optional option id; marked, never preselected; ignored when it names no option |
 

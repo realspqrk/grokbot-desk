@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { calmEvaluator, CALM_THRESHOLDS } from '../tools/calm.mjs';
 
 const PORT = Number(process.env.RS_E2E_PORT || 18900) + 10;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -72,7 +73,8 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       log.copies.push(JSON.parse(route.request().postData()));
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
-    for (const [route, list] of [['/copy-image', log.images], ['/reveal', log.reveals]]) {
+    log.urls = [];
+    for (const [route, list] of [['/copy-image', log.images], ['/reveal', log.reveals], ['/open-url', log.urls]]) {
       await page.route(ORIGIN + route, async (r) => {
         list.push(JSON.parse(r.request().postData()));
         await r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
@@ -101,7 +103,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   }
 
   for (const [id, valid] of [
-    ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max']],
+    ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies']],
     ['approve-one', ['golden', 'edge-access', 'edge-minimal', 'edge-max']],
     ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-max']],
   ]) {
@@ -122,7 +124,14 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
         for (const colorScheme of ['light', 'dark']) {
           const { ctx, page, log } = await open(id, name, { colorScheme });
           try {
-            assert.equal(await page.isDisabled('#rs-submit'), true, `${name}: nothing is decided at rest`);
+            const data = fixture(id, name);
+            const manual = id === 'preview-post' && (data.platforms || []).some((item) => item && item.mode === 'manual');
+            if (manual) {
+              assert.equal(await page.isDisabled('#rs-submit'), false, `${name}: unticked manual platforms can be reported as skipped`);
+              assert.equal(await page.textContent('#rs-submit-label'), de.footer_done, name);
+            } else {
+              assert.equal(await page.isDisabled('#rs-submit'), true, `${name}: nothing is decided at rest`);
+            }
             if (name === 'golden' || name === valid[1]) assert.deepEqual(await seriousViolations(page), [], `${name} ${colorScheme}`);
             assert.deepEqual(log.errors, [], `${name} ${colorScheme}`);
           } finally { await ctx.close(); }
@@ -307,13 +316,16 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       }));
       assert.equal(card.id, first.id);
       assert.equal(card.eyebrow, first.kind + t('due', { date: '14.10.' }));
-      assert.equal(card.title, `${first.source} ${first.title}`);
+      assert.equal(card.title, `${first.source}${de.sep_list}${first.title}`);
       assert.deepEqual(card.choices, dlChoice(first).map((c) => [c, de['choice_' + c], 'false']), 'no preselection');
       for (let i = 0; i < data.items.length; i++) {
         const left = data.items.slice(i);
-        assert.equal(await page.textContent('#rs-status'), t('items_open_named', {
+        const full = t('items_open_named', {
           n: left.length, total: data.items.length, names: left.map((w) => w.source || w.title).join(de.sep_names),
-        }));
+        });
+        const short = t('items_open_short', { n: left.length });
+        assert.equal(await page.textContent('#rs-status'), short);
+        assert.equal(await page.getAttribute('#rs-status', 'aria-label'), short + de.sep_list + full);
         assert.equal(await page.isDisabled('#rs-submit'), true);
         const w = data.items[i];
         await page.click(`rs-action-row[data-item="${w.id}"] button[value="${dlChoice(w).at(-1)}"]`);
@@ -525,14 +537,16 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   test('preview-post: a manual tab is named quietly, copies come first (image too) and the primary marks it as posted', async () => {
     const { ctx, page, log, run } = await open('preview-post', 'golden');
     try {
-      assert.equal(await page.textContent('#tab-x'), `${de.platform_x} · ${de.mode_manual}${de.not_approved}`);
+      assert.equal(await page.textContent('#tab-x'), `${de.platform_x} · ${de.mode_manual}${de.skip}`);
       assert.equal(await page.textContent('#tab-linkedin'), `${de.platform_linkedin}${de.not_approved}`, 'auto is the quiet default');
       assert.equal(await page.textContent('#panel-x [data-pp="manual-note"]'), de.manual_note);
-      assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), t('mark_posted_on', { platform: de.platform_x }));
+      assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), de.posted);
       /* Tab order on the manual panel: the copies, then "Mark as posted" */
       const order = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
       assert.deepEqual(order, ['x-text', 'x-hashtags', 'x-comment', 'x-image', 'reveal-x', 'approve-x']);
-      assert.equal(await label(page), de.approve_post, 'nothing ticked yet, the report has auto platforms');
+      assert.equal(await label(page), de.footer_done, 'nothing ticked yet, a manual platform is reported as skipped');
+      assert.equal(await page.textContent('#rs-status'), de.report_skips);
+      assert.equal(await page.isDisabled('#rs-submit'), false);
       const mediaId = await page.$eval('#panel-x [data-copy-id="x-image"]', (el) => el.getAttribute('media'));
       assert.match(mediaId, /^m_/, 'a media id, never a path');
       await page.click('[data-copy-id="x-image"] .rs-copy__btn');
@@ -543,7 +557,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await page.waitForFunction(() => document.querySelector('#rs-toasts .rs-toast'));
       assert.deepEqual(log.reveals, [{ run_id: run.run_id, media_id: mediaId }]);
       await page.check('#approve-x');
-      assert.equal(await label(page), de.mark_posted);
+      assert.equal(await label(page), de.posted);
       assert.equal(await page.textContent('#rs-status'), t('decided_count', { n: 1, total: 4 }));
       await page.click('#tab-linkedin');
       assert.equal(await page.$('#panel-linkedin [data-pp="manual-note"]'), null, 'auto keeps today\'s panel');
@@ -558,7 +572,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.deepEqual(await submitted(page, run), {
         decision: 'approve', platforms: ['linkedin'], comment: '',
         per_platform: {
-          x: { mode: 'manual', decision: 'posted_manually' },
+          x: { mode: 'manual', decision: 'done' },
           linkedin: { mode: 'auto', decision: 'approved' },
           instagram: { mode: 'auto', decision: 'not_approved' },
           facebook: { mode: 'auto', decision: 'not_approved' },
@@ -592,14 +606,267 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     } finally { await plain.ctx.close(); }
     const handOnly = await open('preview-post', 'golden', { data: { ...data, platforms: [{ platform: 'x', mode: 'manual' }] } });
     try {
-      assert.equal(await label(handOnly.page), de.mark_posted);
-      assert.equal(await handOnly.page.textContent('#rs-status'), de.select_platform_manual);
+      assert.equal(await label(handOnly.page), de.footer_done);
+      assert.equal(await handOnly.page.textContent('#rs-status'), de.report_skips);
+      assert.equal(await handOnly.page.isDisabled('#rs-submit'), false);
       await handOnly.page.check('#approve-x');
       await handOnly.page.keyboard.press('Control+Enter');
       assert.deepEqual(await submitted(handOnly.page, handOnly.run), {
         decision: 'approve', platforms: [], comment: '',
-        per_platform: { x: { mode: 'manual', decision: 'posted_manually' } },
+        per_platform: { x: { mode: 'manual', decision: 'done' } },
       }, 'posted by hand: nothing for the bot to post');
     } finally { await handOnly.ctx.close(); }
+  });
+
+  test('decide-list: user items use Posted, Skip and Later, and Open post calls /open-url', async () => {
+    const { ctx, page, log, run } = await open('decide-list', 'edge-replies');
+    try {
+      assert.equal(await page.textContent('#rs-submit-label'), de.footer_done);
+      const labels = await page.$$eval('[data-current] rs-action-row button', (buttons) => buttons.map((b) => b.textContent));
+      assert.deepEqual(labels, [de.posted, de.skip, de.later]);
+      const href = await page.getAttribute('[data-current] .dl-url a.rs-ext', 'href');
+      assert.equal(href, 'https://x.com/example/status/184201');
+      assert.match(await page.textContent('[data-current] .dl-card__title'), /Example Harbour · /);
+      await page.click('[data-current] .dl-url a.rs-ext');
+      assert.deepEqual(log.urls, [{ run_id: run.run_id, url: href }]);
+      assert.equal(page.url().startsWith(ORIGIN), true);
+      for (const value of ['done', 'skipped', 'later', 'done']) {
+        await page.click(`[data-current] rs-action-row button[value="${value}"]`);
+      }
+      await page.keyboard.press('Control+Enter');
+      assert.deepEqual(await submitted(page, run), {
+        items: [
+          { id: 'reply-ferry', choice: 'done', note: '' },
+          { id: 'reply-market', choice: 'skipped', note: '' },
+          { id: 'reply-library', choice: 'later', note: '' },
+          { id: 'reply-bakery', choice: 'done', note: '' },
+        ],
+        note: '',
+      });
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('preview-post: skipping every manual platform reports skips and reads Done', async () => {
+    const data = fixture('preview-post', 'golden');
+    const cases = [
+      {
+        name: 'one manual',
+        platforms: [{ platform: 'x', mode: 'manual' }],
+        per_platform: { x: { mode: 'manual', decision: 'skipped' } },
+      },
+      {
+        name: 'two manuals',
+        platforms: [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'manual' }],
+        per_platform: {
+          x: { mode: 'manual', decision: 'skipped' },
+          linkedin: { mode: 'manual', decision: 'skipped' },
+        },
+      },
+      {
+        name: 'mixed',
+        platforms: [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'auto' }],
+        per_platform: {
+          x: { mode: 'manual', decision: 'skipped' },
+          linkedin: { mode: 'auto', decision: 'not_approved' },
+        },
+      },
+    ];
+    for (const item of cases) {
+      const opened = await open('preview-post', 'golden', { data: { ...data, platforms: item.platforms } });
+      try {
+        assert.equal(await label(opened.page), de.footer_done, item.name);
+        assert.notEqual(await label(opened.page), de.posted, item.name);
+        assert.equal(await opened.page.textContent('#rs-status'), de.report_skips, item.name);
+        assert.equal(await opened.page.isDisabled('#rs-submit'), false, item.name);
+        await opened.page.keyboard.press('Control+Enter');
+        assert.deepEqual(await submitted(opened.page, opened.run), {
+          decision: 'approve', platforms: [], comment: '', per_platform: item.per_platform,
+        }, item.name);
+      } finally { await opened.ctx.close(); }
+    }
+  });
+
+  async function calmCounts(page) {
+    const verified = await page.evaluate(() => {
+      const selector = '[role="radiogroup"],[role="toolbar"],[role="tablist"]';
+      return [...document.querySelectorAll(selector)].flatMap((group, index) => {
+        const members = [...group.querySelectorAll('button,a[href],input,select,textarea,[role="radio"]')].filter((element) => {
+          if (element.closest(selector) !== group) return false;
+          for (let node = element; node; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden' || Number.parseFloat(style.opacity || '1') <= 0.05) return false;
+          }
+          return element.getClientRects().length > 0;
+        });
+        const roving = members.length > 1
+          && members.filter((element) => element.tabIndex === 0).length === 1
+          && members.every((element) => element.tabIndex <= 0);
+        return roving ? [`group-${index}`] : [];
+      });
+    });
+    const facts = await page.evaluate(calmEvaluator, {
+      thresholds: CALM_THRESHOLDS,
+      templateId: 'decide-list',
+      openRuns: 1,
+      verifiedRovingGroups: verified,
+    });
+    return facts.K2.items.map((item) => item.interactive_count);
+  }
+
+  async function assertItemBudget(page, where) {
+    await page.mouse.move(0, 0);
+    await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
+    let counts = await calmCounts(page);
+    assert.ok(counts.length && counts.every((n) => n <= 3), `${where} rest ${counts}`);
+    await page.hover('[data-current]');
+    counts = await calmCounts(page);
+    assert.ok(counts.every((n) => n <= 3), `${where} hover ${counts}`);
+    await page.mouse.move(0, 0);
+    await page.focus('[data-current] rs-action-row button');
+    counts = await calmCounts(page);
+    assert.ok(counts.every((n) => n <= 3), `${where} focus ${counts}`);
+    await page.click('[data-current] .dl-add-note');
+    counts = await calmCounts(page);
+    assert.ok(counts.every((n) => n <= 3), `${where} note ${counts}`);
+  }
+
+  test('decide-list: links do not navigate, and each item stays within three controls', async () => {
+    const { ctx, page, log, run } = await open('decide-list', 'edge-replies');
+    const pause = () => page.waitForTimeout(450);
+    const link = '[data-current] .dl-url a.rs-ext';
+    try {
+      const href = await page.getAttribute(link, 'href');
+      const probe = await page.evaluate(() => {
+        const anchor = document.querySelector('[data-current] .dl-url a.rs-ext');
+        const start = new DragEvent('dragstart', { bubbles: true, cancelable: true });
+        anchor.dispatchEvent(start);
+        const uri = new DataTransfer();
+        uri.setData('text/uri-list', 'https://evil.example/drop');
+        const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: uri });
+        document.body.dispatchEvent(over);
+        const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: uri });
+        document.body.dispatchEvent(drop);
+        const plain = new DataTransfer();
+        plain.setData('text/plain', 'hello');
+        const textOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: plain });
+        document.body.dispatchEvent(textOver);
+        const fieldUri = new DataTransfer();
+        fieldUri.setData('text/uri-list', 'https://evil.example/field');
+        const fieldOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: fieldUri });
+        document.querySelector('[data-current] input').dispatchEvent(fieldOver);
+        const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+        anchor.dispatchEvent(menu);
+        const holder = document.createElement('div');
+        RS.appendLinks(holder, 'See https://example.com/only-the-link today');
+        return {
+          draggable: anchor.getAttribute('draggable'),
+          startCancelled: start.defaultPrevented,
+          overCancelled: over.defaultPrevented,
+          dropCancelled: drop.defaultPrevented,
+          textCancelled: textOver.defaultPrevented,
+          fieldCancelled: fieldOver.defaultPrevented,
+          menuCancelled: menu.defaultPrevented,
+          linksOnly: holder.textContent,
+          badLink: RS.externalLink('https://user@example.com/a', 'x') === null,
+          pathAt: RS.externalLink('https://example.com/a@b', 'x').getAttribute('href'),
+        };
+      });
+      assert.equal(probe.draggable, 'false');
+      assert.equal(probe.startCancelled, true);
+      assert.equal(probe.overCancelled, true);
+      assert.equal(probe.dropCancelled, true);
+      assert.equal(probe.textCancelled, false);
+      assert.equal(probe.fieldCancelled, false);
+      assert.equal(probe.menuCancelled, true);
+      assert.equal(probe.linksOnly, 'https://example.com/only-the-link');
+      assert.equal(probe.badLink, true);
+      assert.equal(probe.pathAt, 'https://example.com/a@b');
+      assert.deepEqual(log.urls, []);
+
+      await page.click(link);
+      await pause();
+      await page.click(link, { button: 'middle' });
+      await pause();
+      await page.focus(link);
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Control+Enter');
+      await pause();
+      await page.focus(link);
+      await page.keyboard.press('Shift+Enter');
+      await pause();
+      await page.focus(link);
+      await page.keyboard.press('Alt+Enter');
+      await pause();
+      await page.click(link, { modifiers: ['Shift'] });
+      await pause();
+      await page.click(link, { modifiers: ['Control'] });
+      await page.click(link, { button: 'right' });
+      assert.deepEqual(log.urls.map((entry) => entry.url), Array(7).fill(href));
+      assert.equal(new URL(page.url()).origin, ORIGIN);
+
+      await assertItemBudget(page, 'edge-replies');
+      for (const value of ['done', 'skipped', 'later', 'done']) {
+        await page.click(`[data-current] rs-action-row button[value="${value}"]`);
+      }
+      await page.keyboard.press('Control+Enter');
+      await submitted(page, run);
+      await page.goto(server.url('?client=test&run=' + run.run_id));
+      await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+      await pause();
+      await page.click('.dl-item[data-item-id="reply-ferry"] .dl-row');
+      await page.click('[data-current] .dl-url a.rs-ext');
+      assert.equal(log.urls.at(-1).url, href);
+      assert.equal(log.urls.length, 8);
+      assert.equal(new URL(page.url()).origin, ORIGIN);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('decide-list: linked title and detail stay within three controls and do not repeat the post URL', async () => {
+    const linked = {
+      intro: 'Two replies with links in the text.',
+      items: [
+        {
+          id: 'reply-linked',
+          actor: 'user',
+          source: 'Example Harbour',
+          title: 'See https://example.com/title-note and https://x.com/example/status/184201',
+          detail: 'Notes at https://example.com/detail-note.',
+          url: 'https://x.com/example/status/184201',
+          copy: [{ label: 'Copy reply', text: 'The 08:10 is running.' }],
+        },
+        {
+          id: 'reply-plain',
+          actor: 'user',
+          source: 'Example Market',
+          title: 'Reply under the stall question',
+          detail: 'See https://example.com/market-note before you answer.',
+          copy: [{ label: 'Copy reply', text: 'Yes, from 9:00.' }],
+        },
+      ],
+    };
+    const { ctx, page, log } = await open('decide-list', 'edge-replies', { data: linked });
+    try {
+      const hrefs = await page.$$eval('[data-current] a.rs-ext', (els) => els.map((a) => a.getAttribute('href')).sort());
+      assert.deepEqual(hrefs, ['https://example.com/detail-note', 'https://example.com/title-note', 'https://x.com/example/status/184201'].sort());
+      const titleHrefs = await page.$$eval('[data-current] .dl-card__title a', (els) => els.map((a) => a.getAttribute('href')));
+      assert.deepEqual(titleHrefs, ['https://example.com/title-note']);
+      assert.match(await page.textContent('[data-current] .dl-card__title'), /https:\/\/x\.com\/example\/status\/184201/);
+      assert.equal(await page.locator('[data-current] [role="toolbar"]').count(), 1);
+      await page.focus('[data-current] [role="toolbar"] a');
+      const seen = [await page.evaluate(() => document.activeElement.getAttribute('href'))];
+      for (let i = 0; i < hrefs.length; i++) {
+        await page.keyboard.press('ArrowRight');
+        seen.push(await page.evaluate(() => document.activeElement.getAttribute('href')));
+      }
+      assert.equal(seen[seen.length - 1], seen[0]);
+      assert.equal(new Set(seen.slice(0, hrefs.length)).size, hrefs.length);
+      await assertItemBudget(page, 'linked');
+      await page.click('.dl-item[data-item-id="reply-plain"] .dl-row');
+      assert.equal(await page.locator('[data-current] a.rs-ext').count(), 1);
+      await assertItemBudget(page, 'detail link');
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
   });
 });

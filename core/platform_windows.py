@@ -401,6 +401,11 @@ def reveal_file(path):
     )
 
 
+def open_url(url):
+    """Open a URL in the default browser. The caller has already allowlisted it."""
+    os.startfile(url)
+
+
 def final_path_for_handle(handle):
     import msvcrt
 

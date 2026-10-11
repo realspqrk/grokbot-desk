@@ -16,7 +16,7 @@ LIMITS = {"x": 280, "linkedin": 3000, "instagram": 2200, "facebook": 63206}
 # One platform tab at a time: overflow menu, then per tab. Auto: approve, the
 # panel's three copy icons, back to the tablist, ArrowRight to the next tab.
 # Manual (copies first): the three copy icons, copy image and its folder, then
-# "Mark as posted" and back. On the last (auto) tab on through discard and the
+# "Posted" and back. On the last (auto) tab on through discard and the
 # alternative to the submit button.
 AUTO_TAB = (
     {"press": "Tab"}, {"press": "Space"}, {"repeat": 3, "press": "Tab"},
@@ -58,7 +58,7 @@ def approved_result(data):
         "platforms": [p for p, mode in entries(data) if mode == "auto"],
         "comment": "",
         "per_platform": {
-            p: {"mode": mode, "decision": "posted_manually" if mode == "manual" else "approved"}
+            p: {"mode": mode, "decision": "done" if mode == "manual" else "approved"}
             for p, mode in entries(data)
         },
     }

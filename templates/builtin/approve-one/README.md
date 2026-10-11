@@ -37,8 +37,10 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 | Field | Rule |
 |---|---|
-| `summary` | required, 1–600, plain text (newlines kept) |
-| `approve_label` | optional, 1–24; the primary's label once `Approve` is picked |
+| `summary` | required, 1–600, plain text (newlines kept). An http(s) address in the text becomes a link |
+| `actor` | optional `bot` (default), `user` or `none`. `user`: Done ✓ / Skip (`done` / `skipped`). `none`: Got it / Request changes (`acknowledged` / `request_changes`). The bot never acts on `user` or `none` |
+| `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. For a bot decision, `post` labels the primary Approve & post, `send` labels it Approve & send, any other verb labels it Approve & continue |
+| `approve_label` | optional, 1–24; overrides `action` and the default Approve once Approve is picked |
 | `allow_changes` | optional boolean, default `false`; offers `Request changes` |
 | `facts[]` | optional, at most 6 of `{label 1–24, value 1–120, mono?}` |
 | `copy[]` | optional, at most 3 of `{label 1–24, text 1–2000}`; each value is shown in full next to its button |
@@ -59,8 +61,9 @@ Empty sections are not rendered.
 { "decision": "request_changes", "comment": "Please deploy after the Friday sale ends." }
 ```
 
-- `approve` or `reject`: `comment` 0–2000 (the optional note; `""` when no note was shown).
-- `request_changes` (only with `allow_changes`): `comment` 1–2000 with at least one non-whitespace character.
+- `approve` or `reject` (actor `bot`): `comment` 0–2000 (the optional note; `""` when no note was shown).
+- `done` or `skipped` (actor `user`), and `acknowledged` (actor `none`): `comment` 0–2000.
+- `request_changes` (bot or user, only with `allow_changes`; always offered for `none`): `comment` 1–2000 with at least one non-whitespace character.
 - A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)

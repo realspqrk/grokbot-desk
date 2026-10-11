@@ -310,6 +310,11 @@ def focus_window(browser_identity, title):
     return False
 
 
+def open_url(url):
+    """Open a URL in the default browser. Argument list, no shell."""
+    subprocess.Popen(["/usr/bin/open", str(url)], shell=False)
+
+
 def reveal_file(path):
     try:
         result = subprocess.run(

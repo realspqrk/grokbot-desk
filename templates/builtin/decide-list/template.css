@@ -86,6 +86,8 @@ rs-card.dl-card {
   overflow-wrap: anywhere;
 }
 .dl-card__detail { max-width: var(--rs-measure); color: var(--rs-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.dl-prose { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.dl-url { margin: 0; max-width: var(--rs-measure); overflow-wrap: anywhere; }
 
 .dl-copies {
   display: flex;

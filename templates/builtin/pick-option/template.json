@@ -5,7 +5,8 @@
   "title_de": "Option wählen",
   "description": "Built-in (calm): compare 2 to 4 options side by side (name, short summary, aligned facts) and pick exactly one, with an optional note. The options form one radio group: arrow keys move and pick, Ctrl+Enter sends.",
   "components": [
-    "rs-action-row"
+    "rs-action-row",
+    "rs-copy"
   ],
   "strings": [
     "choice_group_label",
@@ -15,6 +16,8 @@
     "po_choose_idle",
     "po_note_placeholder",
     "add_note",
-    "note"
+    "note",
+    "copy",
+    "copy_named"
   ]
 }
