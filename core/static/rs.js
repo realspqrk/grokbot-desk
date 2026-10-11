@@ -301,23 +301,32 @@
   function openableUrl(url) {
     if (typeof url !== 'string' || !url || url.length > 2048) return false;
     if (hasControl(url) || /\s/.test(url) || url.indexOf('\\') >= 0) return false;
-    var colon = url.indexOf(':');
-    if (colon < 4) return false;
-    var scheme = url.slice(0, colon).toLowerCase();
-    if (scheme !== 'http' && scheme !== 'https') return false;
-    if (url.charAt(colon + 1) !== '/' || url.charAt(colon + 2) !== '/') return false;
-    var parsed;
-    try { parsed = new URL(url); } catch (e) { return false; }
-    if (parsed.username || parsed.password) return false;
-    if (!parsed.hostname) return false;
-    var rest = url.slice(colon + 3);
+    // the raw authority is checked before URL() normalizes it; the same rule
+    // as core/urls.py openable (tests/fixtures/url_vectors.json)
+    var scheme = /^https?:\/\//i.exec(url);
+    if (!scheme) return false;
+    var rest = url.slice(scheme[0].length);
     var cut = rest.search(/[/?#]/);
     var authority = cut < 0 ? rest : rest.slice(0, cut);
-    if (authority.charAt(0) === '[') {
-      var end = authority.indexOf(']');
-      if (end < 0) return false;
-      if (authority.length > end + 1 && (authority.charAt(end + 1) !== ':' || !parsed.port)) return false;
-    } else if (authority.indexOf(':') >= 0 && !parsed.port) return false;
+    if (authority.indexOf('@') >= 0) return false;
+    var host = authority, port = null;
+    if (host.charAt(0) === '[') {
+      var end = host.indexOf(']');
+      if (end < 0 || !/^[0-9A-Fa-f:.]+$/.test(host.slice(1, end))) return false;
+      var tail = host.slice(end + 1);
+      if (tail) {
+        if (tail.charAt(0) !== ':') return false;
+        port = tail.slice(1);
+      }
+    } else {
+      var at = host.indexOf(':');
+      if (at >= 0) { port = host.slice(at + 1); host = host.slice(0, at); }
+      if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.?$/.test(host)) return false;
+    }
+    if (port !== null && (!/^[0-9]{1,5}$/.test(port) || Number(port) > 65535)) return false;
+    var parsed;
+    try { parsed = new URL(url); } catch (e) { return false; }
+    if (parsed.username || parsed.password || !parsed.hostname) return false;
     return true;
   }
   function externalAnchor(url, text) {

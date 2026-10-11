@@ -19,6 +19,7 @@ const fixture = (id, name) => json(path.join(BUILTIN, id, 'fixtures', `${name}.j
 const expectFor = (id, name) => json(path.join(BUILTIN, id, 'fixtures', 'expect', `${name}.json`));
 const de = json(path.join(ROOT, 'core', 'i18n', 'de.json'));
 const AXE = path.join(ROOT, 'vendor', 'axe.min.js');
+const URL_VECTORS = json(path.join(ROOT, 'tests', 'fixtures', 'url_vectors.json'));
 const t = (key, params = {}) => de[key].replace(/\{(\w+)\}/g, (m, k) => (k in params ? String(params[k]) : m));
 const RS_COUNT = createRequire(import.meta.url)('../core/static/count.js');
 
@@ -737,7 +738,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     const link = '[data-current] .dl-url a.rs-ext';
     try {
       const href = await page.getAttribute(link, 'href');
-      const probe = await page.evaluate(() => {
+      const probe = await page.evaluate((urlVectors) => {
         const anchor = document.querySelector('[data-current] .dl-url a.rs-ext');
         const start = new DragEvent('dragstart', { bubbles: true, cancelable: true });
         anchor.dispatchEvent(start);
@@ -770,8 +771,10 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
           linksOnly: holder.textContent,
           badLink: RS.externalLink('https://user@example.com/a', 'x') === null,
           pathAt: RS.externalLink('https://example.com/a@b', 'x').getAttribute('href'),
+          accepted: urlVectors.both.concat(urlVectors.opener_only).filter((u) => RS.externalLink(u, 'x') === null),
+          refused: urlVectors.bad.filter((u) => RS.externalLink(u, 'x') !== null),
         };
-      });
+      }, URL_VECTORS);
       assert.equal(probe.draggable, 'false');
       assert.equal(probe.startCancelled, true);
       assert.equal(probe.overCancelled, true);
@@ -782,6 +785,8 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(probe.linksOnly, 'https://example.com/only-the-link');
       assert.equal(probe.badLink, true);
       assert.equal(probe.pathAt, 'https://example.com/a@b');
+      assert.deepEqual(probe.accepted, [], 'the page opens what the opener accepts (url_vectors.json)');
+      assert.deepEqual(probe.refused, [], 'the page refuses what the opener refuses (url_vectors.json)');
       assert.deepEqual(log.urls, []);
 
       await page.click(link);

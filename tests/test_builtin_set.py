@@ -384,37 +384,27 @@ def test_actor_fields_are_optional_and_user_results_validate():
 
 
 def test_decide_list_url_matches_the_opener():
+    """One URL policy: tests/fixtures/url_vectors.json is shared with the page
+    test (RS.externalLink), so schema, page and opener cannot drift apart."""
     from core.urls import openable
 
-    good = (
-        "https://example.com/a@b",
-        "https://example.com/a?x=@",
-        "https://example.com/a?x=@#f@",
-        "https://example.com:443/a",
-        "http://127.0.0.1:8080/a",
-        "https://[::1]/a",
-    )
-    bad = (
-        "https:///a",
-        "https://example.com\\abc",
-        "https://user@example.com/a",
-        "https://user:secret@example.com/a",
-        "https://example.com:abc",
-        "https://example.com:99999",
-        "https://example.com:/a",
-        "https://[oops",
-        "https://example.com/\x00a",
-        "https://example.com/a\x7f",
-        "https://example.com/a\u0085",
-    )
+    vectors = json.loads((Path(__file__).parent / "fixtures" / "url_vectors.json").read_text(encoding="utf-8"))
     spec = schema("decide-list")
-    for url in good:
+
+    def payload(url):
+        return {"items": [{"id": "a", "title": "One", "url": url}]}
+
+    for url in vectors["both"]:
         assert openable(url), url
-        validate({"items": [{"id": "a", "title": "One", "url": url}]}, spec)
-    for url in bad:
+        validate(payload(url), spec)
+    for url in vectors["opener_only"]:
+        assert openable(url), url
+        with pytest.raises(SchemaError):
+            validate(payload(url), spec)
+    for url in vectors["bad"]:
         assert openable(url) is False, url
         with pytest.raises(SchemaError):
-            validate({"items": [{"id": "a", "title": "One", "url": url}]}, spec)
+            validate(payload(url), spec)
 
 
 def test_length_facts_match_the_copy_they_describe():

@@ -461,8 +461,9 @@ def _decided_after(value, since):
         return False
 
 
-def _results_since(base, since, bot=None, seen=()):
-    items, listed = [], set(seen)
+def _results_since(base, since, bot=None):
+    """Every result decided at or after since (one per run id), oldest first."""
+    items, listed = [], set()
     for path in (Path(base) / "results").glob("*.json"):
         try:
             value = json_loads(path.read_text(encoding="utf-8"))
@@ -490,26 +491,32 @@ def _results_since(base, since, bot=None, seen=()):
 def command_results(args, base):
     """Results decided at or after --since, oldest first, minus the run ids
     given with --seen; with --wait the command blocks up to that many seconds
-    until at least one arrives. A bot keeps `cursor` (the newest `decided`)
-    and passes the run ids decided in that same second as --seen next time."""
+    until at least one new one arrives. The answer always carries `cursor`
+    (the newest `decided` so far) and `seen` (every run id decided in that
+    second, including ones seen before), so passing both back as-is next time
+    neither loses nor repeats a decision."""
     try:
         since = to_vienna(args.since).astimezone(timezone.utc)
     except (TypeError, ValueError, OverflowError):
         return error("--since must be ISO 8601 with an offset", 2)
     deadline = time.monotonic() + max(0.0, min(args.wait, 3600.0))
+    skip = set(getattr(args, "seen", None) or ())
     while True:
-        items = _results_since(base, since, args.bot, getattr(args, "seen", None) or ())
+        every = _results_since(base, since, args.bot)
+        items = [item for item in every if item["run_id"] not in skip]
         if items or time.monotonic() >= deadline:
             break
         time.sleep(.5)
     answer = {"data_dir": str(Path(base)), "results": items}
-    if items:
-        answer["cursor"] = items[-1]["decided"]
-        newest = to_vienna(items[-1]["decided"]).astimezone(timezone.utc)
+    if every:
+        answer["cursor"] = every[-1]["decided"]
+        newest = to_vienna(every[-1]["decided"]).astimezone(timezone.utc)
         answer["seen"] = [
-            item["run_id"] for item in items
+            item["run_id"] for item in every
             if to_vienna(item["decided"]).astimezone(timezone.utc) == newest
         ]
+    else:
+        answer["cursor"], answer["seen"] = args.since, sorted(skip)
     output(answer)
     return 0
 
@@ -728,8 +735,9 @@ def build_parser():
     show.add_argument("--no-window", action="store_true")
     wait = commands.add_parser("wait")
     wait.add_argument("run_id")
-    wait.add_argument("--timeout", type=float, default=0)
-    wait.add_argument("--until-expiry", action="store_true")
+    wait_limit = wait.add_mutually_exclusive_group()
+    wait_limit.add_argument("--timeout", type=float, default=0)
+    wait_limit.add_argument("--until-expiry", action="store_true")
     result = commands.add_parser("result")
     result.add_argument("run_id")
     results = commands.add_parser("results")

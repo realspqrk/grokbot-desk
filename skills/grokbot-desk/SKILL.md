@@ -72,7 +72,7 @@ Pick a built-in before writing your own:
 3. Tell the user in chat that a decision is waiting, then wait for it:
    - First a short wait: `python report_shell.py wait RUN_ID --timeout 60`. Exit 0 means `submitted`, `cancelled` or `expired`: go to step 4.
    - Exit 5 means the user has not decided yet. If your runtime wakes you when a background subagent or task finishes, hand the wait to one: it runs `python report_shell.py wait RUN_ID --until-expiry`, blocks on it, then reports the exit code and `result`. Background shells may not wake you, so do not rely on one. Otherwise, check on your next turn with `results --since` (below).
-   - `wait` ends by itself at the run's expiry plus 2 minutes. Exit 7 means the report expired and nothing wrote a result (no server was running): treat it as expired.
+   - `wait` ends by itself at the run's expiry plus 2 minutes at the latest. Exit 7 means no result was written by then: treat it as expired. (Only a run record without a readable expiry, from before 1.0.0-beta.2, waits until `--timeout`.)
    - Never use `--timeout 0` from a bot.
 
 4. Read: `python report_shell.py result RUN_ID`
@@ -80,7 +80,7 @@ Pick a built-in before writing your own:
 
 5. Acknowledge in your own chat with one short line: topic + OK (for example "X replies: 5x posted, OK"). If the result asks for work, start it right away; otherwise that one line is all.
 
-Catch up on decisions you did not wait for: `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID ...]` lists results decided at or after `CURSOR` (ISO 8601 with offset), oldest first. Keep `cursor` and `seen` from its output and pass them next time (`--seen` once per run id), so a decision in the same second is neither lost nor listed twice. Every result names the `data_dir` in use; `paths` prints it too. Never guess the data directory.
+Catch up on decisions you did not wait for: `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID ...]` lists results decided at or after `CURSOR` (ISO 8601 with offset), oldest first. Pass the `cursor` and `seen` from its last answer back as they came (`--since CURSOR`, `--seen` once per run id), so a decision in the same second is neither lost nor listed twice. Every result names the `data_dir` in use; `paths` prints it too. Never guess the data directory.
 
 If `show` fails, read its error. Correct the payload field named in the error; `doctor` checks registry/setup warnings. `check <template>` checks the template and requires the development tools described above. Try once more after fixing the cause; do not retry in a loop.
 

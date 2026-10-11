@@ -118,7 +118,7 @@ Checklist (spec 5.2). The core already gives `lang="de"`, visible focus, token c
 - Labels say who acts next. `actor` is `bot` (default), `user` or, on approve-one and review-doc, `none`. Bot results stay `approve`, `reject`, `request_changes`, `defer`. User results are `done`, `skipped` and, on a list, `later`. Info-only is `acknowledged`. A missing `actor` keeps today's values. The bot never acts on `user` or `none`.
 - Bots read **only** the result file `<data dir>\results\<run_id>.json` on `<host>` (take the exact path from `result_path` in the `show` or `wait` output). Never scrape the page, the run store or the action log.
 - A result file is written once, atomically, and never changes. Its `data` was validated against `result.schema.json` before it was written.
-- Waiting: start with `wait --timeout 60` (below the runtime's shell-call cap). On exit 5, if your runtime wakes you when a background subagent or task finishes, hand the wait to one that runs `wait <run_id> --until-expiry` and blocks on it; background shells may not wake you. Otherwise catch up on the next turn with `results --since`. `wait` always ends at the run's expiry plus 2 minutes (exit 7 when nothing wrote a result). Never use `--timeout 0` from a bot.
+- Waiting: start with `wait --timeout 60` (below the runtime's shell-call cap). On exit 5, if your runtime wakes you when a background subagent or task finishes, hand the wait to one that runs `wait <run_id> --until-expiry` and blocks on it; background shells may not wake you. Otherwise catch up on the next turn with `results --since`. `wait` ends at the run's expiry plus 2 minutes at the latest (exit 7: no result by then; a pre-beta.2 or unreadable run record has no expiry, so only `--timeout` ends it). Never use `--timeout 0` from a bot.
 - After a result: acknowledge in your own chat with topic + OK (e.g. "X replies: 5x posted, OK"); act right away if the result asks for action.
 - Act on `status`:
 
@@ -233,9 +233,9 @@ Replace `RUN_ID` with the value printed by `show`. Choose and send in the window
 | Command | Output | Exit codes |
 |---|---|---|
 | `show <template> --data <path\|-> [--focus] [--no-window]` | `{"run_id","url","result_path"}`. Validates, starts the server if needed, registers the run, opens the window if none is open (`--no-window`: never). `--data` may also hold only the `data` object; the core then wraps it (title = template `title_de`, `created` = now, `bot` = the template's namespace, or a built-in default bot id for `global` templates <!-- rename -->). | 0, 2, 3, 4 |
-| `wait <run_id> [--timeout <s> \| --until-expiry]` | `{"status","result_path","data_dir"}` once the result file exists (checked every 200 ms). Always ends at the run's expiry plus 2 minutes; `--until-expiry` waits exactly that long. Never use `--timeout 0` from a bot | 0, 2, 5, 6, 7 |
+| `wait <run_id> [--timeout <s> \| --until-expiry]` | `{"status","result_path","data_dir"}` once the result file exists (checked every 200 ms). Returns on the result, at the latest at the run's expiry plus 2 minutes (exit 7: no result by then); `--until-expiry` waits up to that point and excludes `--timeout`. A run record without a readable `expires` (pre-beta.2) has no such limit. Never use `--timeout 0` from a bot | 0, 2, 5, 6, 7 |
 | `result <run_id>` | the result envelope plus `data_dir` | 0, 6 (also while no result exists yet) |
-| `results --since <iso> [--bot <id>] [--seen <run_id>]... [--wait <s>]` | `{"data_dir","results":[{"run_id","bot","template","status","decided","result_path"}],"cursor","seen"}`: results decided at or after `--since`, oldest first, minus `--seen`; pass `cursor` and `seen` back next time. `--wait` blocks up to that many seconds (max 3600) for the first one | 0, 2 |
+| `results --since <iso> [--bot <id>] [--seen <run_id>]... [--wait <s>]` | `{"data_dir","results":[{"run_id","bot","template","status","decided","result_path"}],"cursor","seen"}`: results decided at or after `--since`, oldest first, minus `--seen`. `cursor` is the newest `decided` so far and `seen` every run id decided in that second (also on an empty answer); pass both back as they came. `--wait` blocks up to that many seconds (max 3600) for the first one | 0, 2 |
 | `paths` | the data directory in use and why, plus unused legacy directories | 0 |
 | `status` | `{"up","port","pid","open_runs","window_alive"}` | 0 |
 | `open` | `{"ok":true,"opened":true\|false}`; opens or focuses the window when runs are open | 0, 3, 4 |
@@ -261,7 +261,7 @@ The server stops by itself after 30 minutes with no open run and no window.
 | 4 | port held by a foreign process, or the server did not start within 3 s | tell the maintainer; never pick another port on your own |
 | 5 | `wait` timed out | hand the wait to a background subagent, or catch up later with `results --since` |
 | 6 | unknown run (`wait`, `result`, `cancel`), no result yet (`result`), or already decided (`cancel`) | check the `run_id`; for `result`, try again later |
-| 7 | `wait`: the run expired and no result was written (no server running). Otherwise: `check` failed, `new` name exists or invalid, broken template registry | `wait`: treat as expired. Otherwise: fix the template |
+| 7 | `wait`: no result by the run's expiry plus 2 minutes. Otherwise: `check` failed, `new` name exists or invalid, broken template registry | `wait`: treat as expired. Otherwise: fix the template |
 
 ## D. Envelopes
 

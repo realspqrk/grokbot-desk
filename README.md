@@ -150,11 +150,11 @@ The command returns at once with one JSON line: `run_id`, `url` (on `127.0.0.1`,
 After you choose and send, read the outcome:
 
 ```bash
-python report_shell.py wait RUN_ID --timeout 120
+python report_shell.py wait RUN_ID --timeout 60
 python report_shell.py result RUN_ID
 ```
 
-Replace `RUN_ID` with the id printed by `show`. `wait` prints `{"status":"submitted","result_path":"..."}` when you submit. Other terminal statuses are `cancelled` and `expired`. `--timeout` is in seconds; `wait` always ends at the report's expiry plus 2 minutes (exit 7 if nothing answered it), and `--until-expiry` waits exactly that long. `result` prints the full envelope. In a bot runtime, use a timeout below its shell-call limit and never `--timeout 0`; exit 5 means the report is still waiting. `results --since <time>` lists what was decided since then, so a bot can catch up on its next turn. Example result (ids and timestamps are illustrative):
+Replace `RUN_ID` with the id printed by `show`. `wait` prints `{"status":"submitted","result_path":"..."}` when you submit. Other terminal statuses are `cancelled` and `expired`. `--timeout` is in seconds. `wait` returns as soon as a result exists and at the latest at the report's expiry plus 2 minutes: exit 7 means no result was written by then. `--until-expiry` waits up to that point. (A run record from before 1.0.0-beta.2, or one that cannot be read, has no expiry, so only `--timeout` ends that wait.) `result` prints the full envelope. A bot starts with `wait --timeout 60` and never uses `--timeout 0`. Exit 5 means the report is still waiting: if the bot's runtime wakes it when a background subagent or task finishes, it hands `wait RUN_ID --until-expiry` to one (background shells may not wake it); otherwise it catches up on its next turn with `results --since`, passing back the `cursor` and `seen` it got last time. After a result, the bot acknowledges in its own chat with topic + OK and starts any work the result asks for. Example result (ids and timestamps are illustrative):
 
 ```json
 {

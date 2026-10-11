@@ -1,0 +1,45 @@
+{
+  "_doc": "One URL policy for the payload schema (decide-list url), the page (RS.externalLink) and the server opener (core/urls.py). both: all three accept. opener_only: the schema is narrower on purpose, page and opener accept. bad: all three reject.",
+  "both": [
+    "https://example.com/a@b",
+    "https://example.com/a?x=@",
+    "https://example.com/a?x=@#f@",
+    "https://example.com:443/a",
+    "http://example.com:80/a",
+    "https://example.com:0/a",
+    "https://example.com:65535/a",
+    "http://127.0.0.1:8080/a",
+    "https://x.com/example/status/184201",
+    "https://example.com",
+    "https://sub-domain.example.com./a"
+  ],
+  "opener_only": [
+    "https://[::1]/a",
+    "https://[::1]:443/a",
+    "HTTPS://example.com/a",
+    "https://example.com:00080/a"
+  ],
+  "bad": [
+    "https:///a",
+    "https://@example.com/a",
+    "https://user@example.com/a",
+    "https://user:secret@example.com/a",
+    "https://[123]/a",
+    "https://[oops",
+    "https://example.com\uff0fbad",
+    "https://example.com\\abc",
+    "https://example.com:abc",
+    "https://example.com:99999",
+    "https://example.com:/a",
+    "https://example.com:",
+    "https://exa mple.com/a",
+    "https://example.com/\u0000a",
+    "https://example.com/a\u007f",
+    "https://example.com/a\u0085",
+    "javascript:alert(1)",
+    "file:///etc/passwd",
+    "//example.com/a",
+    "https://ex_ample.com/a",
+    "https://m\u00fcnchen.example/a"
+  ]
+}

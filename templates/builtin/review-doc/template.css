@@ -124,6 +124,9 @@
 }
 .rd__table th,
 .rd__table td {
+  /* break-word, not the inherited anywhere: a short label such as
+     Description keeps its word when the table sizes its columns */
+  overflow-wrap: break-word;
   padding: var(--space-2) var(--space-3) var(--space-2) 0;
   border-bottom: 1px solid var(--rs-line);
   text-align: left;

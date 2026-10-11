@@ -4,6 +4,7 @@ import io
 import json
 import os
 import threading
+import time
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -150,24 +151,57 @@ def test_results_since_lists_new_decisions_oldest_first(live):
     assert b["run_id"] not in [item["run_id"] for item in out["results"]]
 
 
-def test_results_since_keeps_a_decision_in_the_cursor_second(live):
-    """`decided` has whole seconds: a decision in the cursor's own second must
-    still be listed (>=), and the ones already seen drop out by run_id."""
-    _, a = live.push(dict(valid_payload(), bot="inbox-agent"))
-    _, b = live.push(dict(valid_payload(), bot="inbox-agent"))
-    stamp = "2026-10-11T11:00:00+02:00"
-    for run in (a, b):
-        live.runs.decide(run["run_id"], "cancelled")
-        path = live.data_dir / "results" / f"{run['run_id']}.json"
-        value = json.loads(path.read_text(encoding="utf-8"))
-        path.write_text(json.dumps(dict(value, decided=stamp)), encoding="utf-8")
-    code, out = _run(cli.command_results, live.data_dir, since=stamp, bot=None, wait=0, seen=[a["run_id"]])
-    assert code == 0 and [item["run_id"] for item in out["results"]] == [b["run_id"]]
-    assert out["cursor"] == stamp and out["seen"] == [b["run_id"]]
-    code, out = _run(
-        cli.command_results, live.data_dir, since=stamp, bot=None, wait=0, seen=[a["run_id"], b["run_id"]]
-    )
-    assert out["results"] == [] and "cursor" not in out
+def _decided(base, run_id, stamp, bot="inbox-agent"):
+    (base / "results" / f"{run_id}.json").write_text(json.dumps({
+        "run_id": run_id, "bot": bot, "template": "decide-list",
+        "status": "submitted", "decided": stamp,
+    }), encoding="utf-8")
+
+
+def _round_trip(base, answer, **extra):
+    return _run(cli.command_results, base, since=answer["cursor"], bot=None,
+                wait=extra.get("wait", 0), seen=answer["seen"])[1]
+
+
+def test_results_since_round_trip_never_loses_or_repeats_a_same_second_decision(tmp_path):
+    """`decided` has whole seconds. Passing `cursor` and `seen` back as they
+    came must list a late decision in the cursor's own second once, and never
+    list an earlier one again."""
+    base = ensure_layout(tmp_path / "data")
+    second = "2026-10-11T11:00:00+02:00"
+    _decided(base, "run-a", second)
+    code, out = _run(cli.command_results, base, since=second, bot=None, wait=0)
+    assert code == 0 and [i["run_id"] for i in out["results"]] == ["run-a"]
+    assert out["cursor"] == second and out["seen"] == ["run-a"]
+    _decided(base, "run-b", second)  # later, in the same second
+    out = _round_trip(base, out)
+    assert [i["run_id"] for i in out["results"]] == ["run-b"]
+    assert out["cursor"] == second and sorted(out["seen"]) == ["run-a", "run-b"]
+    out = _round_trip(base, out)
+    assert out["results"] == [] and out["cursor"] == second
+    assert sorted(out["seen"]) == ["run-a", "run-b"], "an empty answer keeps the state"
+    later = "2026-10-11T11:00:01+02:00"
+    _decided(base, "run-c", later)
+    out = _round_trip(base, out)
+    assert [i["run_id"] for i in out["results"]] == ["run-c"]
+    assert out["cursor"] == later and out["seen"] == ["run-c"], "the cursor advanced"
+    out = _round_trip(base, out)
+    assert out["results"] == []
+
+
+def test_results_wait_skips_seen_runs_instead_of_returning_at_once(tmp_path):
+    base = ensure_layout(tmp_path / "data")
+    second = "2026-10-11T11:00:00+02:00"
+    _decided(base, "run-a", second)
+    began = time.monotonic()
+    out = _run(cli.command_results, base, since=second, bot=None, wait=0.6, seen=["run-a"])[1]
+    assert out["results"] == [] and time.monotonic() - began >= 0.5
+
+
+def test_results_empty_answer_without_any_result_echoes_the_cursor(tmp_path):
+    base = ensure_layout(tmp_path / "data")
+    out = _run(cli.command_results, base, since="2026-10-11T11:00:00+02:00", bot=None, wait=0)[1]
+    assert out == {"data_dir": str(base), "results": [], "cursor": "2026-10-11T11:00:00+02:00", "seen": []}
 
 
 def _open_run(base, run_id, expires):
@@ -232,3 +266,51 @@ def test_paths_and_result_name_the_data_dir_in_use(live):
     live.runs.decide(one["run_id"], "cancelled")
     code, out = _run(cli.command_result, live.data_dir, run_id=one["run_id"])
     assert out["data_dir"] == str(live.data_dir) and out["status"] == "cancelled"
+
+
+def test_wait_returns_7_only_after_a_future_deadline(tmp_path):
+    base = ensure_layout(tmp_path / "data")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    _open_run(base, "r5", now)
+    with patch.object(cli, "WAIT_EXPIRY_GRACE_S", 1.5):
+        began = time.monotonic()
+        assert _wait(base, "r5", until_expiry=True) == 7
+        assert time.monotonic() - began >= 0.4, "it waited for the deadline"
+
+
+def test_wait_result_at_the_deadline_wins_over_exit_7(tmp_path):
+    base = ensure_layout(tmp_path / "data")
+    _open_run(base, "r6", datetime.now(timezone.utc) - timedelta(seconds=cli.WAIT_EXPIRY_GRACE_S + 5))
+    (base / "results" / "r6.json").write_text(json.dumps({"status": "expired"}), encoding="utf-8")
+    assert _wait(base, "r6", until_expiry=True) == 0
+
+
+@pytest.mark.parametrize("record", ['{"state": "open"}', "{not json"])
+def test_wait_without_a_readable_expiry_keeps_the_timeout(tmp_path, record):
+    """An old record without `expires` (or an unreadable one) has no expiry
+    deadline: a timeout still ends the wait with exit 5 (documented)."""
+    base = ensure_layout(tmp_path / "data")
+    (base / "runs" / "r7.json").write_text(record, encoding="utf-8")
+    assert _wait(base, "r7", timeout=0.3) == 5
+
+
+@pytest.mark.parametrize("argv", [
+    ["wait", "r8", "--until-expiry", "--timeout", "0"],
+    ["wait", "r8", "--timeout", "5", "--until-expiry"],
+])
+def test_wait_parser_rejects_until_expiry_with_any_timeout(argv):
+    with redirect_stdout(io.StringIO()), patch("sys.stderr", io.StringIO()), pytest.raises(SystemExit) as stop:
+        cli.build_parser().parse_args(argv)
+    assert stop.value.code == 2
+
+
+def test_docs_teach_the_same_wait_flow():
+    """README, GUIDE and SKILL give a bot one flow: a short wait first, a
+    background waiter only where the runtime wakes on it, never --timeout 0,
+    catch-up with results --since, and an acknowledgement."""
+    for name in ("README.md", "docs/GUIDE.md", "skills/grokbot-desk/SKILL.md"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for needle in ("--timeout 60", "--until-expiry", "background shells may not wake",
+                       "`--timeout 0`", "results --since", "topic + OK"):
+            assert needle.lower() in text.lower(), (name, needle)
+        assert "--timeout 120" not in text, name
