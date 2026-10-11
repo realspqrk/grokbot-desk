@@ -1081,7 +1081,9 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await pause();
       await page.click(link, { modifiers: ['Shift'] });
       await pause();
-      await page.click(link, { modifiers: ['Control'] });
+      // Ctrl+click on macOS is the context-menu gesture (no click event); Cmd+click is
+      // the macOS counterpart, so the platform modifier keeps the count the same.
+      await page.click(link, { modifiers: ['ControlOrMeta'] });
       await page.click(link, { button: 'right' });
       assert.deepEqual(log.urls.map((entry) => entry.url), Array(7).fill(href));
       assert.equal(new URL(page.url()).origin, ORIGIN);
