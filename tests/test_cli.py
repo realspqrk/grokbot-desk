@@ -837,6 +837,34 @@ def test_read_only_template_commands_do_not_create_data_dir(
     assert not data_dir.exists()
 
 
+def test_server_listens_only_after_its_slow_setup(tmp_path):
+    """A listening port without state.json reads as a foreign process to
+    the CLI, so the server must load runs and build the page before it
+    listens, not after (a slow start once failed show on macOS CI)."""
+    from core.paths import ensure_layout, load_config
+    from core.server import Handler, ReportHTTPServer
+
+    data_dir = ensure_layout(tmp_path / "data")
+    seen = {}
+    original = ReportHTTPServer.server_activate
+
+    def activate(self):
+        seen["ready"] = all(
+            hasattr(self, name) for name in ("runs", "page", "hub", "csrf")
+        )
+        original(self)
+
+    with patch.object(ReportHTTPServer, "server_activate", activate):
+        server = ReportHTTPServer(
+            ("127.0.0.1", free_port()), Handler, data_dir,
+            scan_registry(ROOT / "templates"), load_config(data_dir),
+        )
+    try:
+        assert seen == {"ready": True}
+    finally:
+        server.server_close()
+
+
 def test_show_submit_wait_result_cancel_status_and_stop(
     tmp_path, server_guard
 ):

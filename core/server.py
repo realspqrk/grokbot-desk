@@ -253,7 +253,10 @@ class ReportHTTPServer(ThreadingHTTPServer):
             findings = contract_findings(registry, repo_root)
             if findings:
                 raise RegistryError("; ".join(findings))
-        super().__init__(address, handler)
+        # Everything slow (runs from disk, the page) happens before the
+        # socket listens: the CLI treats a listening port without state.json
+        # as a foreign process, so the gap until run_server writes it must
+        # stay short.
         self.data_dir = Path(data_dir)
         self.registry = registry
         self.config = config
@@ -279,6 +282,7 @@ class ReportHTTPServer(ThreadingHTTPServer):
         self.idle_since = (
             self.last_activity if self.runs.open_count() == 0 else None
         )
+        super().__init__(address, handler)
 
     def touch(self):
         self.last_activity = time.monotonic()
