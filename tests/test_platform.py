@@ -34,8 +34,10 @@ def test_macos_launcher_policy_is_explicit_and_never_installs():
     text = source.decode("utf-8")
     assert "REPORT_SHELL_PYTHON" in text
     assert '"/usr/bin/python3"' in text
-    assert "/opt/homebrew/bin/python3" in text
-    assert "/usr/local/bin/python3" in text
+    assert '"/opt/homebrew/bin/$name"' in text
+    assert '"/usr/local/bin/$name"' in text
+    # Homebrew's python@3.x adds only python3.x: the versioned names count
+    assert "python3 python3.14 python3.13 python3.12 python3.11" in text
     assert "sys.version_info >= (3, 11)" in text
     assert "xcode-select" not in text
     assert "brew install" not in text
@@ -87,6 +89,52 @@ printf '<%s>\\n' "$@"
         "<argument with spaces>",
         "<--flag>",
     ]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX launcher search")
+@pytest.mark.skipif(
+    any(
+        Path(prefix, name).exists()
+        for prefix in ("/opt/homebrew/bin", "/usr/local/bin")
+        for name in ("python3", "python3.14", "python3.13")
+    ),
+    reason="a real Python earlier in the search order would win",
+)
+def test_launcher_finds_a_versioned_python_when_python3_is_too_old(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_python(
+        bin_dir / "python3",
+        """
+exit 1
+""",
+    )
+    _write_fake_python(
+        bin_dir / "python3.12",
+        """
+if [ "$1" = "-c" ]; then
+    exit 0
+fi
+printf 'versioned <%s>\\n' "$@"
+""",
+    )
+    env = {
+        key: value for key, value in os.environ.items()
+        if key != "REPORT_SHELL_PYTHON"
+    }
+    env["PATH"] = f"{bin_dir}:/usr/bin:/bin"
+
+    result = subprocess.run(
+        ["sh", _shell_path(ROOT / "report-shell"), "--version"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[-1] == "versioned <--version>"
 
 
 @pytest.mark.skipif(shutil.which("sh") is None, reason="POSIX shell is unavailable")

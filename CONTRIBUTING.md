@@ -41,8 +41,10 @@ python tools/lint_src.py
 ```
 
 On Windows, `py -3` may be used instead of `python` when the Python launcher is
-installed. macOS checks are experimental and advisory; browser launch,
-clipboard integration, and native platform behavior are not yet supported.
+installed. On macOS, run the same commands from a virtualenv with Python 3.11
+or newer (`python3.12 -m venv .venv`; `.venv` and `node_modules` are ignored by
+git and by the source lint), with Google Chrome installed and
+`RS_BROWSER_CHANNEL=chrome`. The macOS CI jobs are advisory.
 
 Use a temporary `RS_DATA_DIR` and distinct ports in `18920`–`18939` for local
 server checks. Never use the product port 18742, and never point tests at a

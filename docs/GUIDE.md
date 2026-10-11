@@ -2,9 +2,9 @@
 
 For bots that show reports to a person in the grokbot-desk window, and for bots that write templates. Sections 1-10 explain the design rules; the reference part (A-D) has the worked example, every command and every exit code.
 
-Windows is supported. macOS is experimental; use Python 3.11 or newer via `python3`, not `py -3` or `report-shell.cmd`. See the README Platforms section for limitations.
+Windows is supported. macOS is a beta; use Python 3.11 or newer through `./report-shell` or a versioned `python3.12` (macOS's own `/usr/bin/python3` is 3.9 and too old), not `py -3` or `report-shell.cmd`. See the README sections macOS setup and Platforms.
 
-Run commands from the repository root with `python report_shell.py <command>` using Python 3.11 or newer. On Windows, `py -3` is an alternative only when `py -3 --version` succeeds. The Windows wrapper `<repo>\report-shell.cmd <command>` requires that launcher. From another directory, pass the full path to `report_shell.py`. On macOS, use `python3` and forward-slash paths; the .cmd wrapper is Windows-only.
+Run commands from the repository root with `python report_shell.py <command>` using Python 3.11 or newer. On Windows, `py -3` is an alternative only when `py -3 --version` succeeds. The Windows wrapper `<repo>\report-shell.cmd <command>` requires that launcher. From another directory, pass the full path to `report_shell.py`. On macOS, use `<repo>/report-shell <command>` (it finds a Python 3.11 or newer) or `python3.12`, and forward-slash paths; the .cmd wrapper is Windows-only.
 
 Quick start: write a payload file, then `show`, then `wait` in a loop, then read the result file. Section A has the full example.
 
@@ -219,7 +219,7 @@ python report_shell.py wait RUN_ID --timeout 120
 python report_shell.py result RUN_ID
 ```
 
-Replace `RUN_ID` with the value printed by `show`. Choose and send in the window before reading the result. Exit 5 from `wait` means it is still waiting; call it again later. On macOS use `python3` in place of `python`.
+Replace `RUN_ID` with the value printed by `show`. Choose and send in the window before reading the result. Exit 5 from `wait` means it is still waiting; call it again later. On macOS use `./report-shell` (or `python3.12`) in place of `python report_shell.py`, and `python3.12` for `make_payload.py`.
 
 ## B. Commands
 

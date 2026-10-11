@@ -22,7 +22,7 @@ Run every command on the user's own computer, in the folder where grokbot-desk w
 
 If you cannot run commands on the user's computer, tell the user and ask in chat instead.
 
-On experimental macOS, verify `python3 --version` is 3.11 or newer and replace every `python` command with `python3`. Use forward-slash paths and shell `export` syntax for environment variables. The default data directory is `~/Library/Application Support/grokbot-desk`; `RS_DATA_DIR` overrides it.
+On macOS (beta), `/usr/bin/python3` is 3.9 and too old: replace every `python report_shell.py` command with `./report-shell` from the clone folder (it finds Python 3.11 or newer), or with a 3.11+ interpreter such as `python3.12`. Use forward-slash paths and shell `export` syntax for environment variables. The default data directory is `~/Library/Application Support/grokbot-desk`; `RS_DATA_DIR` overrides it.
 
 ## Built-in templates first
 

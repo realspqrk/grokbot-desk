@@ -47,7 +47,7 @@ One open report is a compact pop-up. Several open reports share one window with 
 
 ## Use with Grok Bot
 
-On Windows, first complete [Quick start](#quick-start): verify Python 3.11 or newer and have Microsoft Edge or Google Chrome available. Your bot must be able to run commands on this computer, in the clone folder.
+First complete [Quick start](#quick-start): verify Python 3.11 or newer and have Microsoft Edge or Google Chrome available (on macOS, see [macOS setup](#macos-setup)). Your bot must be able to run commands on this computer, in the clone folder.
 
 1. Clone grokbot-desk on your own computer (the one whose screen you look at), not on a server or VM:
    `git clone https://github.com/realspqrk/grokbot-desk.git`
@@ -61,7 +61,7 @@ No. Any bot that can run commands on your computer can use grokbot-desk from thi
 ## How it works
 
 1. The agent writes a JSON payload for a template.
-2. `show` checks the payload and, on Windows, opens one Edge or Chrome app window on this machine.
+2. `show` checks the payload and opens one Edge or Chrome app window on this machine.
 3. You decide there. The window keeps one primary action on screen and tucks notes and extra detail away.
 4. `wait` blocks until a result file exists, then prints the status and its path. `result` prints the decision JSON.
 
@@ -69,7 +69,7 @@ The window records the decision. The bot reads the result file and does the work
 
 ## Quick start
 
-On Windows, use Python 3.11 or newer and Microsoft Edge or Google Chrome. The runtime uses only Python's standard library. Template checks need additional development tools; see Templates below.
+Use Python 3.11 or newer and Microsoft Edge or Google Chrome. The runtime uses only Python's standard library. Template checks need additional development tools; see Templates below. On macOS, do [macOS setup](#macos-setup) first.
 
 ```bash
 git clone https://github.com/realspqrk/grokbot-desk.git
@@ -77,11 +77,27 @@ cd grokbot-desk
 python report_shell.py --help
 ```
 
+On macOS, run `./report-shell --help` instead (or `python3.12 report_shell.py --help`); the examples below use `python`, so substitute your command.
+
 On Windows, `report-shell.cmd` requires a working `py -3` launcher. Verify `py -3 --version` first. If it cannot find Python but `python --version` works, run `python report_shell.py <command>` from the clone folder instead.
 
-If `status` shows `window_alive: false` right after `show`, your agent runtime may end child processes when a command finishes. Start `python report_shell.py serve` in a terminal that stays open, then run `show` again.
+If `status` still shows `window_alive: false` a few seconds after `show` (the first browser start can take a moment), your agent runtime may end child processes when a command finishes. Start `python report_shell.py serve` in a terminal that stays open, then run `show` again.
 
 The shipped skill is `skills/grokbot-desk/SKILL.md`.
+
+### macOS setup
+
+macOS ships Python 3.9 as `/usr/bin/python3`, which is too old: `python3 report_shell.py` stops with "Python 3.11 or later is required". There is no `python` command either. Install a newer Python and a browser, for example with [Homebrew](https://brew.sh):
+
+```bash
+brew install python@3.12
+brew install --cask google-chrome
+python3.12 --version
+```
+
+Homebrew's `python@3.12` adds `python3.12`, not `python3`; the python.org installer adds a `python3` that is 3.11 or newer. Microsoft Edge works too. Without Edge or Chrome in `/Applications` or `~/Applications`, the report opens as a normal tab in the default browser.
+
+From the clone folder, `./report-shell <command>` picks a Python 3.11 or newer by itself (`python3`, then `python3.14` down to `python3.11`, also in `/opt/homebrew/bin` and `/usr/local/bin`); set `REPORT_SHELL_PYTHON` to choose one. Or call it directly, for example `python3.12 report_shell.py show ...`.
 
 ## Example
 
@@ -122,7 +138,7 @@ payload = {
 Path("payload.json").write_text(json.dumps(payload), encoding="utf-8")
 ```
 
-Create the payload and open the window:
+Create the payload and open the window (on macOS: `python3.12 make_payload.py` and `./report-shell show decide-list --data payload.json`):
 
 ```bash
 python make_payload.py
@@ -180,7 +196,7 @@ Five built-in templates:
 
 Run `python report_shell.py templates` to list what is installed. If none of these fits, `python report_shell.py new example/my-template` writes a template into your data directory, and `python report_shell.py check my-template` checks it. See the [template guide](docs/GUIDE.md).
 
-`show`, `wait`, `result`, `templates`, and `new` need only Python at runtime. `check` is a development check: it also needs Node.js, an existing playwright-core installation (set `RS_PLAYWRIGHT_CORE` to its entry point), and a supported browser. The check uses `py -3` unless `RS_PYTHON` names a working Python executable; for example, in PowerShell: `$env:RS_PYTHON = (Get-Command python).Source`.
+`show`, `wait`, `result`, `templates`, and `new` need only Python at runtime. `check` is a development check: it also needs Node.js, an existing playwright-core installation (set `RS_PLAYWRIGHT_CORE` to its entry point), and a supported browser. The check uses `py -3` unless `RS_PYTHON` names a working Python executable; for example, in PowerShell: `$env:RS_PYTHON = (Get-Command python).Source`, on macOS: `export RS_PYTHON=python3.12`.
 
 ## Bot identity
 
@@ -196,11 +212,11 @@ Optional `avatar`: PNG, JPEG, WebP or GIF only, at most 256 KB. For payload avat
 
 ## Platforms
 
-Windows is supported. Edge or Chrome opens an app window. macOS is experimental. The data folder is implemented there. Browser launch, clipboard, and platform tests are not finished. The macOS CI job is advisory.
+Windows is supported. Edge or Chrome opens an app window. macOS is a beta: on macOS 26 on Apple silicon with Google Chrome, `show` opens the app window, and deciding, `wait`, `result`, the copy buttons (through `pbcopy`) and `stop` work. The macOS CI job is advisory.
 
-On experimental macOS, verify `python3 --version` is 3.11 or newer and replace every `python` command with `python3`. Use forward-slash paths and shell `export` syntax for environment variables. The default data directory is `~/Library/Application Support/grokbot-desk`; `RS_DATA_DIR` overrides it.
+On macOS, follow [macOS setup](#macos-setup) and replace every `python` command with `./report-shell` or your Python 3.11+ (`python3.12`, for example). Use forward-slash paths and shell `export` syntax for environment variables. The default data directory is `~/Library/Application Support/grokbot-desk`; `RS_DATA_DIR` overrides it.
 
-The macOS launcher searches Edge, then Chrome, in `~/Applications` and `/Applications`. Without either it opens the system default browser, which may show a normal tab instead of an app window. Automatic focus and attention are not implemented on macOS. Browser launch and clipboard support remain experimental. macOS security or Gatekeeper prompts may require you to open and approve a trusted Python/browser installation manually; a successful CLI return does not prove that an asynchronous browser launch reached a visible window.
+The macOS launcher searches Edge, then Chrome, in `~/Applications` and `/Applications`. Without either it opens the system default browser, which may show a normal tab instead of an app window. Automatic focus and attention are not implemented on macOS (`--focus` does nothing there). macOS security or Gatekeeper prompts may require you to open and approve a trusted Python/browser installation manually; a successful CLI return does not prove that an asynchronous browser launch reached a visible window.
 
 ## Privacy and security
 
