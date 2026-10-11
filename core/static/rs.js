@@ -1250,6 +1250,13 @@
         return;
       }
       window.close();
+      /* Chromium closes a window that no script opened only while its
+         history holds one entry (DOMWindow::Close); otherwise it refuses
+         and window.closed stays false, so say what really happens */
+      if (!window.closed) {
+        state.done = 'kept';
+        if (state.active) setBanner(state.active.state);
+      }
     }, ms);
   }
 

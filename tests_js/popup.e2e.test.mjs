@@ -323,11 +323,16 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
       await child.waitForTimeout(4600);
       assert.equal(child.isClosed(), false, 'a tab opened from the app window never closes itself');
       assert.equal(await child.getAttribute('html', 'data-rs-app-window'), null);
-      // the app window itself: a new page there (sid replaced) still owns it
+      // the app window itself: a new page there (sid replaced) still owns it.
+      // It replaces the entry: Chromium lets a script close a window that no
+      // script opened only while its history holds one entry
+      // (DOMWindow::Close), and the app window never adds one itself
       const next = server.show(golden, { bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
-      await page.goto(server.url(`?run=${next.run_id}`));
+      const nextUrl = server.url(`?run=${next.run_id}`);
+      await Promise.all([page.waitForURL((u) => u.href.includes(next.run_id)), page.evaluate((u) => location.replace(u), nextUrl)]);
       await ready(page);
       await owned(page);
+      assert.equal(await page.evaluate(() => history.length), 1);
       const closed = page.waitForEvent('close', { timeout: 9000 });
       await decide(page);
       await page.waitForSelector('.rs-banner[data-done] .rs-banner__keep');
@@ -335,6 +340,36 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
       assert.equal(server.result(next.run_id).status, 'submitted');
       await child.waitForTimeout(400);
       assert.equal(child.isClosed(), false, 'the child stays open after the app window closed');
+    } finally {
+      await app.close();
+      rmSync(profile, { recursive: true, force: true });
+    }
+  });
+
+  test('an app window the browser will not close says so instead of promising to close', async () => {
+    // a second history entry (here a navigation) makes Chromium refuse
+    // window.close() for a window no script opened: the banner then drops
+    // the "closes in a moment" promise and the window stays usable
+    const [run] = showRuns(1);
+    const token = armLaunch();
+    const profile = mkdtempSync(path.join(tmpdir(), 'rs-popup-app-'));
+    const app = await chromium.launchPersistentContext(profile, {
+      channel: browserChannel(), headless: true, viewport: { width: 864, height: 836 }, args: [`--app=${server.url(`?run=${run.run_id}&app=${token}`)}`],
+    });
+    try {
+      const page = app.pages().find((p) => p.url().includes(run.run_id)) || await app.waitForEvent('page');
+      await ready(page);
+      await page.waitForFunction(() => document.documentElement.dataset.rsAppWindow === '1', null, { timeout: 8000 });
+      // the same report again, as a new entry (an extra query parameter)
+      await page.goto(server.url(`?run=${run.run_id}&again=1`));
+      await ready(page);
+      await page.waitForFunction(() => document.documentElement.dataset.rsAppWindow === '1', null, { timeout: 8000 });
+      assert.equal(await page.evaluate(() => history.length), 2);
+      await decide(page);
+      await page.waitForSelector('.rs-banner[data-done] .rs-banner__keep');
+      await page.waitForFunction(() => !document.querySelector('.rs-banner__keep'), null, { timeout: 9000 });
+      assert.equal(page.isClosed(), false);
+      assert.equal(await page.textContent('.rs-banner [data-rs-done-text]'), de.done_title, 'no close promise left');
     } finally {
       await app.close();
       rmSync(profile, { recursive: true, force: true });
