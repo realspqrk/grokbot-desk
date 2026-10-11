@@ -38,6 +38,7 @@ from .platform import (
 from .platform_types import LaunchResult, WindowLaunchStatus
 from .product import PRODUCT_NAME, RUNNER_ID
 from .registry import ID_RE, RegistryError, scan_registry
+from .runs import preview_post_summary
 from .server import run_server
 from .timeutil import iso_now, to_vienna
 from .webhook import validate_webhook_url
@@ -464,7 +465,6 @@ def _decided_after(value, since):
 
 
 _LIST_CHOICES = ("approve", "reject", "defer", "done", "skipped", "later")
-_POST_PLATFORMS = ("x", "linkedin", "instagram", "facebook")
 
 
 def _run_title(base, run_id):
@@ -500,20 +500,13 @@ def _result_summary(value):
                 counts[choice] = counts.get(choice, 0) + 1
         text = _join_counts(counts, _LIST_CHOICES)
         return text or None
-    if template == "preview-post" and isinstance(data.get("per_platform"), dict):
-        parts = []
-        seen = set()
-        for name in _POST_PLATFORMS:
-            entry = data["per_platform"].get(name)
-            if isinstance(entry, dict) and isinstance(entry.get("decision"), str):
-                parts.append(f"{name} {entry['decision']}")
-                seen.add(name)
-        for name, entry in data["per_platform"].items():
-            if name in seen or not isinstance(entry, dict):
-                continue
-            if isinstance(entry.get("decision"), str):
-                parts.append(f"{name} {entry['decision']}")
-        return ", ".join(parts) or None
+    if template == "preview-post":
+        # Conservative: only the allowed mode/decision pairs, and only when
+        # platforms lists exactly the auto approvals. A manual platform is
+        # "posted by you" or "skipped", never "approved". Inconsistent and
+        # legacy results (no per_platform) produce no summary. The summary
+        # is not posting authority; read per_platform and post only auto+approved.
+        return preview_post_summary(data)
     if template in ("approve-one", "review-doc") and isinstance(data.get("decision"), str):
         return data["decision"]
     if template == "pick-option" and isinstance(data.get("choice"), str) and data["choice"]:

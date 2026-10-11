@@ -38,6 +38,24 @@ def test_schema_subset_reports_json_pointer():
         validate({"items": ["ok"], "extra": True}, schema)
 
 
+def test_exclusive_names_must_be_nonempty_strings():
+    """A nested value is a schema error at the keyword, not a TypeError."""
+    for names in (
+        ["image", {}],
+        ["image", []],
+        ["image", 1],
+        ["image", ""],
+        ["image", None],
+        ["image", True],
+    ):
+        with pytest.raises(SchemaError) as error:
+            check_schema({"type": "object", "x-rs-exclusive": names})
+        assert error.value.pointer == "/x-rs-exclusive", names
+        with pytest.raises(SchemaError) as error:
+            validate({}, {"type": "object", "x-rs-exclusive": names})
+        assert error.value.pointer == "/x-rs-exclusive", names
+
+
 def test_exclusive_properties_reject_a_second_one():
     schema = {
         "type": "object",
@@ -55,6 +73,35 @@ def test_exclusive_properties_reject_a_second_one():
         validate({"image": "a.jpg", "video": "a.mp4"}, schema)
     assert error.value.pointer == "/video"
     assert "image" in error.value.message
+
+
+def test_url_keyword_rejects_every_bad_vector_on_both_url_fields():
+    vectors = json.loads((ROOT / "tests" / "fixtures" / "url_vectors.json").read_text(encoding="utf-8"))
+    preview = json.loads(
+        (ROOT / "templates" / "builtin" / "preview-post" / "schema.json").read_text(encoding="utf-8")
+    )
+    listing = json.loads(
+        (ROOT / "templates" / "builtin" / "decide-list" / "schema.json").read_text(encoding="utf-8")
+    )
+    target = preview["properties"]["target"]["properties"]["url"]
+    item = listing["properties"]["items"]["items"]["properties"]["url"]
+    assert target["x-rs-url"] == "https" and target["maxLength"] == 2048
+    assert item["x-rs-url"] is True and "pattern" in item
+    for bad in vectors["bad"]:
+        for field in (target, item):
+            with pytest.raises(SchemaError):
+                validate(bad, field)
+    for good in vectors["both"]:
+        if good.lower().startswith("https://"):
+            validate(good, target)
+        else:
+            with pytest.raises(SchemaError):
+                validate(good, target)
+    for good in vectors["opener_only"]:
+        if good.lower().startswith("https://"):
+            validate(good, target)
+    with pytest.raises(SchemaError):
+        validate("http://example.com/a", target)
 
 
 def test_one_of_requires_exactly_one_match():

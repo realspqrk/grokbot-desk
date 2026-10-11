@@ -54,7 +54,8 @@ CSP = (
     "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
     "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
 )
-# pushes closer together than this are one burst (one attention request)
+# Pushes less than this many seconds apart are one burst. The page uses the
+# same quiet gap (BURST_QUIET_MS in core/static/rs.js) for its one announcement.
 ATTENTION_QUIET_S = 30
 MEDIA_RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 MEDIA_CHUNK = 256 * 1024
@@ -507,16 +508,18 @@ class Handler(BaseHTTPRequestHandler):
         wanted = MEDIA_RANGE_RE.fullmatch(self.headers.get("Range") or "")
         if wanted and size:
             first, last = wanted.groups()
-            if first:
-                start = int(first)
-                end = min(int(last), size - 1) if last else size - 1
-            elif last:
-                start = max(size - int(last), 0)
-            if start > end or start >= size:
-                self._headers(416, content_type, 0, extra={"Content-Range": f"bytes */{size}"})
-                return
-            status = 206
-            extra["Content-Range"] = f"bytes {start}-{end}/{size}"
+            # bytes=- has no bound. It is not a range; send the whole file.
+            if first or last:
+                if first:
+                    start = int(first)
+                    end = min(int(last), size - 1) if last else size - 1
+                elif last:
+                    start = max(size - int(last), 0)
+                if start > end or start >= size:
+                    self._headers(416, content_type, 0, extra={"Content-Range": f"bytes */{size}"})
+                    return
+                status = 206
+                extra["Content-Range"] = f"bytes {start}-{end}/{size}"
         length = max(end - start + 1, 0)
         self._headers(status, content_type, length, extra=extra)
         handle.seek(start)
@@ -707,7 +710,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self._action_body(value, {"run_id": str, "media_id": str}):
                 return
             entry = self.server.runs.media.get(value.get("media_id"))
-            if not entry or not self.server.runs.has(value.get("run_id")):
+            if not entry or not self.server.runs.has_media(value.get("run_id"), value.get("media_id")):
                 self._json(404, {"error": "unknown_media"})
             else:
                 try:

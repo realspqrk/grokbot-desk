@@ -28,6 +28,7 @@
   "strip_count_all": "{m} offen",
   "strip_item": "{bot} · {title}",
   "strip_group": "{bot}, {n} Berichte",
+  "strip_cycle": "{bot}, {n} Berichte. Erneut aktivieren für den nächsten Bericht.",
   "done_title": "Alles erledigt.",
   "done_closing": "Das Fenster schließt sich gleich.",
   "done_keep_open": "Offen lassen",
@@ -131,6 +132,7 @@
   "pf_image_retry": "Bild erneut laden",
   "pf_video_error": "Video konnte nicht geladen werden",
   "pf_video_retry": "Video erneut laden",
+  "pf_video_unavailable": "Die Videovorschau ist in diesem Browser nicht verfügbar. Du kannst den Dateipfad kopieren oder die Datei im Ordner zeigen.",
   "pf_avatar_alt": "Profilbild von {name}",
   "starter_heading": "Beispielbericht",
   "starter_pick_choice": "Bitte eine Option wählen",
@@ -241,6 +243,8 @@
   "copy_path": "Dateipfad kopieren",
   "copy_link": "Link kopieren",
   "replying_to": "Antwort an @{handle}",
+  "replying_to_name": "Antwort an {name}",
+  "replying_to_post": "Antwort auf diesen Beitrag",
   "decided_count": "{n} von {total} Plattformen erledigt",
   "select_platform_manual": "Mindestens eine Plattform freigeben oder markieren"
 }

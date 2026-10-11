@@ -50,8 +50,8 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
     return server.show(golden, { bot: who.bot, identity: who.identity, title, created: isoAt(clock) });
   };
 
-  async function open(query) {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: 'reduce' });
+  async function open(query, opts = {}) {
+    const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 720 }, deviceScaleFactor: 1, colorScheme: opts.colorScheme || 'light', reducedMotion: 'reduce' });
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -64,7 +64,9 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
         }));
       }).observe(document, { childList: true, subtree: true });
     });
-    await page.goto(server.url(`?client=test&burst_ms=${BURST_MS}${query ? '&' + query : ''}`));
+    const burst = opts.burstMs === undefined ? BURST_MS : opts.burstMs;
+    const burstQuery = burst == null ? '' : `&burst_ms=${burst}`;
+    await page.goto(server.url(`?client=test${burstQuery}${query ? '&' + query : ''}`));
     await ready(page);
     return { ctx, page, errors };
   }
@@ -114,7 +116,7 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
       assert.deepEqual(s.groups.map((g) => g.tabIndex), [0, -1]);
       assert.deepEqual(s.groups.map((g) => g.keys), ['Control+1', 'Control+2']);
       // the active bot's own group still says "new": two of its reports wait unread
-      assert.equal(s.groups[0].label, `${fill('strip_group', { bot: 'Inbox Agent', n: 3 })} ${de.sep} ${de.new}`);
+      assert.equal(s.groups[0].label, `${fill('strip_cycle', { bot: 'Inbox Agent', n: 3 })} ${de.sep} ${de.new}`);
       assert.equal(s.groups[1].label, `${fill('strip_group', { bot: 'Social Agent', n: 3 })} ${de.sep} ${de.new}`);
       assert.equal(s.groups[1].run, rest[0].run_id, 'a group goes to its bot\'s oldest open report');
 
@@ -192,6 +194,203 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
       await page.waitForTimeout(BURST_MS * 2);
       assert.deepEqual(await announced(page), []);
       assert.equal((await strip(page)).shown, false, 'one open report: no strip');
+    } finally { await ctx.close(); }
+  });
+
+  test('bot ids that collide with object properties render on load and on a later arrival', async () => {
+    const first = server.show(golden, {
+      bot: 'constructor',
+      identity: { name: 'Constructor Bot', avatar_shape: 'squircle', avatar_color: 'blue' },
+      title: 'Ctor report',
+    });
+    const { ctx, page, errors } = await open(`run=${first.run_id}`);
+    try {
+      await activeIs(page, first.run_id);
+      assert.equal(await page.textContent('#rs-title'), 'Ctor report');
+      assert.equal(await page.evaluate(() => document.body.innerText.length > 0), true);
+      const second = server.show(golden, {
+        bot: 'hasownproperty',
+        identity: { name: 'Own Bot', avatar_shape: 'hex', avatar_color: 'green' },
+        title: 'Own report',
+      });
+      await groupsAre(page, 2);
+      const s = await strip(page);
+      assert.deepEqual(s.groups.map((g) => g.bot), ['constructor', 'hasownproperty']);
+      assert.equal(s.groups[1].run, second.run_id);
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+    await server.clearRuns();
+    const both = server.show(golden, {
+      bot: 'constructor',
+      identity: { name: 'Constructor Bot', avatar_shape: 'squircle', avatar_color: 'blue' },
+      title: 'Ctor again',
+    });
+    const own = server.show(golden, {
+      bot: 'hasownproperty',
+      identity: { name: 'Own Bot', avatar_shape: 'hex', avatar_color: 'green' },
+      title: 'Own again',
+    });
+    const cold = await open(`run=${both.run_id}`);
+    try {
+      await cold.page.waitForFunction(() => document.querySelectorAll('#rs-strip .rs-strip__run').length === 2, null, { timeout: 8000 });
+      const s = await strip(cold.page);
+      assert.deepEqual(s.groups.map((g) => g.bot), ['constructor', 'hasownproperty']);
+      assert.equal(s.groups[1].run, own.run_id);
+      assert.deepEqual(cold.errors, []);
+    } finally { await cold.ctx.close(); }
+  });
+
+  test('production burst gap: six reports from two bots spaced 1.7s are one announcement', async () => {
+    const first = push(INBOX, 'Inbox 1');
+    const { ctx, page } = await open(`run=${first.run_id}`, { burstMs: null });
+    try {
+      await activeIs(page, first.run_id);
+      const who = [SOCIAL, INBOX, SOCIAL, INBOX, SOCIAL];
+      const titles = ['Social 1', 'Inbox 2', 'Social 2', 'Inbox 3', 'Social 3'];
+      for (let i = 0; i < titles.length; i++) {
+        await page.waitForTimeout(1700);
+        push(who[i], titles[i]);
+      }
+      await page.waitForFunction(() => window.__announced.length === 1, null, { timeout: 15000 });
+      await page.waitForTimeout(2000);
+      assert.deepEqual(await announced(page), [fill('burst_arrived', { n: 5, k: 2 })]);
+      assert.equal(await page.evaluate(() => window.RS.activeRun), first.run_id);
+      await stripCountIs(page, fill('strip_count', { n: 1, m: 6 }));
+    } finally { await ctx.close(); }
+  });
+
+  async function six() {
+    const first = push(INBOX, 'Inbox 1');
+    const rest = [
+      push(SOCIAL, 'Social 1'), push(INBOX, 'Inbox 2'), push(SOCIAL, 'Social 2'),
+      push(INBOX, 'Inbox 3'), push(SOCIAL, 'Social 3'),
+    ];
+    return { first, rest };
+  }
+
+  async function choose(page) {
+    await page.click('rs-action-row button[value="erledigt"]');
+    await page.click('#rs-submit');
+  }
+
+  async function discard(page) {
+    await page.click('#rs-discard');
+    await page.click('#rs-discard-dialog button[value="discard"]');
+  }
+
+  test('deciding the last or a middle report stays inside that bot', async () => {
+    const { first, rest } = await six();
+    const social = [rest[0].run_id, rest[2].run_id, rest[4].run_id];
+    const { ctx, page } = await open(`run=${first.run_id}`);
+    try {
+      await activeIs(page, first.run_id);
+      await page.keyboard.press('Control+2');
+      await activeIs(page, social[0]);
+      await page.keyboard.press('Control+2');
+      await activeIs(page, social[1]);
+      await choose(page);
+      await activeIs(page, social[2]);
+      await choose(page);
+      await activeIs(page, social[0]);
+    } finally { await ctx.close(); }
+    await server.clearRuns();
+
+    const again = await six();
+    const social2 = [again.rest[0].run_id, again.rest[2].run_id, again.rest[4].run_id];
+    const discarded = await open(`run=${again.first.run_id}`);
+    try {
+      await activeIs(discarded.page, again.first.run_id);
+      await discarded.page.keyboard.press('Control+2');
+      await activeIs(discarded.page, social2[0]);
+      await discarded.page.keyboard.press('Control+2');
+      await activeIs(discarded.page, social2[1]);
+      await discard(discarded.page);
+      await activeIs(discarded.page, social2[2]);
+      await discard(discarded.page);
+      await activeIs(discarded.page, social2[0]);
+    } finally { await discarded.ctx.close(); }
+  });
+
+  test('cold start orders bots by registration seq, not a skewed created stamp', async () => {
+    const inbox = server.show(golden, {
+      bot: INBOX.bot, identity: INBOX.identity, title: 'First arrival',
+      created: isoAt(Date.now() - 30000),
+    });
+    const social = server.show(golden, {
+      bot: SOCIAL.bot, identity: SOCIAL.identity, title: 'Skewed earlier',
+      created: isoAt(Date.now() - 120000),
+    });
+    const { ctx, page } = await open(`run=${inbox.run_id}`);
+    try {
+      await activeIs(page, inbox.run_id);
+      await groupsAre(page, 2);
+      const s = await strip(page);
+      assert.deepEqual(s.groups.map((g) => g.bot), [INBOX.bot, SOCIAL.bot]);
+      assert.deepEqual(s.groups.map((g) => g.run), [inbox.run_id, social.run_id]);
+      assert.equal(s.count, fill('strip_count', { n: 1, m: 2 }));
+      const listed = await page.evaluate(async () => {
+        const boot = JSON.parse(document.getElementById('rs-boot').textContent);
+        const res = await fetch('/api/runs', { headers: { 'X-RS-CSRF': boot.csrf } });
+        return (await res.json()).runs.map((r) => ({ title: r.title, seq: r.seq, bot: r.bot }));
+      });
+      const byTitle = Object.fromEntries(listed.map((r) => [r.title, r]));
+      assert.equal(byTitle['First arrival'].seq < byTitle['Skewed earlier'].seq, true);
+    } finally { await ctx.close(); }
+    assert.ok(social.run_id);
+  });
+
+  test('strip badge sits beside the avatar for 1, 3, 12 and 123', async () => {
+    const first = push(INBOX, 'Inbox 1');
+    push(INBOX, 'Inbox 2');
+    push(INBOX, 'Inbox 3');
+    push(SOCIAL, 'Social 1');
+    const { ctx, page } = await open(`run=${first.run_id}`);
+    try {
+      await groupsAre(page, 2);
+      const measure = () => page.evaluate(() => {
+        const button = document.querySelector('#rs-strip .rs-strip__run[aria-current]');
+        const avatar = button.querySelector('.rs-avatar');
+        const badge = button.querySelector('.rs-strip__badge');
+        const dot = button.querySelector('.rs-strip__dot');
+        const underline = getComputedStyle(button, '::after');
+        const avatarBox = avatar.getBoundingClientRect();
+        const badgeBox = badge.getBoundingClientRect();
+        const dotBox = dot.getBoundingClientRect();
+        return {
+          gap: Math.round(badgeBox.left - avatarBox.right),
+          badgeTop: Math.round(badgeBox.top),
+          avatarTop: Math.round(avatarBox.top),
+          overlap: badgeBox.left < avatarBox.right - 1,
+          dotCenter: Math.round(dotBox.left + dotBox.width / 2),
+          avatarRight: Math.round(avatarBox.right),
+          underline: Math.round(parseFloat(underline.width)),
+          cursor: getComputedStyle(button).cursor,
+          badgeText: badge.textContent,
+        };
+      });
+      const check = async (label) => {
+        const box = await measure();
+        assert.equal(box.overlap, false, label);
+        assert.ok(box.gap >= 2, `${label} gap ${box.gap}`);
+        assert.equal(box.dotCenter, box.avatarRight, label);
+        assert.equal(box.underline, 32, label);
+        assert.equal(box.cursor, 'pointer', label);
+      };
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate((name) => document.documentElement.setAttribute('data-theme', name), theme);
+        for (const count of ['1', '3', '12', '123']) {
+          await page.evaluate((text) => {
+            document.querySelector('#rs-strip .rs-strip__run[aria-current] .rs-strip__badge').textContent = text;
+          }, count);
+          await check(`${theme} ${count}`);
+        }
+      }
+      await page.setViewportSize({ width: 360, height: 700 });
+      await page.evaluate(() => {
+        document.documentElement.setAttribute('data-theme', 'light');
+        document.querySelector('#rs-strip .rs-strip__run[aria-current] .rs-strip__badge').textContent = '123';
+      });
+      await check('narrow 123');
     } finally { await ctx.close(); }
   });
 

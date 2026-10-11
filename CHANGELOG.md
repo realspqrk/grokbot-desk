@@ -68,6 +68,14 @@
 - Optional `dedupe_key` and `dedupe_hours`: the same bot and key returns the open run, or a run submitted or cancelled within that many hours (`deduped: true` and `state`). An expired run never dedupes. `show` twice with the same key does not open a second report.
 - A `created` stamp more than 2 minutes ahead is clamped to now, and `show` warns.
 - `results --since` items include `title` and, when the decision is compact, `summary` (decide-list counts per choice, preview-post decisions per platform).
+- A preview-post summary only names allowed outcomes: `x posted by you` or `x skipped` for a manual platform, and `linkedin approved` for an auto platform that was approved. A manual platform is never called approved. The summary is omitted when mode and decision disagree, the decision is unknown, `platforms` is not exactly the auto approvals, or an older result has no `per_platform`. Submit rejects an inconsistent preview-post result. Post only `auto` + `approved`; do not treat the summary as permission to post.
+- `preview-post` `target.url` uses the `x-rs-url` keyword (`"https"`) with the same openable check as the link opener, and still a 2048-character limit. `decide-list` item URLs use `x-rs-url` as well and keep their hostname pattern. An `x-rs-exclusive` list must be non-empty strings; a nested value is a schema error at `/x-rs-exclusive`.
+- A reply without an author handle stays a reply. On X the parent card sits above the post, labelled with the handle, the author name, or "Replying to this post".
+- A video keeps its poster image if the clip cannot be decoded or makes no progress for 8 seconds. The page then says the preview is unavailable and that the path can still be copied or the file shown in its folder. `preload="none"` is not a failure.
+- Run summaries include `seq`, the order the report was registered. The strip uses it, including when several reports are already waiting at the first page load. A run without `seq` keeps `created` order. A bot id such as `constructor` still shows its report.
+- One announcement per burst uses the same 30-second quiet gap as bringing the window forward. The page collects for up to 10 seconds and announces once.
+- After a decision the window goes to the same bot's next open report, wrapping inside that bot before the next bot.
+- `Range: bytes=-` is ignored; the media response is the whole file. `POST /reveal` only opens a media file that belongs to that report.
 
 ## 1.0.0-beta.1 (2026-10-10)
 

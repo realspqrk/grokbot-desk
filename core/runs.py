@@ -22,6 +22,76 @@ from .timeutil import format_vienna, iso_now, to_vienna, vienna_now
 from .webhook import fire_after_result
 
 
+# preview-post summaries and submit checks. Only these mode/decision pairs
+# are readable; anything else (including a platforms list that does not match
+# the auto approvals) is left unsummarised and rejected on submit.
+_POST_ORDER = ("x", "linkedin", "instagram", "facebook")
+_POST_PHRASES = {
+    ("manual", "done"): "posted by you",
+    ("manual", "skipped"): "skipped",
+    ("auto", "approved"): "approved",
+    ("auto", "not_approved"): "",
+}
+
+
+def preview_post_consistent(data):
+    """True when a preview-post result agrees with itself.
+
+    An approve result may only pair manual with done or skipped, and auto
+    with approved or not_approved. `platforms` is exactly the auto approvals.
+    A request_changes result has an empty platforms list and every entry is
+    changes_requested.
+    """
+    if not isinstance(data, dict):
+        return False
+    decision = data.get("decision")
+    per = data.get("per_platform")
+    platforms = data.get("platforms")
+    if not isinstance(per, dict) or not isinstance(platforms, list):
+        return False
+    if any(not isinstance(name, str) for name in platforms):
+        return False
+    if decision == "request_changes":
+        if platforms:
+            return False
+        for entry in per.values():
+            if not isinstance(entry, dict):
+                return False
+            if entry.get("mode") not in ("auto", "manual"):
+                return False
+            if entry.get("decision") != "changes_requested":
+                return False
+        return True
+    if decision != "approve":
+        return False
+    approved = []
+    for name, entry in per.items():
+        if not isinstance(name, str) or not isinstance(entry, dict):
+            return False
+        pair = (entry.get("mode"), entry.get("decision"))
+        if pair not in _POST_PHRASES:
+            return False
+        if pair == ("auto", "approved"):
+            approved.append(name)
+    return set(platforms) == set(approved)
+
+
+def preview_post_summary(data):
+    """A one-line reading, or None when the result is inconsistent or legacy."""
+    if not preview_post_consistent(data) or data.get("decision") != "approve":
+        return None
+    per = data["per_platform"]
+    names = [name for name in _POST_ORDER if name in per]
+    names.extend(name for name in per if name not in names)
+    parts = []
+    for name in names:
+        entry = per[name]
+        phrase = _POST_PHRASES[(entry.get("mode"), entry.get("decision"))]
+        if phrase:
+            parts.append(f"{name} {phrase}")
+    return ", ".join(parts) or None
+
+
 def _identity_parts(value):
     if value is None:
         return None
@@ -271,6 +341,9 @@ class RunStore:
                 template.path,
                 template_identity=template.root_identity,
             )
+            # Registration order. The page seeds the strip from this because
+            # a bot's created stamp can be skewed. Older records have no seq
+            # and the page falls back to created.
             created_utc = to_vienna(payload["created"]).astimezone(timezone.utc)
             expires = to_vienna(
                 created_utc + timedelta(minutes=payload["expires_minutes"])
@@ -280,6 +353,7 @@ class RunStore:
                 "identity": identity,
                 "state": "open",
                 "unread": True,
+                "seq": self._next_seq(),
                 "expires": expires.isoformat(timespec="seconds"),
                 "media": {
                     media_id: _stored_media(entry)
@@ -310,8 +384,9 @@ class RunStore:
                 ),
                 reverse=True,
             )
-            return [
-                {
+            listed = []
+            for item in records[:12]:
+                summary = {
                     "run_id": item["payload"]["run_id"],
                     "template": item["payload"]["template"],
                     "title": item["payload"]["title"],
@@ -323,8 +398,11 @@ class RunStore:
                     "state": item["state"],
                     "unread": item["unread"],
                 }
-                for item in records[:12]
-            ]
+                seq = item.get("seq")
+                if isinstance(seq, int) and not isinstance(seq, bool):
+                    summary["seq"] = seq
+                listed.append(summary)
+            return listed
 
     def detail(self, run_id, bots=None):
         with self._lock:
@@ -384,6 +462,11 @@ class RunStore:
                     .read_text("result.schema.json")
                 )
                 validate(data, schema, "/data")
+                if payload["template"] == "preview-post" and not preview_post_consistent(data):
+                    raise SchemaError(
+                        "/data/per_platform",
+                        "mode, decision and platforms do not agree",
+                    )
             decided = vienna_now()
             created = to_vienna(payload["created"])
             envelope = {
@@ -503,6 +586,14 @@ class RunStore:
             if record is not None
             else list(self.config.get("media_roots", []))
         )
+
+    def _next_seq(self):
+        best = 0
+        for record in self._runs.values():
+            seq = record.get("seq")
+            if isinstance(seq, int) and not isinstance(seq, bool) and seq > best:
+                best = seq
+        return best + 1
 
     def has_media(self, run_id, media_id):
         record = self._runs.get(run_id)

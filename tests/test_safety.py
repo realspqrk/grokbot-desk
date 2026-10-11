@@ -1809,6 +1809,100 @@ def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
         server.server_close()
 
 
+def test_empty_byte_range_is_the_whole_file(tmp_path):
+    """bytes=- has no bound, so the response is 200 and the full body."""
+    root = Path(__file__).resolve().parents[1]
+    data_dir = ensure_layout(tmp_path / "data")
+    server = ReportHTTPServer(
+        ("127.0.0.1", 0), Handler, data_dir,
+        scan_registry(root / "templates"), load_config(data_dir),
+    )
+    server.port = server.server_port
+    golden = json.loads(
+        (root / "templates" / "builtin" / "preview-post" / "fixtures" / "golden.json")
+        .read_text(encoding="utf-8")
+    )
+    detail = server.runs.register(validate_payload(
+        dict(valid_payload(), template="preview-post", data=golden), server.registry
+    ))
+    media_id = server.runs._runs[detail["run_id"]]["payload"]["data"]["image"]["path"]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    def ranged(header):
+        connection = http.client.HTTPConnection("127.0.0.1", server.port, timeout=2)
+        connection.request("GET", f"/media/{media_id}", headers={"Range": header})
+        response = connection.getresponse()
+        body = response.read()
+        status = response.status
+        content_range = response.getheader("Content-Range")
+        connection.close()
+        return status, body, content_range
+
+    try:
+        whole, body, content_range = ranged("bytes=-")
+        assert whole == 200 and content_range is None
+        plain_status, plain_body = request(server.port, "GET", f"/media/{media_id}")
+        assert plain_status == 200 and body == plain_body and len(body) > 0
+        partial, partial_body, partial_range = ranged("bytes=0-3")
+        assert partial == 206 and partial_body == plain_body[:4]
+        assert partial_range == f"bytes 0-3/{len(plain_body)}"
+    finally:
+        server.stopping.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_reveal_rejects_another_runs_media(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    data_dir = ensure_layout(tmp_path / "data")
+    server = ReportHTTPServer(
+        ("127.0.0.1", 0), Handler, data_dir,
+        scan_registry(root / "templates"), load_config(data_dir),
+    )
+    server.port = server.server_port
+    golden = json.loads(
+        (root / "templates" / "builtin" / "preview-post" / "fixtures" / "golden.json")
+        .read_text(encoding="utf-8")
+    )
+    detail = server.runs.register(validate_payload(
+        dict(valid_payload(), template="preview-post", data=golden), server.registry
+    ))
+    other = server.runs.register(validate_payload(valid_payload(), server.registry))
+    media_id = server.runs._runs[detail["run_id"]]["payload"]["data"]["image"]["path"]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    headers = {
+        "Host": f"127.0.0.1:{server.port}",
+        "Origin": f"http://127.0.0.1:{server.port}",
+        "X-RS-CSRF": server.csrf,
+        "Content-Type": "application/json",
+    }
+    try:
+        with patch("core.server.reveal_file") as reveal:
+            status, body = request(
+                server.port, "POST", "/reveal",
+                json.dumps({"run_id": other["run_id"], "media_id": media_id}).encode(),
+                headers,
+            )
+            assert status == 404
+            assert json.loads(body)["error"] == "unknown_media"
+            reveal.assert_not_called()
+            status, body = request(
+                server.port, "POST", "/reveal",
+                json.dumps({"run_id": detail["run_id"], "media_id": media_id}).encode(),
+                headers,
+            )
+            assert status == 200
+            reveal.assert_called_once()
+    finally:
+        server.stopping.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_copy_image_copies_only_a_media_of_that_run(tmp_path):
     """/copy-image puts one image of the run on the clipboard as a picture:
     by media id, revalidated like /reveal, never for another run's media,

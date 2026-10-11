@@ -685,28 +685,41 @@
      underlined, and "n of m open". It is one Tab stop (roving tabindex):
      Left/Right/Home/End switch along it, Ctrl+1..9 from anywhere. Decided
      reports leave the strip; with one open report there is none (K3). */
-  /* Open reports in a stable order. The server lists newest first
-     by the bot-supplied creation time; the page keeps its own arrival order
-     instead (a bot's clock cannot move an entry) and groups it by bot: the
-     bots in the order they first showed up, each bot's reports in arrival
-     order. Arrivals append; nothing jumps during a burst. */
+  /* Open reports in a stable order. The page keeps registration order
+     (summary seq, assigned when the run was registered) and groups it by
+     bot: the bots in the order they first showed up, each bot's reports in
+     that same order. A record from before seq existed falls back to created.
+     Arrivals append; nothing jumps during a burst. Bot ids are dictionary
+     keys, so these maps have no prototype (a bot id may be "constructor"). */
   function botKey(run) { return run.bot || run.bot_display || ''; }
+  function dict() { return Object.create(null); }
+
+  function registrationRank(run) {
+    if (typeof run.seq === 'number' && isFinite(run.seq)) return [0, run.seq];
+    var parsed = Date.parse(run.created || '');
+    return [1, isNaN(parsed) ? 0 : parsed];
+  }
 
   function syncOrder(runs) {
-    var open = {};
+    var open = dict();
     runs.forEach(function (r) { open[r.run_id] = r; });
     var order = state.order.filter(function (id) { return open[id]; });
-    var have = {};
+    var have = dict();
     order.forEach(function (id) { have[id] = true; });
-    // new ids: oldest first (the server sends newest first)
-    runs.slice().reverse().forEach(function (r) {
-      if (!have[r.run_id]) { order.push(r.run_id); have[r.run_id] = true; }
+    var fresh = runs.filter(function (r) { return !have[r.run_id]; });
+    fresh.sort(function (a, b) {
+      var ka = registrationRank(a), kb = registrationRank(b);
+      return ka[0] - kb[0] || ka[1] - kb[1];
+    });
+    fresh.forEach(function (r) {
+      order.push(r.run_id);
+      have[r.run_id] = true;
     });
     state.order = order;
-    var bots = {};
+    var bots = dict();
     order.forEach(function (id) { bots[botKey(open[id])] = true; });
     var groups = state.groups.filter(function (k) { return bots[k]; });
-    var seen = {};
+    var seen = dict();
     groups.forEach(function (k) { seen[k] = true; });
     order.forEach(function (id) {
       var k = botKey(open[id]);
@@ -719,9 +732,9 @@
     var open = state.runs.filter(function (r) {
       return (r.state === undefined || r.state === 'open') && !state.gone[r.run_id];
     });
-    var rank = {};
+    var rank = dict();
     state.order.forEach(function (id, i) { rank[id] = i; });
-    var group = {};
+    var group = dict();
     state.groups.forEach(function (k, i) { group[k] = i; });
     function at(table, key) { return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : 1e9; }
     return open.map(function (r, i) { return { r: r, i: i }; }).sort(function (x, y) {
@@ -734,7 +747,7 @@
   /* one strip entry per bot: { key, runs } in strip order (max 12) */
   function stripGroups() {
     var groups = [];
-    var byKey = {};
+    var byKey = dict();
     openRuns().forEach(function (r) {
       var k = botKey(r);
       if (!byKey[k]) { byKey[k] = { key: k, runs: [] }; groups.push(byKey[k]); }
@@ -792,9 +805,10 @@
       b.setAttribute('data-bot', g.key);
       b.setAttribute('data-run-id', current ? state.activeId : lead.run_id);
       /* accessible name and tooltip: the bot and the report title, or the
-         bot and how many reports it has waiting ("Inbox Agent, 3 reports") */
+         bot and how many reports it has waiting. The current bot's avatar
+         cycles its reports, so that one also says how to step on. */
       var label = g.runs.length > 1
-        ? t('strip_group', { bot: who.name, n: number(g.runs.length) })
+        ? t(current ? 'strip_cycle' : 'strip_group', { bot: who.name, n: number(g.runs.length) })
         : t('strip_item', { bot: who.name, title: lead.title });
       if (waiting) label += ' ' + t('sep') + ' ' + t('new');
       b.setAttribute('aria-label', label);
@@ -1063,13 +1077,27 @@
     return appWindow;
   }
 
-  /* The strip order after a report (then wrapping), captured when its
-     decision starts: the server's list drops the report before our own
-     answer may arrive, so the order is not read again afterwards. */
+  /* The strip order after a report, captured when its decision starts:
+     the same bot's later reports, then that bot's earlier ones (a wrap),
+     then the later bots, then the earlier ones. The server's list drops
+     the report before our own answer may arrive, so the order is not
+     read again afterwards. */
   function successorsOf(runId) {
-    var ids = openRuns().map(function (r) { return r.run_id; });
-    var at = ids.indexOf(runId);
-    return at < 0 ? ids : ids.slice(at + 1).concat(ids.slice(0, at));
+    var runs = openRuns();
+    var at = -1;
+    runs.forEach(function (r, i) { if (r.run_id === runId) at = i; });
+    if (at < 0) return runs.map(function (r) { return r.run_id; });
+    var mine = botKey(runs[at]);
+    var later = [], earlier = [], restLater = [], restEarlier = [];
+    runs.forEach(function (r, i) {
+      if (i === at) return;
+      var same = botKey(r) === mine;
+      if (same && i > at) later.push(r.run_id);
+      else if (same) earlier.push(r.run_id);
+      else if (i > at) restLater.push(r.run_id);
+      else restEarlier.push(r.run_id);
+    });
+    return later.concat(earlier, restLater, restEarlier);
   }
 
   /* the intended successor if it is still open, else the next of the
@@ -1077,7 +1105,7 @@
   function nextOpenAfter(runId, successors) {
     var rest = openRuns().filter(function (r) { return r.run_id !== runId; });
     if (!rest.length) return null;
-    var open = {};
+    var open = dict();
     rest.forEach(function (r) { open[r.run_id] = true; });
     var next = (successors || []).filter(function (id) { return open[id]; })[0];
     return next || rest[0].run_id;
@@ -1450,21 +1478,41 @@
   }
 
   // ----------------------------------------------------- bursts -----
-  /* Reports from several bots often come in a burst. Each arrival
-     is collected; once the burst has been quiet for BURST_SETTLE_MS (or has
-     run for BURST_MAX_MS) one polite announcement says what came ("5 new
-     reports from 2 bots"); a single arrival names its report; a single
-     arrival that is shown at once needs none. Never one toast per report. */
-  var BURST_SETTLE_MS = 1500;
-  var BURST_MAX_MS = 10000;
-  function burstSettleMs() {
+  /* One announcement per burst. A burst is the same quiet gap as the
+     server's attention (ATTENTION_QUIET_S in core/server.py): arrivals
+     less than 30 seconds apart belong together. The page collects the
+     first 10 seconds, announces once, and does not announce again until
+     that quiet gap has passed. A single arrival names its report; a single
+     arrival that is shown at once needs none. Never one toast per report.
+     A test client may shorten the quiet gap with ?burst_ms=. That shortened
+     gap is a debounce: the announcement waits that long after the latest
+     arrival, so a handful of pushes still land in one burst. */
+  var BURST_QUIET_MS = 30000;
+  var BURST_COLLECT_MS = 10000;
+  function burstQuietMs() {
     var test = query.get('client') === 'test';
-    return test && /^\d{1,5}$/.test(query.get('burst_ms') || '') ? Number(query.get('burst_ms')) : BURST_SETTLE_MS;
+    return test && /^\d{1,5}$/.test(query.get('burst_ms') || '') ? Number(query.get('burst_ms')) : BURST_QUIET_MS;
   }
 
   function noteArrivals(fresh, shownId) {
+    var now = Date.now();
     var b = state.burst;
-    if (!b) b = state.burst = { ids: [], runs: {}, bots: {}, botCount: 0, shown: null, timer: null, started: Date.now() };
+    if (b && b.announced) {
+      if (now - b.last < burstQuietMs()) {
+        b.last = now;
+        if (b.timer) clearTimeout(b.timer);
+        b.timer = setTimeout(endBurst, burstQuietMs());
+        return;
+      }
+      state.burst = null;
+      b = null;
+    }
+    if (!b) {
+      b = state.burst = {
+        ids: [], runs: dict(), bots: dict(), botCount: 0, shown: null,
+        timer: null, started: now, last: now, announced: false
+      };
+    }
     fresh.slice().reverse().forEach(function (r) {
       if (b.runs[r.run_id]) return;
       b.ids.push(r.run_id);
@@ -1472,28 +1520,44 @@
       var k = botKey(r);
       if (!b.bots[k]) { b.bots[k] = identityOf(r).name; b.botCount += 1; }
     });
+    b.last = now;
     if (shownId) b.shown = shownId;
     if (b.timer) clearTimeout(b.timer);
-    var wait = Math.max(0, Math.min(burstSettleMs(), b.started + BURST_MAX_MS - Date.now()));
+    var quiet = burstQuietMs();
+    var shortened = query.get('client') === 'test' && query.has('burst_ms');
+    var collectEnd = b.started + BURST_COLLECT_MS;
+    var wait = shortened ? quiet : Math.max(0, Math.min(quiet, collectEnd - now));
     b.timer = setTimeout(flushBurst, wait);
+  }
+
+  function endBurst() {
+    var b = state.burst;
+    if (!b) return;
+    var left = b.last + burstQuietMs() - Date.now();
+    if (left > 0) { b.timer = setTimeout(endBurst, left); return; }
+    state.burst = null;
   }
 
   function flushBurst() {
     var b = state.burst;
-    state.burst = null;
-    if (!b || !b.ids.length) return;
-    var n = b.ids.length;
-    if (n === 1) {
-      if (b.shown === b.ids[0]) return;
-      toast(t('new_run_arrived', { title: b.runs[b.ids[0]].title }));
+    if (!b || b.announced || !b.ids.length) {
+      if (b && !b.ids.length) state.burst = null;
       return;
     }
-    if (b.botCount === 1) {
+    b.announced = true;
+    b.timer = null;
+    var n = b.ids.length;
+    if (n === 1) {
+      if (b.shown !== b.ids[0]) toast(t('new_run_arrived', { title: b.runs[b.ids[0]].title }));
+    } else if (b.botCount === 1) {
       var only = Object.keys(b.bots)[0];
       toast(t('burst_arrived_bot', { n: number(n), bot: b.bots[only] }));
     } else {
       toast(t('burst_arrived', { n: number(n), k: number(b.botCount) }));
     }
+    var left = b.last + burstQuietMs() - Date.now();
+    if (left > 0) b.timer = setTimeout(endBurst, left);
+    else state.burst = null;
   }
 
   // ----------------------------------------------------- run list ----

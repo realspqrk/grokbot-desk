@@ -2,6 +2,8 @@
 import math
 import re
 
+from .urls import openable
+
 
 KEYWORDS = {
     "type", "properties", "required", "additionalProperties", "items",
@@ -15,6 +17,9 @@ UNIQUE_KEY = "x-rs-unique-key"
 # Extension keyword on an object: at most one of the named properties may
 # be present (e.g. a post image and a post video).
 EXCLUSIVE = "x-rs-exclusive"
+# Extension keyword on a string: the value must be an openable http(s) URL
+# (core/urls.openable). "https" additionally requires an https scheme.
+URL_POLICY = "x-rs-url"
 TYPES = {
     "object": dict,
     "array": list,
@@ -106,11 +111,13 @@ def check_schema(schema, pointer=""):
             raise SchemaError(_pointer(pointer, UNIQUE_KEY), "only applies to arrays")
     if EXCLUSIVE in schema:
         names = schema[EXCLUSIVE]
+        # Strings first: a nested list or object is unhashable, and building
+        # the set before that check would escape as TypeError.
         if (
             not isinstance(names, list)
             or len(names) < 2
-            or len(names) != len(set(names))
             or not all(isinstance(name, str) and name for name in names)
+            or len(names) != len(set(names))
         ):
             raise SchemaError(
                 _pointer(pointer, EXCLUSIVE),
@@ -118,6 +125,15 @@ def check_schema(schema, pointer=""):
             )
         if schema.get("type", "object") != "object":
             raise SchemaError(_pointer(pointer, EXCLUSIVE), "only applies to objects")
+    if URL_POLICY in schema:
+        policy = schema[URL_POLICY]
+        if policy not in (True, "http", "https"):
+            raise SchemaError(
+                _pointer(pointer, URL_POLICY),
+                'must be true, "http", or "https"',
+            )
+        if schema.get("type", "string") != "string":
+            raise SchemaError(_pointer(pointer, URL_POLICY), "only applies to strings")
     if "enum" in schema and (not isinstance(schema["enum"], list) or not schema["enum"]):
         raise SchemaError(_pointer(pointer, "enum"), "must be a non-empty array")
     if "pattern" in schema:
@@ -271,6 +287,12 @@ def validate(value, schema, pointer=""):
             raise SchemaError(pointer, f"must be at most {schema['maxLength']} characters")
         if "pattern" in schema and _compile_pattern(schema["pattern"]).search(value) is None:
             raise SchemaError(pointer, f"must match pattern {schema['pattern']!r}")
+        if URL_POLICY in schema:
+            policy = schema[URL_POLICY]
+            https = value.lower().startswith("https://")
+            if not openable(value) or (policy == "https" and not https):
+                expected = "an openable https URL" if policy == "https" else "an openable http(s) URL"
+                raise SchemaError(pointer, f"must be {expected}")
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if "minimum" in schema and value < schema["minimum"]:
             raise SchemaError(pointer, f"must be at least {schema['minimum']}")

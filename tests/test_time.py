@@ -222,6 +222,67 @@ def test_finding_7_run_summaries_sort_by_instant_across_offsets(
     ]
 
 
+def test_registration_seq_survives_reload_and_ignores_a_skewed_clock(tmp_path):
+    """seq is assigned at registration and kept on the run record."""
+    data_dir = ensure_layout(tmp_path / "data")
+
+    def open_store():
+        return RunStore(
+            data_dir,
+            scan_registry(ROOT / "templates"),
+            load_config(data_dir),
+            ActionLog(data_dir),
+        )
+
+    store = open_store()
+    store.register({
+        "schema": "report-shell/payload@1",
+        "template": "_starter",
+        "version": 1,
+        "run_id": "20261011-120000-inbox-aaaa",
+        "bot": "example-inbox-bot",
+        "title": "Inbox first",
+        "created": "2026-10-11T12:00:00+02:00",
+        "expires_minutes": 240,
+        "data": {"message": "Hello"},
+    })
+    store.register({
+        "schema": "report-shell/payload@1",
+        "template": "_starter",
+        "version": 1,
+        "run_id": "20261011-120001-social-bbbb",
+        "bot": "example-social-bot",
+        "title": "Social skewed",
+        "created": "2026-10-11T09:00:00+02:00",
+        "expires_minutes": 240,
+        "data": {"message": "Hello"},
+    })
+    listed = {item["title"]: item for item in store.summaries({})}
+    assert listed["Inbox first"]["seq"] == 1
+    assert listed["Social skewed"]["seq"] == 2
+    reloaded = open_store()
+    third = reloaded.register({
+        "schema": "report-shell/payload@1",
+        "template": "_starter",
+        "version": 1,
+        "run_id": "20261011-120002-inbox-cccc",
+        "bot": "example-inbox-bot",
+        "title": "Inbox later",
+        "created": "2026-10-11T08:00:00+02:00",
+        "expires_minutes": 240,
+        "data": {"message": "Hello"},
+    })
+    assert third["run_id"]
+    again = {item["title"]: item["seq"] for item in reloaded.summaries({})}
+    assert again == {"Inbox first": 1, "Social skewed": 2, "Inbox later": 3}
+    record = reloaded._runs["20261011-120000-inbox-aaaa"]
+    del record["seq"]
+    reloaded._save(record)
+    legacy = reloaded.summaries({})
+    bare = next(item for item in legacy if item["title"] == "Inbox first")
+    assert "seq" not in bare
+
+
 class _Stopping:
     def __init__(self):
         self.was_set = False

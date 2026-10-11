@@ -190,11 +190,21 @@ platforms.forEach(function (p) {
     slots.appendChild(slot('span', 'link-domain', data.link.domain));
     slots.appendChild(slot('span', 'link-title', data.link.title));
   }
-  /* Instagram has no quote or reply chrome. Elsewhere a quote sits under
-     the body; a reply adds the line and the parent card above the post. */
+  /* Instagram has no quote or reply chrome. A quote sits under the body.
+     On X a reply puts the parent card above the post. The reply type is its
+     own slot, so a missing handle does not turn it into a quote. X names
+     the handle, the author name, or a generic line. LinkedIn and Facebook
+     keep the reshare card and still show that reply line. */
   if (target && p !== 'instagram') {
-    if (target.type === 'reply' && target.author && target.author.handle) {
-      slots.appendChild(slot('span', 'reply', RS.t('replying_to', { handle: target.author.handle })));
+    slots.appendChild(slot('span', 'target-type', target.type));
+    if (target.type === 'reply') {
+      var replyAuthor = target.author || {};
+      var replyText = replyAuthor.handle
+        ? RS.t('replying_to', { handle: replyAuthor.handle })
+        : (replyAuthor.name
+          ? RS.t('replying_to_name', { name: replyAuthor.name })
+          : RS.t('replying_to_post'));
+      slots.appendChild(slot('span', 'reply', replyText));
     }
     if (target.author && target.author.name) slots.appendChild(slot('span', 'quote-name', target.author.name));
     if (target.author && target.author.handle) {
@@ -331,7 +341,8 @@ platforms.forEach(function (p) {
       var known = frame.getAttribute('data-image-state');
       if (known) return known;
       if (visual.tagName === 'VIDEO') {
-        if (visual.error) return 'error';
+        if (visual.getAttribute('preload') === 'none') return 'poster';
+        if (visual.error) return 'unavailable';
         return visual.readyState >= 1 ? 'loaded' : 'loading';
       }
       if (!visual.complete) return 'loading';
@@ -358,8 +369,11 @@ function syncControl(p) {
   var input = inputs[p];
   var col = cols[p];
   var note = part('badges', col).querySelector('#lint-image-' + p);
-  var loaded = imageState[p]() === 'loaded';
-  note.hidden = loaded || (decided() && input.checked);
+  var visualState = imageState[p]();
+  var loaded = visualState === 'loaded';
+  /* A clip that cannot be previewed is not missing media. */
+  var previewFailed = visualState === 'error' || visualState === 'unavailable';
+  note.hidden = loaded || previewFailed || (decided() && input.checked);
   if (fixedBlock[p]) return;
   if (!loaded && !input.checked) {
     input.disabled = true;
@@ -499,7 +513,8 @@ function update(save) {
   if (waiting) {
     RS.setResult(null);
     var waitingVideo = !!video;
-    var failed = imageState[waiting]() === 'error';
+    var waitingState = imageState[waiting]();
+    var failed = waitingState === 'error' || waitingState === 'unavailable';
     var waitingKey = waitingVideo
       ? (failed ? 'approval_video_failed' : 'approval_waits_video')
       : (failed ? 'approval_image_failed' : 'approval_waits_image');

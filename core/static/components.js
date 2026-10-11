@@ -462,7 +462,8 @@
   // no-chrome (hide the logo + platform name row, e.g. when tabs name it).
   // Child slots (any element with slot="…"): avatar (img), name, handle,
   // headline, text, image (img), video (video), link-title, link-domain,
-  // reply, quote-name, quote-handle, quote-excerpt, quote-domain, quote-url.
+  // reply, target-type (quote|reply, independent of the reply label),
+  // quote-name, quote-handle, quote-excerpt, quote-domain, quote-url.
   // image and video are alternatives. quote-url is the address of a quoted
   // post or reply parent (not shown; it becomes the card's link when
   // RS.externalLink exists). Method refresh().
@@ -505,6 +506,7 @@
       this._mo.disconnect();
       this._textMo.disconnect();
       this._clearRanges();
+      if (this._stall) { clearTimeout(this._stall); this._stall = null; }
     }
     attributeChangedCallback() { if (this.isConnected && this._mo) this._render(); }
     get skin() {
@@ -656,28 +658,122 @@
       else this._setImageState('loading');
     }
 
+    _videoStallMs() {
+      var params = new URLSearchParams(location.search);
+      if (params.get('client') === 'test' && /^\d{1,5}$/.test(params.get('video_ms') || '')) {
+        return Number(params.get('video_ms'));
+      }
+      return 8000;
+    }
+
+    _bindPoster(img) {
+      var self = this;
+      if (img._rsPosterBound) return;
+      img._rsPosterBound = true;
+      img.addEventListener('load', function () {
+        if (self._poster !== img) return;
+        if (img.naturalWidth > 0) {
+          img.hidden = false;
+          self.setAttribute('data-poster-state', 'loaded');
+        } else {
+          img.hidden = true;
+          self.setAttribute('data-poster-state', 'error');
+        }
+      });
+      img.addEventListener('error', function () {
+        if (self._poster !== img) return;
+        img.hidden = true;
+        self.setAttribute('data-poster-state', 'error');
+      });
+    }
+
+    _ensurePoster(video) {
+      var media = this._parts && this._parts.media;
+      if (!media) return null;
+      var url = video.getAttribute('poster') || '';
+      var poster = media.querySelector(':scope > .rs-pf__poster');
+      if (!url) {
+        if (poster) poster.remove();
+        this._poster = null;
+        this.removeAttribute('data-poster-state');
+        return null;
+      }
+      if (!poster) {
+        poster = h('img', 'rs-pf__poster');
+        poster.alt = '';
+        media.insertBefore(poster, video);
+      }
+      this._poster = poster;
+      this._bindPoster(poster);
+      if (poster.getAttribute('src') !== url) poster.src = url;
+      else if (poster.complete) {
+        poster.dispatchEvent(new Event(poster.naturalWidth > 0 ? 'load' : 'error'));
+      }
+      return poster;
+    }
+
     _prepareVideo(video) {
       var self = this;
       this._image = video;
+      if (this._stall) { clearTimeout(this._stall); this._stall = null; }
       video.controls = true;
       video.autoplay = false;
       video.removeAttribute('autoplay');
       video.muted = false;
       video.removeAttribute('muted');
+      this._ensurePoster(video);
       var preload = video.getAttribute('preload');
-      if (preload !== 'none' && preload !== 'metadata') video.setAttribute('preload', 'metadata');
+      var deliberate = preload === 'none';
+      if (!deliberate && preload !== 'metadata') video.setAttribute('preload', 'metadata');
       if (!video._rsAvailabilityBound) {
         video._rsAvailabilityBound = true;
         video.addEventListener('loadedmetadata', function () {
-          if (self._image === video) self._setImageState('loaded');
+          if (self._image === video) self._setVideoState('loaded');
         });
         video.addEventListener('error', function () {
-          if (self._image === video) self._setImageState('error');
+          if (self._image !== video || video.getAttribute('preload') === 'none') return;
+          self._setVideoState('unavailable');
         });
       }
-      if (video.error) this._setImageState('error');
-      else if (video.readyState >= 1) this._setImageState('loaded');
-      else this._setImageState('loading');
+      // preload=none has not asked for the clip. That is not a failure and
+      // not a loading wait. A separate poster image stays up either way.
+      if (deliberate) {
+        this._setVideoState(video.readyState >= 1 && !video.error ? 'loaded' : 'poster');
+        return;
+      }
+      if (video.error) this._setVideoState('unavailable');
+      else if (video.readyState >= 1) this._setVideoState('loaded');
+      else {
+        this._setVideoState('loading');
+        this._stall = setTimeout(function () {
+          self._stall = null;
+          if (self._image !== video) return;
+          if (video.getAttribute('preload') === 'none') return;
+          if (!video.error && video.readyState >= 1) return;
+          self._setVideoState('unavailable');
+        }, this._videoStallMs());
+      }
+    }
+
+    _setVideoState(state) {
+      var media = this._parts && this._parts.media;
+      var video = this._image;
+      if (!media || !video || video.tagName !== 'VIDEO') return;
+      if (state === 'loaded' || state === 'poster' || state === 'unavailable') {
+        if (this._stall) { clearTimeout(this._stall); this._stall = null; }
+      }
+      var old = media.querySelector('.rs-pf__video-note');
+      if (old) old.remove();
+      media.classList.remove('rs-pf__media--empty', 'rs-pf__media--error');
+      video.hidden = state === 'unavailable';
+      if (state === 'unavailable') {
+        media.appendChild(h('p', 'rs-pf__video-note', t('pf_video_unavailable')));
+      }
+      this.setAttribute('data-image-state', state);
+      this.dispatchEvent(new CustomEvent('rs-image-state', {
+        bubbles: true,
+        detail: { state: state, available: state === 'loaded' }
+      }));
     }
 
     _setImageState(state) {
@@ -807,7 +903,11 @@
         var excerpt = card.querySelector('.rs-pf__quote-excerpt');
         if (excerpt) excerpt.hidden = true;
       }
-      if (slots.reply) {
+      var typeEl = slots['target-type'];
+      var kind = typeEl ? (typeEl.textContent || '').trim() : (slots.reply ? 'reply' : 'quote');
+      /* X puts a reply's parent above the post. LinkedIn and Facebook keep
+         the reshare card where it is; the reply line still says it is a reply. */
+      if (kind === 'reply' && this.skin === 'x') {
         card.classList.add('rs-pf__quote--above');
         post.parentNode.insertBefore(card, post);
       } else {

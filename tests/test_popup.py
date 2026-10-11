@@ -30,6 +30,7 @@ def test_strip_and_done_strings_in_both_tables():
         "strip_item": {"bot", "title"},
         # one strip entry per bot, one announcement per burst
         "strip_group": {"bot", "n"},
+        "strip_cycle": {"bot", "n"},
         "burst_arrived": {"n", "k"},
         "burst_arrived_bot": {"n", "bot"},
         "done_title": set(),

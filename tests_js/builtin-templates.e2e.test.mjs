@@ -81,7 +81,8 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
         await r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
       });
     }
-    await page.goto(server.url('?client=test&run=' + run.run_id));
+    if (opts.beforeGoto) await opts.beforeGoto(page, run);
+    await page.goto(server.url('?client=test&run=' + run.run_id + (opts.query || '')));
     await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
     return { ctx, page, log, run };
   }
@@ -686,6 +687,181 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await withIg.page.isHidden('#lint-image-instagram'), true);
       assert.equal(await withIg.page.isDisabled('#approve-instagram'), false);
     } finally { await withIg.ctx.close(); }
+  });
+
+  test('preview-post: a reply without a handle stays a reply', async () => {
+    const data = fixture('preview-post', 'quote-video');
+    const cases = [
+      ['missing author', { type: 'reply', url: data.target.url, excerpt: data.target.excerpt }, de.replying_to_post],
+      ['empty author', { type: 'reply', url: data.target.url, excerpt: data.target.excerpt, author: {} }, de.replying_to_post],
+      ['name only', { type: 'reply', url: data.target.url, excerpt: data.target.excerpt, author: { name: 'Northwind Notes' } }, t('replying_to_name', { name: 'Northwind Notes' })],
+    ];
+    for (const [label, target, replyText] of cases) {
+      const opened = await open('preview-post', 'quote-video', { data: { ...data, target } });
+      try {
+        await mediaSettled(opened.page);
+        assert.equal(await opened.page.textContent('#panel-x .rs-pf__reply'), replyText, label);
+        const placed = await opened.page.evaluate(() => {
+          const post = document.querySelector('#panel-x .rs-pf__post');
+          const card = document.querySelector('#panel-x .rs-pf__quote');
+          const reply = document.querySelector('#panel-x .rs-pf__reply');
+          return {
+            above: !post.contains(card) && Boolean(card.compareDocumentPosition(post) & Node.DOCUMENT_POSITION_FOLLOWING),
+            embed: card.classList.contains('rs-pf__quote--embed'),
+            replyHidden: reply.hidden,
+            kind: document.querySelector('#panel-x [slot="target-type"]').textContent,
+          };
+        });
+        assert.equal(placed.kind, 'reply', label);
+        assert.equal(placed.above, true, label);
+        assert.equal(placed.embed, false, label);
+        assert.equal(placed.replyHidden, false, label);
+        await opened.page.click('#tab-linkedin');
+        const linkedin = await opened.page.evaluate(() => {
+          const card = document.querySelector('#panel-linkedin .rs-pf__quote');
+          const reply = document.querySelector('#panel-linkedin .rs-pf__reply');
+          return {
+            embed: card.classList.contains('rs-pf__quote--embed'),
+            above: card.classList.contains('rs-pf__quote--above'),
+            reply: reply.textContent,
+            replyHidden: reply.hidden,
+            kind: document.querySelector('#panel-linkedin [slot="target-type"]').textContent,
+          };
+        });
+        assert.equal(linkedin.kind, 'reply', label);
+        assert.equal(linkedin.reply, replyText, label);
+        assert.equal(linkedin.replyHidden, false, label);
+        assert.equal(linkedin.embed, true, label);
+        assert.equal(linkedin.above, false, label);
+      } finally { await opened.ctx.close(); }
+    }
+  });
+
+  function clipIds(run) {
+    const record = json(path.join(server.dataDir, 'runs', `${run.run_id}.json`));
+    return { video: record.payload.data.video.path, poster: record.payload.data.video.poster };
+  }
+
+  test('preview-post: a video that cannot play keeps its poster and stays within three controls', async () => {
+    const normal = await open('preview-post', 'quote-video');
+    let normalCounts;
+    try {
+      await mediaSettled(normal.page);
+      normalCounts = await calmCounts(normal.page);
+      assert.ok(normalCounts.length && normalCounts.every((n) => n <= 3), `normal ${normalCounts}`);
+    } finally { await normal.ctx.close(); }
+
+    const corrupt = await open('preview-post', 'quote-video', {
+      beforeGoto: async (page, run) => {
+        const ids = clipIds(run);
+        await page.route(new RegExp(`/media/${ids.video}`), (route) => route.fulfill({
+          status: 200, contentType: 'video/mp4', body: Buffer.from('not-a-video'),
+        }));
+      },
+    });
+    try {
+      await corrupt.page.waitForFunction(
+        () => document.querySelector('#panel-x rs-post-frame')?.getAttribute('data-image-state') === 'unavailable',
+        null, { timeout: 8000 },
+      );
+      const view = await corrupt.page.evaluate((message) => {
+        const frame = document.querySelector('#panel-x rs-post-frame');
+        const poster = frame.querySelector('.rs-pf__poster');
+        const video = frame.querySelector('video');
+        return {
+          state: frame.getAttribute('data-image-state'),
+          posterVisible: poster && !poster.hidden && poster.getClientRects().length > 0,
+          videoHidden: video.hidden,
+          note: frame.querySelector('.rs-pf__video-note')?.textContent || '',
+          retry: frame.querySelectorAll('.rs-pf__image-retry').length,
+          icon: frame.querySelectorAll('.rs-pf__empty-ico').length,
+        };
+      }, de.pf_video_unavailable);
+      assert.equal(view.state, 'unavailable');
+      assert.equal(view.posterVisible, true);
+      assert.equal(view.videoHidden, true);
+      assert.equal(view.note, de.pf_video_unavailable);
+      assert.equal(view.retry, 0);
+      assert.equal(view.icon, 0);
+      assert.equal(await corrupt.page.locator('#panel-x [data-copy-id="x-video"]').count(), 1);
+      assert.equal(await corrupt.page.locator('#panel-x [data-pp="reveal"]').count(), 1);
+      const counts = await calmCounts(corrupt.page);
+      assert.deepEqual(counts, normalCounts);
+      assert.ok(counts.every((n) => n <= 3), `error ${counts}`);
+    } finally { await corrupt.ctx.close(); }
+
+    const stalled = await open('preview-post', 'quote-video', {
+      query: '&video_ms=400',
+      beforeGoto: async (page, run) => {
+        const ids = clipIds(run);
+        await page.route(new RegExp(`/media/${ids.video}`), () => new Promise(() => {}));
+      },
+    });
+    try {
+      await stalled.page.waitForFunction(
+        () => document.querySelector('#panel-x rs-post-frame')?.getAttribute('data-image-state') === 'unavailable',
+        null, { timeout: 8000 },
+      );
+      const view = await stalled.page.evaluate(() => {
+        const frame = document.querySelector('#panel-x rs-post-frame');
+        const poster = frame.querySelector('.rs-pf__poster');
+        return {
+          state: frame.getAttribute('data-image-state'),
+          posterVisible: poster && !poster.hidden && poster.getClientRects().length > 0,
+          note: frame.querySelector('.rs-pf__video-note')?.textContent || '',
+        };
+      });
+      assert.equal(view.state, 'unavailable');
+      assert.equal(view.posterVisible, true);
+      assert.equal(view.note, de.pf_video_unavailable);
+    } finally { await stalled.ctx.close(); }
+
+    const posterFail = await open('preview-post', 'quote-video', {
+      beforeGoto: async (page, run) => {
+        const ids = clipIds(run);
+        await page.route(new RegExp(`/media/${ids.poster}`), (route) => route.fulfill({ status: 404, body: '' }));
+      },
+    });
+    try {
+      await posterFail.page.waitForFunction(
+        () => document.querySelector('#panel-x rs-post-frame')?.getAttribute('data-poster-state') === 'error',
+        null, { timeout: 8000 },
+      );
+      await mediaSettled(posterFail.page);
+      const view = await posterFail.page.evaluate(() => {
+        const frame = document.querySelector('#panel-x rs-post-frame');
+        const poster = frame.querySelector('.rs-pf__poster');
+        return {
+          posterState: frame.getAttribute('data-poster-state'),
+          posterHidden: !poster || poster.hidden,
+          icon: frame.querySelectorAll('.rs-pf__empty-ico').length,
+          video: frame.querySelectorAll('video').length,
+        };
+      });
+      assert.equal(view.posterState, 'error');
+      assert.equal(view.posterHidden, true);
+      assert.equal(view.icon, 0);
+      assert.equal(view.video, 1);
+    } finally { await posterFail.ctx.close(); }
+
+    const preloadNone = await open('preview-post', 'quote-video', { query: '&video_ms=300' });
+    try {
+      await mediaSettled(preloadNone.page);
+      await preloadNone.page.evaluate(() => {
+        const frame = document.querySelector('#panel-x rs-post-frame');
+        const video = frame.querySelector('video');
+        video.setAttribute('preload', 'none');
+        video.removeAttribute('src');
+        video.load();
+        const ratio = frame.getAttribute('ratio');
+        frame.setAttribute('ratio', ratio === '16:9' ? '4:5' : '16:9');
+      });
+      await preloadNone.page.waitForTimeout(700);
+      const state = await preloadNone.page.getAttribute('#panel-x rs-post-frame', 'data-image-state');
+      assert.ok(state === 'poster' || state === 'loaded', state);
+      assert.equal(await preloadNone.page.locator('#panel-x .rs-pf__video-note').count(), 0);
+      assert.equal(await preloadNone.page.locator('#panel-x .rs-pf__image-retry').count(), 0);
+    } finally { await preloadNone.ctx.close(); }
   });
 
   test('preview-post: plain platform ids stay auto (no mode named); only manual platforms read "Mark as posted"', async () => {

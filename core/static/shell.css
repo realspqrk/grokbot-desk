@@ -308,6 +308,29 @@ button, input, textarea, select { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
+/* Badge sits beside the avatar, not over it. The unread dot stays on the
+   avatar's edge. The current underline is the avatar width (32px). */
+.rs-strip__run {
+  column-gap: var(--space-1);
+}
+.rs-strip__run[aria-current] {
+  cursor: pointer;
+}
+.rs-strip__badge {
+  position: relative;
+  top: calc(0px - var(--space-1));
+  right: auto;
+  align-self: flex-start;
+}
+.rs-strip__dot {
+  right: auto;
+  left: calc(var(--space-1) + var(--rs-avatar-md) - var(--rs-dot) / 2);
+}
+.rs-strip__run[aria-current]::after {
+  right: auto;
+  width: var(--rs-avatar-md);
+}
+
 /* --------------------------------------------------------------- main -- */
 
 .rs-mount {
@@ -893,6 +916,7 @@ rs-post-frame[no-chrome] .rs-pf__chrome { display: none; }
 ::highlight(rs-pf-after-ig) { color: var(--rs-ig-muted); }
 
 .rs-pf__media {
+  position: relative;
   aspect-ratio: var(--rs-pf-ratio, 16 / 9);
   margin-top: var(--space-3);
   overflow: hidden;
@@ -901,6 +925,21 @@ rs-post-frame[no-chrome] .rs-pf__chrome { display: none; }
 .rs-pf__media[hidden] { display: none; }
 .rs-pf__media > img,
 .rs-pf__media > video { display: block; width: 100%; height: 100%; object-fit: cover; background: var(--rs-pf-avatar); }
+.rs-pf__media > video { position: absolute; inset: 0; }
+.rs-pf__video-note {
+  position: absolute;
+  z-index: 1;
+  inset-inline: var(--space-3);
+  bottom: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--rs-r-md);
+  background: var(--rs-paper);
+  color: var(--rs-muted);
+  font-size: var(--rs-fs-sm);
+  line-height: var(--rs-lh-tight);
+  text-align: center;
+}
 .rs-pf__media > img[hidden],
 .rs-pf__media > video[hidden] { display: none; }
 .rs-pf__post--x .rs-pf__media { border: var(--rs-border) solid var(--rs-pf-line); border-radius: var(--rs-r-lg); }

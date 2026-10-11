@@ -56,6 +56,8 @@
     "copy_path",
     "copy_link",
     "replying_to",
+    "replying_to_name",
+    "replying_to_post",
     "approval_waits_video",
     "approval_video_failed",
     "decided_count",

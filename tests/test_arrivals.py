@@ -17,6 +17,7 @@ import core.cli as cli
 import core.server as server_module
 from conftest import ROOT
 from core.envelope import EnvelopeError, validate_payload
+from core.schema import SchemaError
 from core.paths import ensure_layout, load_config
 from core.registry import scan_registry
 from core.server import Handler, ReportHTTPServer
@@ -241,10 +242,70 @@ def test_results_since_carries_a_title_and_a_compact_summary(tmp_path):
         "run_id", "bot", "template", "title", "status", "decided", "result_path", "summary",
     ]
     post = by_id["run-post"]
-    assert post["summary"] == "x done, linkedin approved"
+    assert post["summary"] == "x posted by you, linkedin approved"
     assert post["template"] == "preview-post" and post["bot"] == "social-agent"
     one = by_id["run-one"]
     assert one["summary"] == "approve" and "title" not in one
+
+
+def test_preview_post_summary_omits_inconsistent_and_legacy_results(tmp_path):
+    """A summary never calls a manual platform approved."""
+    base = ensure_layout(tmp_path / "data")
+    stamp = "2026-10-11T11:00:00+02:00"
+
+    def write_result(run_id, data):
+        (base / "runs" / f"{run_id}.json").write_text(
+            json.dumps({"payload": {"run_id": run_id, "title": run_id}}), encoding="utf-8"
+        )
+        (base / "results" / f"{run_id}.json").write_text(json.dumps({
+            "run_id": run_id, "bot": "social-agent", "template": "preview-post",
+            "status": "submitted", "decided": stamp, "data": data,
+        }), encoding="utf-8")
+
+    write_result("manual-approved", {
+        "decision": "approve", "platforms": [], "comment": "",
+        "per_platform": {"x": {"mode": "manual", "decision": "approved"}},
+    })
+    write_result("auto-done", {
+        "decision": "approve", "platforms": [], "comment": "",
+        "per_platform": {"linkedin": {"mode": "auto", "decision": "done"}},
+    })
+    write_result("unknown-decision", {
+        "decision": "approve", "platforms": ["x"], "comment": "",
+        "per_platform": {"x": {"mode": "auto", "decision": "posted"}},
+    })
+    write_result("legacy", {"decision": "approve", "platforms": ["linkedin"], "comment": ""})
+    write_result("platforms-disagree", {
+        "decision": "approve", "platforms": ["x"], "comment": "",
+        "per_platform": {"x": {"mode": "manual", "decision": "done"}},
+    })
+    code, out = _run(cli.command_results, base, since=stamp, bot=None, wait=0)
+    assert code == 0
+    for item in out["results"]:
+        assert "summary" not in item, item["run_id"]
+
+
+def test_preview_post_submit_rejects_an_inconsistent_result(live):
+    golden = json.loads(
+        (ROOT / "templates" / "builtin" / "preview-post" / "fixtures" / "golden.json")
+        .read_text(encoding="utf-8")
+    )
+    detail = live.runs.register(validate_payload(
+        dict(valid_payload(), template="preview-post", data=golden), live.registry
+    ))
+    with pytest.raises(SchemaError) as error:
+        live.runs.decide(detail["run_id"], "submitted", {
+            "decision": "approve", "platforms": [], "comment": "",
+            "per_platform": {"x": {"mode": "manual", "decision": "approved"}},
+        })
+    assert error.value.pointer == "/data/per_platform"
+    live.runs.decide(detail["run_id"], "submitted", {
+        "decision": "approve", "platforms": ["linkedin"], "comment": "",
+        "per_platform": {
+            "x": {"mode": "manual", "decision": "done"},
+            "linkedin": {"mode": "auto", "decision": "approved"},
+        },
+    })
 
 
 def test_results_empty_answer_without_any_result_echoes_the_cursor(tmp_path):

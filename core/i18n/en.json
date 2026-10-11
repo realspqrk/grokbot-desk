@@ -28,6 +28,7 @@
   "strip_count_all": "{m} open",
   "strip_item": "{bot} · {title}",
   "strip_group": "{bot}, {n} reports",
+  "strip_cycle": "{bot}, {n} reports. Activate again for the next report.",
   "done_title": "All done.",
   "done_closing": "This window closes in a moment.",
   "done_keep_open": "Keep open",
@@ -202,6 +203,7 @@
   "pf_image_retry": "Reload image",
   "pf_video_error": "Video could not be loaded",
   "pf_video_retry": "Reload video",
+  "pf_video_unavailable": "Video preview unavailable in this browser. You can still copy the file path or show the file in its folder.",
   "starter_note_placeholder": "Optional",
   "choice_approve": "Approve",
   "choice_reject": "Reject",
@@ -241,6 +243,8 @@
   "copy_path": "Copy file path",
   "copy_link": "Copy link",
   "replying_to": "Replying to @{handle}",
+  "replying_to_name": "Replying to {name}",
+  "replying_to_post": "Replying to this post",
   "decided_count": "{n} of {total} platforms done",
   "select_platform_manual": "Approve or mark at least one platform"
 }

@@ -198,8 +198,9 @@
         },
         "url": {
           "type": "string",
-          "pattern": "^https://",
-          "maxLength": 2048
+          "maxLength": 2048,
+          "x-rs-url": "https",
+          "description": "https address the opener accepts (hostname or IPv6, valid port, no credentials). Uppercase scheme and a zero-padded port are accepted. http is not."
         },
         "excerpt": {
           "type": "string",
