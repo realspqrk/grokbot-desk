@@ -6,7 +6,7 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
 
 const PORT = Number(process.env.RS_E2E_PORT || 18900) + 12;
 if (PORT === 18742) throw new Error('refusing the product port');
@@ -68,7 +68,7 @@ describe('P8c shape avatars (served, headless Edge)', { skip }, () => {
     runs.photo = old('Registry image');
     runs.photoShape = old('Payload shape over registry image', { avatar_shape: 'teardrop', avatar_color: 'yellow' });
     runs.photoCleared = old('Payload clears registry image', { avatar: '' });
-    browser = await chromium.launch({ channel: 'msedge', headless: true });
+    browser = await chromium.launch({ channel: browserChannel(), headless: true });
   });
 
   after(async () => {

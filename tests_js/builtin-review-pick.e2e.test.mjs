@@ -49,6 +49,14 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
     await page.reload();
     await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
   }
+  /* Open the decided report again by its own address. A plain reload is not
+     enough: after a send the page moves on to the next open report (earlier
+     tests leave some open) and puts that report's id in the address; on a
+     fast machine that happens before the reload. */
+  async function reopen(page, runId) {
+    await page.goto(server.url(`?client=test&run=${runId}`));
+    await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+  }
   async function waitResult(runId) {
     const deadline = Date.now() + 5000;
     while (!server.result(runId) && Date.now() < deadline) await sleep(20);
@@ -129,7 +137,7 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
         comment: 'Fix the fee note.',
         comments: [{ section: 4, heading: 'Plot fees', comment: 'Per season, please.' }],
       });
-      await reload(page);
+      await reopen(page, run.run_id);
       const view = await page.evaluate(() => ({
         section: document.querySelector('#rd-c-4').value,
         sectionReadOnly: document.querySelector('#rd-c-4').readOnly,
@@ -264,7 +272,7 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       await page.keyboard.press('Control+Enter');
       const result = await waitResult(run.run_id);
       assert.deepEqual(result.data, { choice: 'hilltop', note: '' });
-      await reload(page);
+      await reopen(page, run.run_id);
       const view = await page.evaluate(() => [...document.querySelectorAll('.po__card')].map((c) => [c.value, c.getAttribute('aria-checked'), c.disabled]));
       assert.deepEqual(view, [['boathouse', 'false', true], ['old-mill', 'false', true], ['hilltop', 'true', true]]);
       assert.deepEqual(errors, []);

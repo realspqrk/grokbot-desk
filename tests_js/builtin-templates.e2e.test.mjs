@@ -24,12 +24,23 @@ const RS_COUNT = createRequire(import.meta.url)('../core/static/count.js');
 const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
 
+/* A key can mount a panel whose post image then loads (preview-post shows
+   only the selected platform). Until it has loaded, Instagram blocks a new
+   approval by design, so a key sequence typed within a millisecond would
+   skip that checkbox. A person sees the image first; so does the test. */
+const mediaSettled = (page) => page.waitForFunction(
+  () => !document.querySelector('[data-image-state="loading"]'), null, { timeout: 5000 });
+
 async function runStep(page, step) {
   if (step.click) await page.click(step.click);
   else if (step.fill) await page.fill(step.fill[0], step.fill[1]);
   else if (step.type !== undefined) await page.keyboard.type(step.type);
-  else if (step.press) for (let i = 0; i < (step.repeat || 1); i++) await page.keyboard.press(step.press);
-  else throw new Error('unknown step ' + JSON.stringify(step));
+  else if (step.press) {
+    for (let i = 0; i < (step.repeat || 1); i++) {
+      await page.keyboard.press(step.press);
+      await mediaSettled(page);
+    }
+  } else throw new Error('unknown step ' + JSON.stringify(step));
 }
 
 describe('built-in templates (served, headless Edge)', { skip }, () => {
