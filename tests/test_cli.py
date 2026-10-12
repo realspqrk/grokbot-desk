@@ -1295,9 +1295,10 @@ class _QuickBindServer(__import__("http.server").server.ThreadingHTTPServer):
         self.server_name, self.server_port = self.server_address[:2]
 
 
-def _slow_cold_server(base, port, *, listen_after, answer_after, write_state=True):
+def _slow_cold_server(base, port, *, listen_after, answer_after, write_state=True, state_after=0.0):
     """A stand-in for a cold start: listens after listen_after seconds,
-    writes state.json, and only answers /hello answer_after seconds later."""
+    writes state.json state_after seconds later, and only answers /hello
+    answer_after seconds after listening."""
     import http.server
 
     class Hello(http.server.BaseHTTPRequestHandler):
@@ -1320,6 +1321,7 @@ def _slow_cold_server(base, port, *, listen_after, answer_after, write_state=Tru
         server = _QuickBindServer(("127.0.0.1", port), Hello)
         holder["server"] = server
         if write_state:
+            time.sleep(state_after)
             (Path(base) / "state.json").write_text(json.dumps({"port": port, "pid": os.getpid()}))
         server.serve_forever(poll_interval=.05)
 
@@ -1330,17 +1332,26 @@ def _slow_cold_server(base, port, *, listen_after, answer_after, write_state=Tru
     return holder, launch
 
 
-@pytest.mark.parametrize("listen_after,answer_after", [(0.9, 0.4), (0.2, 1.4)])
+@pytest.mark.parametrize(
+    "listen_after,state_after,answer_after",
+    [
+        (0.5, 0.0, 1.0),  # listens before the 1 s timeout, answers after it
+        (0.2, 0.0, 1.4),  # listens early, answers only in the grace period
+        (0.5, 2.1, 2.5),  # listens before the timeout, state.json only after the wait
+    ],
+)
 def test_cold_start_is_never_mistaken_for_a_foreign_process(
-    tmp_path, monkeypatch, listen_after, answer_after
+    tmp_path, monkeypatch, listen_after, state_after, answer_after
 ):
     """Regression: the first show after a cold start exited 4 with 'port is
     held by a foreign process' while the holder was the server that same show
-    had just spawned (it listened, or answered, only as the start timeout
-    ran out)."""
+    had just spawned (it listened, wrote its state, or answered only as the
+    start timeout ran out). Each case keeps its events at least 0.4 s away
+    from the timeout, so a slow runner cannot reorder them."""
     port = free_port()
     holder, launch = _slow_cold_server(
-        tmp_path, port, listen_after=listen_after, answer_after=answer_after
+        tmp_path, port, listen_after=listen_after, answer_after=answer_after,
+        state_after=state_after,
     )
     monkeypatch.setattr(cli_module, "launch_server", launch)
     monkeypatch.setattr(cli_module, "_server_start_timeout_seconds", lambda: 1.0)

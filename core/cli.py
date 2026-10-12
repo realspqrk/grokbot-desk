@@ -194,6 +194,23 @@ def _started_by_us(base, port, launched_at):
     return _state(base).get("port") == port and written >= launched_at - 1
 
 
+# The server binds its socket and then writes state.json. A port that opened
+# just as the start timeout ran out may be ours with the state not written yet,
+# so a listening port waits this long for our state before it counts as foreign.
+STATE_GRACE_S = 2.0
+
+
+def _await_own_state(base, port, launched_at):
+    if not _port_open(port):
+        return False
+    until = time.monotonic() + STATE_GRACE_S
+    while time.monotonic() < until:
+        if _started_by_us(base, port, launched_at):
+            return True
+        time.sleep(.05)
+    return _started_by_us(base, port, launched_at)
+
+
 def _ensure_server(base, port):
     hello = _hello(port)
     if hello:
@@ -213,7 +230,7 @@ def _ensure_server(base, port):
         if hello:
             return hello
         time.sleep(.05)
-    if _started_by_us(base, port, launched_at):
+    if _started_by_us(base, port, launched_at) or _await_own_state(base, port, launched_at):
         # ours, listening but still busy: one more grace period to answer
         grace = time.monotonic() + startup_timeout
         while time.monotonic() < grace:
