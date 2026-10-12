@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { calmEvaluator, judgeCalmFacts, CALM_THRESHOLDS } from '../tools/calm.mjs';
 
 const PORT = Number(process.env.RS_E2E_PORT || 18900) + 15;
 if (PORT === 18742) throw new Error('refusing the product port');
@@ -74,6 +75,8 @@ test('the CTA table: every label key exists in English and German; information o
   assert.equal(TASKS.labelKey('review', 'request_changes'), 'changes');
   assert.equal(TASKS.baseOf({ kind: 'blocking', base: 'pick' }), 'pick');
   assert.equal(TASKS.lineKey({ kind: 'blocking', base: 'pick' }), 'task_line_blocking');
+  assert.ok(TASKS.allowed('post_yourself').variants.includes('send_request'),
+    'a user change request submits with Send request');
 });
 
 test('per-actor lines: the person first, the bot by its verb, nothing once every one is out, past tense once decided', () => {
@@ -100,6 +103,24 @@ test('per-actor lines: the person first, the bot by its verb, nothing once every
     ['user', 'task_you_do', ['reply', 'item']],
     ['bot', 'task_bot_none_send', []],
   ]);
+  const blocked = [
+    { id: 'x', role: 'manual' },
+    { id: 'linkedin', role: 'auto' },
+    { id: 'instagram', role: 'auto', blocked: true },
+  ];
+  assert.deepEqual(keys(TASKS.actorLines(blocked, { verb: 'post' })), [
+    ['user', 'task_you_post', ['x']],
+    ['bot', 'task_bot_post', ['linkedin']],
+  ], 'a blocked platform is not planned before any tick');
+  assert.deepEqual(TASKS.actorLines(blocked, { verb: 'post' }).flatMap((line) => line.dropped), [],
+    'a blocked platform is not described as unticked');
+  const over = [{ id: 'x', role: 'manual', blocked: true, on: false }, { id: 'linkedin', role: 'auto', on: true }];
+  const overLines = TASKS.actorLines(over, { verb: 'post' });
+  assert.deepEqual(keys(overLines), [
+    ['user', 'task_you_none_post', []],
+    ['bot', 'task_bot_post', ['linkedin']],
+  ]);
+  assert.deepEqual(overLines.flatMap((line) => line.names.concat(line.dropped)).map((party) => party.id), ['linkedin']);
   assert.deepEqual(TASKS.nounOf([{ noun: 'reply' }, { noun: 'reply' }]), 'reply');
   assert.deepEqual(TASKS.nounOf([{ noun: 'reply' }, { noun: 'post' }]), 'item');
   assert.deepEqual(TASKS.shortList(['LinkedIn', 'Instagram', 'Facebook']), { shown: ['LinkedIn', 'Instagram', 'Facebook'], more: 0 });
@@ -207,6 +228,16 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       edge: getComputedStyle(box.querySelector('.rs-task__inner')).borderLeftColor,
     };
   });
+
+  async function assertReading(page) {
+    const facts = await page.evaluate(calmEvaluator, { thresholds: CALM_THRESHOLDS });
+    const judged = judgeCalmFacts(facts);
+    const wide = (facts.K7.wide_text || [])
+      .map((item) => `${item.identity} ${Math.round(item.width)}>${Math.round(item.max_width)}`)
+      .join('; ');
+    assert.equal(judged.items.K6.pass, true, (judged.items.K6.reasons || []).join('; '));
+    assert.equal(judged.items.K7.pass, true, wide || (judged.items.K7.reasons || []).join('; '));
+  }
 
   const footer = (page) => page.evaluate(() => {
     const shown = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
@@ -480,12 +511,22 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       const view = await banner(page);
       assert.equal(view.what, t('task_line_do'));
       assert.equal(view.steps, t('task_steps_do'));
-      assert.equal(await page.textContent('#rs-status'), t('decision_pick_user'));
+      assert.equal(await page.textContent('#rs-status'), t('decision_pick_user', {
+        choice: de.done_mark.replace(/ ✓$/, ''), skip: de.skip,
+      }));
       const labels = await page.$$eval('[data-ao="choice"] button', (buttons) => buttons.map((b) => b.textContent));
       assert.deepEqual(labels, [t('done_mark'), t('skip'), t('request_changes')]);
       await page.click('[data-ao="choice"] button[value="request_changes"]');
+      assert.equal(await page.isDisabled('#rs-submit'), true, 'a change request still needs a comment');
       await page.fill('#ao-comment', 'Use the new address.');
-      assert.equal(await page.textContent('#rs-submit-label'), t('send_request'));
+      const table = TASKS.allowed('post_yourself', { verb: 'continue' });
+      const texts = (keys) => keys.map((key) => t(key, { name: '' }).trim());
+      const allowed = new Set([...texts(table.primary), ...texts(table.secondary), ...texts(table.items), ...texts(table.variants)]);
+      assert.ok(allowed.has(await page.textContent('#rs-submit-label')), [...allowed].join(' | '));
+      await page.click('#rs-submit');
+      const deadline = Date.now() + 5000;
+      while (!server.result(generic.run_id) && Date.now() < deadline) await sleep(20);
+      assert.deepEqual(server.result(generic.run_id).data, { decision: 'request_changes', comment: 'Use the new address.' });
     } finally { await ctx.close(); }
     const sent = show('review-doc', { ...fixture('review-doc', 'golden'), actor: 'user', action: 'send' });
     const sentPage = await openRun(sent);
@@ -558,7 +599,8 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
           steps([['task_step_auto', 'LinkedIn'], ['task_step_manual', 'X']], 'task_steps_tail_then', 'submit_mixed'), 'initial');
         assert.deepEqual(await bar(), { label: tl('submit_mixed'), disabled: true, status: tl('select_platform_manual') }, 'initial');
         const stepsRows = await page.$eval('.rs-task__steps', (el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
-        assert.equal(stepsRows, 1, 'the steps stay on one line at 864 px');
+        assert.equal(stepsRows, 1, 'the two-platform steps stay on one line inside the measure');
+        await assertReading(page);
 
         await page.check('#approve-linkedin');
         assert.deepEqual(await lines(), [
@@ -617,6 +659,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         await page.fill('#pp-comment', 'Use the new date.');
         assert.deepEqual((await banner(page)).actors, [['user', tl('task_you_changes')], ['bot', tl('task_bot_none_post', { bot })]]);
         assert.equal((await banner(page)).steps, tl('task_steps_changes', { button: tl('send_request') }));
+        await assertReading(page);
         await page.click('#rs-submit');
         await decided(page);
         assert.deepEqual((await banner(page)).actors, [['user', tl('task_you_changes_done')], ['bot', tl('task_bot_none_post', { bot })]]);
@@ -663,6 +706,191 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
           ['user', tl('task_you_post_done', { names: tl('task_noun_reply_one') })],
           ['bot', tl('task_bot_send_done', { bot, names: tl('task_noun_item_one') })],
         ], 'decided');
+        assert.deepEqual(errors, []);
+      } finally { await ctx.close(); }
+    });
+
+    test(`${lang}: an explicit steps line stays while actor lines and the footer update`, async () => {
+      const srv = on();
+      const bot = 'Research Agent';
+      const previewSteps = lang === 'de'
+        ? 'Vor Freigabe die Kurstermine mit dem Besitzer absprechen.'
+        : 'Confirm the workshop dates with the owner before approving.';
+      const listSteps = lang === 'de'
+        ? 'Vor Freigabe die Rechnungssummen mit der Buchhaltung abgleichen.'
+        : 'Confirm the invoice totals with accounting before approving.';
+      await srv.clearRuns();
+      const preview = srv.show(mixedPost, {
+        template: 'preview-post', version: 1, title: 'Bread course',
+        bot: 'research-agent', identity: { name: bot },
+        task: { kind: 'approve_bot_acts', steps: previewSteps },
+      });
+      const opened = await open(`&run=${preview.run_id}`, { server: srv, viewport: { width: 864, height: 836 } });
+      try {
+        assert.equal((await banner(opened.page)).steps, previewSteps, 'preview initial');
+        await opened.page.check('#approve-linkedin');
+        const ticked = await banner(opened.page);
+        assert.equal(ticked.steps, previewSteps, 'preview ticked');
+        assert.equal(ticked.actors[1][1], tl('task_bot_post', { bot, names: 'LinkedIn' }));
+        assert.equal(await opened.page.textContent('#rs-submit-label'), tl('approve_post'));
+        await opened.page.click('#rs-alt');
+        await opened.page.fill('#pp-comment', 'Use the new date.');
+        const changes = await banner(opened.page);
+        assert.equal(changes.steps, previewSteps, 'preview changes');
+        assert.equal(changes.actors[0][1], tl('task_you_changes'));
+        await opened.page.reload();
+        await opened.page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
+        const reloaded = await banner(opened.page);
+        assert.equal(reloaded.steps, previewSteps, 'preview reloaded');
+        assert.equal(reloaded.actors[0][1], tl('task_you_changes'));
+        assert.deepEqual(opened.errors, []);
+      } finally { await opened.ctx.close(); }
+
+      const list = srv.show(mixedList, {
+        template: 'decide-list', version: 1, title: 'Replies and invoices', bot: 'inbox-agent',
+        task: { kind: 'approve_bot_acts', steps: listSteps },
+      });
+      const listed = await open(`&run=${list.run_id}`, { server: srv });
+      try {
+        assert.equal((await banner(listed.page)).steps, listSteps, 'list initial');
+        await listed.page.click('[data-rs-item][data-current] rs-action-row button[value="done"]');
+        await listed.page.click('[data-rs-item][data-current] rs-action-row button[value="skipped"]');
+        const chosen = await banner(listed.page);
+        assert.equal(chosen.steps, listSteps, 'list chosen');
+        assert.equal(chosen.actors[0][1], tl('task_you_post', { names: tl('task_noun_reply_one') }));
+        assert.equal(await listed.page.textContent('#rs-submit-label'), tl('submit'));
+        await listed.page.reload();
+        await listed.page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
+        assert.equal((await banner(listed.page)).steps, listSteps, 'list reloaded');
+        assert.equal((await banner(listed.page)).actors[0][1], tl('task_you_post', { names: tl('task_noun_reply_one') }));
+        assert.deepEqual(listed.errors, []);
+      } finally { await listed.ctx.close(); }
+    });
+
+    test(`${lang}: a blocked platform is left out of the initial plan`, async () => {
+      const srv = on();
+      const bot = 'Research Agent';
+      const meta = { template: 'preview-post', version: 1, title: 'Bread course', bot: 'research-agent', identity: { name: bot } };
+      await srv.clearRuns();
+      const missing = srv.show({
+        author: mixedPost.author, text: mixedPost.text, hashtags: mixedPost.hashtags,
+        platforms: [
+          { platform: 'x', mode: 'manual' },
+          { platform: 'linkedin', mode: 'auto' },
+          { platform: 'instagram', mode: 'auto' },
+        ],
+      }, meta);
+      const noImage = await open(`&run=${missing.run_id}`, { server: srv, viewport: { width: 864, height: 836 } });
+      try {
+        const view = await banner(noImage.page);
+        const planned = view.actors.map((entry) => entry[1]).join(' | ');
+        assert.equal(planned.includes('Instagram'), false, planned);
+        assert.match(planned, /X/);
+        assert.match(planned, /LinkedIn/);
+        assert.equal(view.steps.includes('Instagram'), false, view.steps);
+        assert.equal(await noImage.page.textContent('#rs-submit-label'), tl('submit_mixed'));
+        assert.deepEqual(noImage.errors, []);
+      } finally { await noImage.ctx.close(); }
+
+      const limitData = fixture('preview-post', 'edge-x-limit');
+      limitData.platforms = [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'auto' }];
+      const limited = srv.show(limitData, meta);
+      const over = await open(`&run=${limited.run_id}`, { server: srv });
+      try {
+        const view = await banner(over.page);
+        assert.equal(view.actors[0][1], tl('task_you_none_post'));
+        assert.match(view.actors[1][1], /LinkedIn/);
+        assert.equal(`${view.actors[0][1]} ${view.actors[1][1]} ${view.steps}`.includes('X'), false);
+        assert.equal(await over.page.textContent('#rs-submit-label'), tl('approve_post'));
+        assert.deepEqual(over.errors, []);
+      } finally { await over.ctx.close(); }
+    });
+
+    test(`${lang}: a longer mixed steps list wraps inside the reading measure`, async () => {
+      const srv = on();
+      await srv.clearRuns();
+      const run = srv.show(fixture('preview-post', 'golden'), {
+        template: 'preview-post', version: 1, title: 'Autumn menu',
+        bot: 'research-agent', identity: { name: 'Research Agent' },
+      });
+      const { ctx, page, errors } = await open(`&run=${run.run_id}`, { server: srv, viewport: { width: 864, height: 836 } });
+      try {
+        const fit = await page.$eval('.rs-task__steps', (el) => {
+          const style = getComputedStyle(el);
+          return {
+            rows: Math.round(el.getBoundingClientRect().height / parseFloat(style.lineHeight)),
+            overflow: el.scrollWidth - el.clientWidth,
+          };
+        });
+        assert.ok(fit.overflow <= 1, JSON.stringify(fit));
+        if (lang === 'de') assert.ok(fit.rows >= 2, `the longer German list wraps (${JSON.stringify(fit)})`);
+        await assertReading(page);
+        assert.deepEqual(errors, []);
+      } finally { await ctx.close(); }
+    });
+
+    test(`${lang}: a user send hint names Sent, and Send request stays in the user table`, async () => {
+      const srv = on();
+      await srv.clearRuns();
+      const summary = lang === 'de' ? 'Schick das Formular an die Werkstatt.' : 'Send the form to the workshop.';
+      const sent = srv.show({ summary, actor: 'user', action: 'send' }, {
+        template: 'approve-one', version: 1, title: 'Send the form',
+      });
+      const sentPage = await open(`&run=${sent.run_id}`, { server: srv });
+      try {
+        const word = (lang === 'de' ? de : en).sent_mark.replace(/ ✓$/, '');
+        assert.equal(await sentPage.page.textContent('#rs-status'), tl('decision_pick_user', { choice: word, skip: tl('skip') }));
+        assert.equal(await sentPage.page.textContent('#rs-submit-label'), tl('sent_mark'));
+        assert.deepEqual(sentPage.errors, []);
+      } finally { await sentPage.ctx.close(); }
+
+      const changes = srv.show({ summary, actor: 'user', allow_changes: true }, {
+        template: 'approve-one', version: 1, title: 'Correct the form',
+      });
+      const changesPage = await open(`&run=${changes.run_id}`, { server: srv });
+      try {
+        await changesPage.page.click('[data-ao="choice"] button[value="request_changes"]');
+        assert.equal(await changesPage.page.isDisabled('#rs-submit'), true);
+        await changesPage.page.fill('#ao-comment', 'Use the new address.');
+        const table = TASKS.allowed('post_yourself', { verb: 'continue' });
+        const texts = (keys) => keys.map((key) => tl(key, { name: '' }).trim());
+        const allowed = new Set([...texts(table.primary), ...texts(table.secondary), ...texts(table.items), ...texts(table.variants)]);
+        assert.ok(allowed.has(await changesPage.page.textContent('#rs-submit-label')), [...allowed].join(' | '));
+        await changesPage.page.click('#rs-submit');
+        const deadline = Date.now() + 5000;
+        while (!srv.result(changes.run_id) && Date.now() < deadline) await sleep(20);
+        assert.deepEqual(srv.result(changes.run_id).data, { decision: 'request_changes', comment: 'Use the new address.' });
+        assert.deepEqual(changesPage.errors, []);
+      } finally { await changesPage.ctx.close(); }
+    });
+
+    test(`${lang}: an information note survives reload and switching runs`, async () => {
+      const srv = on();
+      const note = 'Please keep the old backup too.';
+      await srv.clearRuns();
+      const run = srv.show(
+        { actor: 'none', summary: lang === 'de' ? 'Das Backup ist fertig.' : 'The backup is complete.' },
+        { template: 'approve-one', version: 1, title: 'Read the backup report', bot: 'research-agent', identity: { name: 'Research Agent' } },
+      );
+      const other = srv.show(fixture('pick-option', 'golden'), {
+        template: 'pick-option', version: 1, title: 'Venue', bot: 'inbox-agent', identity: { name: 'Inbox Agent' },
+      });
+      const { ctx, page, errors } = await open(`&run=${run.run_id}`, { server: srv });
+      try {
+        await page.click('#rs-mount summary');
+        await page.fill('#ao-comment', note);
+        await page.reload();
+        await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
+        assert.equal(await page.inputValue('#ao-comment'), note, 'reload');
+        await page.click(`.rs-strip__run[data-run-id="${other.run_id}"]`);
+        await page.waitForFunction((id) => new URL(location.href).searchParams.get('run') === id, other.run_id);
+        await page.click(`.rs-strip__run[data-run-id="${run.run_id}"]`);
+        await page.waitForFunction((id) => new URL(location.href).searchParams.get('run') === id, run.run_id);
+        assert.equal(await page.inputValue('#ao-comment'), note, 'switched back');
+        await page.click('#rs-submit');
+        const deadline = Date.now() + 5000;
+        while (!srv.result(run.run_id) && Date.now() < deadline) await sleep(20);
+        assert.deepEqual(srv.result(run.run_id).data, { decision: 'acknowledged', comment: note });
         assert.deepEqual(errors, []);
       } finally { await ctx.close(); }
     });

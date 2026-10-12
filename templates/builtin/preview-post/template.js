@@ -559,14 +559,16 @@ function update(save) {
 }
 
 /* A mix gets one banner line per actor. Until something is ticked every
-   platform is the plan; after that an unticked one is out (the bot does not
-   post it, or you report it skipped), and a change request means nobody
-   posts. The decided banner words the same state in the past. The steps
-   say per actor what is still open, then the footer as it reads now. */
+   approvable platform is the plan; a blocked one (over the limit, or
+   Instagram without media) is never in that plan. After a tick an unticked
+   approvable one is out, and a change request means nobody posts. The
+   decided banner words the same state in the past. The steps say per actor
+   what is still open, then the footer as it reads now. */
 function refreshBanner(list) {
   if (!anyManual || selfPost || typeof RS.setTaskLive !== 'function') return;
+  var approvable = platforms.filter(function (p) { return !fixedBlock[p]; });
   var picked = list.length > 0;
-  var chosen = picked ? list : platforms;
+  var chosen = picked ? list : approvable;
   var hasAuto = chosen.some(function (p) { return !manual(p); });
   RS.setTaskLive({
     parties: platforms.map(function (p) {

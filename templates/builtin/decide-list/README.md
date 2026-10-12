@@ -84,7 +84,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | `section_todo` | Needs you | Wartet auf dich |
 | `choice_approve`, `choice_reject`, `choice_defer` | Approve, Reject, Defer | Genehmigen, Ablehnen, Zurückstellen |
 | `done_mark`, `posted`, `skip`, `later` | Done ✓ or Posted ✓, Skip, Later (user items) | Erledigt ✓ or Gepostet ✓, Überspringen, Später |
-| `footer_done` | Done (footer when every item is a user item and none was posted) | Fertig |
+| `footer_done` | Done (footer when every item is a user item) | Fertig |
 | `links_label` | Links (name of a row that holds more than one link) | Links |
 | `choice_group_label` | Decision: {what} (name of each choice row) | Entscheidung: {what} |
 | `due` | due {date} | fällig {date} |

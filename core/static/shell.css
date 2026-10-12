@@ -137,12 +137,16 @@ button, input, textarea, select { font: inherit; color: inherit; }
   gap: var(--space-1) var(--space-3);
 }
 .rs-task__what { font-weight: var(--rs-fw-strong); }
-/* a mixed report: one line per actor, the person first */
-.rs-task__what[data-actors] { display: grid; flex-basis: 100%; }
-/* its steps name each actor's platforms on one line, across the banner */
-.rs-task__inner > .rs-task__line[data-actors] { max-width: none; }
+/* a mixed report: one line per actor, the person first, inside the measure */
+.rs-task__what[data-actors] {
+  display: grid;
+  flex-basis: 100%;
+  max-width: var(--rs-measure);
+  min-width: 0;
+}
+.rs-task__actor { min-width: 0; }
 .rs-task__meta { color: var(--rs-muted); font-size: var(--rs-fs-sm); white-space: nowrap; }
-.rs-task__steps { font-size: var(--rs-fs-sm); }
+.rs-task__steps { max-width: var(--rs-measure); min-width: 0; font-size: var(--rs-fs-sm); }
 .rs-task__more > summary {
   width: fit-content;
   color: var(--rs-muted);
@@ -649,6 +653,7 @@ a.rs-ext:hover { color: var(--rs-ink); }
 
 .rs-label {
   display: block;
+  max-width: var(--rs-measure);
   margin-bottom: var(--space-1);
   font-size: var(--rs-fs-sm);
   font-weight: var(--rs-fw-strong);

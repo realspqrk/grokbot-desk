@@ -10,12 +10,12 @@ py -3 report_shell.py wait <run_id> --timeout 120
 ## What the person sees
 
 - The `summary` first (as the why of the task banner above the title, unless the payload brings its own `task.why` or the summary has a link), then the key `facts` as label/value pairs and the `copy` values next to copy icons.
-- Right below: one segmented choice, `Approve` / `Reject` (plus `Request changes` with `allow_changes`). Nothing is preselected; the primary stays disabled with `Please approve or reject` until a choice is made.
-- The primary names what will be sent: the payload's `approve_label` (default `Approve`), `Send rejection` or `Send request`. Ctrl+Enter sends too.
+- Right below: one segmented choice, `Approve` / `Reject` (plus `Request changes` with `allow_changes`). Nothing is preselected; the primary stays disabled with `Please approve or reject` until a choice is made. A user action says `Choose Done or Skip`, `Choose Sent or Skip`, or `Choose Posted or Skip`, matching the choices on screen.
+- The primary names what will be sent: `Approve & post`, `Approve & send` or `Approve & continue` (from `action`; `approve_label` overrides that phrase), `Send rejection` or `Send request`. There is no plain `Approve` default. Ctrl+Enter sends too.
 - `Add note` (shown on hover and keyboard focus) opens an optional note for Approve or Reject. Picking `Request changes` opens the same field as a required comment (`What should change?`); click, Enter or Space on it moves the focus there, the arrow keys only change the choice. While the comment is empty the primary is disabled and the status reads `Please write a comment to request changes`.
 - What is visible is what is sent: a note that is not shown is never part of the result.
 - Below the decision: `points` as a quiet list (heading `points_title`, default `Details`), `checks` with status dots (ok, needs a look, failed) and the `reference` text behind a closed disclosure with its own copy icon.
-- The decision and the comment are kept as a draft and come back after a reload. A sent report shows the sent decision and comment, read-only.
+- The decision and the comment are kept as a draft and come back after a reload, including the information-only note (its disclosure may stay closed). A sent report shows the sent decision and comment, read-only.
 
 ## Payload `data` (`schema.json`)
 
@@ -38,9 +38,9 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | Field | Rule |
 |---|---|
 | `summary` | required, 1–600, plain text (newlines kept). An http(s) address in the text becomes a link |
-| `actor` | optional `bot` (default), `user` or `none`. `user`: Done ✓ / Skip (`done` / `skipped`), or Sent ✓ when `action` is `send`, or Posted ✓ when `task.kind` is `post_yourself`. `allow_changes` adds Request changes. `none`: only Got it, sent at once (`acknowledged`), plus one collapsed note. The bot never acts on `user` or `none`. A payload `task.kind` sets the actor when left out (`post_yourself` = `user`, `fyi` = `none`) |
-| `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. For a bot decision, `post` labels the primary Approve & post, `send` labels it Approve & send, any other verb labels it Approve & continue |
-| `approve_label` | optional, 1–24; overrides `action` and the default Approve once Approve is picked |
+| `actor` | optional `bot` (default), `user` or `none`. `user`: the mark names what the person did. Posted ✓ for a post (`task.kind` `post_yourself`), Sent ✓ when `action` is `send`, Done ✓ only when there is no specific content or action. Results stay `done` / `skipped`. `allow_changes` adds Request changes. `none`: only Got it, sent at once (`acknowledged`), plus one collapsed note. The bot never acts on `user` or `none`. A payload `task.kind` sets the actor when left out (`post_yourself` = `user`, `fyi` = `none`) |
+| `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. For a bot decision, `post` labels the primary Approve & post, `send` labels it Approve & send, any other verb labels it Approve & continue. For a user decision, `send` labels the choice Sent ✓ |
+| `approve_label` | optional, 1–24; overrides the action phrase (Approve & continue, or Approve & post / send) once Approve is picked. There is no plain Approve default |
 | `allow_changes` | optional boolean, default `false`; offers `Request changes` |
 | `facts[]` | optional, at most 6 of `{label 1–24, value 1–120, mono?}` |
 | `copy[]` | optional, at most 3 of `{label 1–24, text 1–2000}`; each value is shown in full next to its button |
@@ -73,7 +73,7 @@ Empty sections are not rendered.
 | `choice_approve`, `choice_reject`, `request_changes` | Approve, Reject, Request changes | Genehmigen, Ablehnen, Änderungen anfordern |
 | `decision_label` | Decision (name of the choice row) | Entscheidung |
 | `decision_pick` | Please approve or reject | Bitte genehmigen oder ablehnen |
-| `decision_pick_user` | Choose Done or Skip | Wähle Erledigt oder Überspringen |
+| `decision_pick_user` | Choose {choice} or {skip} (Done, Sent or Posted, matching the choices) | Wähle {choice} oder {skip} |
 | `add_note`, `note` | Add note, Note | Notiz hinzufügen, Notiz |
 | `request_changes_label`, `comment_required` | What should change?; Please write a comment to request changes | Was soll sich ändern?; Für Änderungen bitte einen Kommentar schreiben |
 | `send_rejection`, `send_request` | Send rejection, Send request | Ablehnung senden, Änderungen senden |

@@ -798,8 +798,8 @@
     return list.more ? t('task_names_more', { names: names, n: number(list.more) }) : names;
   }
 
-  /* "LinkedIn: tick Approve · X: copy, post it yourself, tick Posted ✓ ·
-     then press Submit"; button is the footer as it reads now. */
+  /* "LinkedIn: tick Approve · X: copy, post, Posted ✓ · then Submit";
+     button is the footer as it reads now. */
   function mixedStepsText(parties, button) {
     var plan = TASKS.mixedSteps(parties);
     var parts = plan.segments.map(function (segment) { return t(segment.key, { names: partyNames(segment.names) }); });
@@ -837,11 +837,13 @@
      parties with on (ticked or chosen) or changes (a change request) for a
      mixed report, which also words the decided banner. stepsFor
      mixed_platforms words the steps from those parties (on, blocked) and
-     stepsButton. Due-today and blocking keep the urgent tone; a decided
-     banner stays quiet. */
+     stepsButton. An explicit task.steps stays as written: live updates
+     refresh the actor lines and the footer, not that line. Due-today and
+     blocking keep the urgent tone; a decided banner stays quiet. */
   function applyTaskLive(patch) {
     if (!patch || !state.active) return;
     var run = state.active;
+    var task = taskOf(run);
     var decided = run.state !== 'open';
     var what = el.taskInner.querySelector('.rs-task__what');
     var steps = el.taskInner.querySelector('.rs-task__steps');
@@ -849,10 +851,12 @@
       state.taskLive = { runId: run.run_id, parties: patch.parties, changes: !!patch.changes };
       if (what && what.hasAttribute('data-actors')) fillActors(what, run);
     } else if (patch.what != null && what) what.textContent = String(patch.what);
-    var button = patch.stepsButton != null ? String(patch.stepsButton) : t(TASKS.primaryKey('approve_bot_acts', { verb: taskOf(run).verb }));
-    if (patch.stepsFor === 'mixed_platforms' && patch.parties && steps) steps.textContent = mixedStepsText(patch.parties, button);
-    else if (patch.stepsKey && steps) steps.textContent = t(patch.stepsKey, { button: button });
-    else if (patch.steps != null && steps) steps.textContent = String(patch.steps);
+    var button = patch.stepsButton != null ? String(patch.stepsButton) : t(TASKS.primaryKey('approve_bot_acts', { verb: task.verb }));
+    if (!task.steps) {
+      if (patch.stepsFor === 'mixed_platforms' && patch.parties && steps) steps.textContent = mixedStepsText(patch.parties, button);
+      else if (patch.stepsKey && steps) steps.textContent = t(patch.stepsKey, { button: button });
+      else if (patch.steps != null && steps) steps.textContent = String(patch.steps);
+    }
     var blocking = taskOf(run).kind === 'blocking';
     if (patch.tone && !decided && el.task.getAttribute('data-due-urgent') !== 'true' && !blocking) {
       el.task.setAttribute('data-tone', patch.tone);

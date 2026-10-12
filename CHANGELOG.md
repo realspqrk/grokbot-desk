@@ -17,7 +17,8 @@
   contradicts it.
 - Buttons follow the kind, from one table for the actor-model built-ins:
   `Posted ✓` / `Skip` when you post it yourself, `Done ✓` / `Skip` when you
-  do something else (`Sent ✓` when `action` is `send`), `Approve & post` /
+  do something else (`Sent ✓` when `action` is `send`; Done only when there
+  is no specific content or action), `Approve & post` /
   `send` / `continue` when the bot acts, `Choose`, `Got it` alone for
   information (one collapsed note, no Request changes, no Discard),
   `Looks good` / `Changes` for a review. `Posted ✓` is for a manual
@@ -30,11 +31,14 @@
   `Inbox Agent posts after approval: LinkedIn`, or counted for a list
   (`You post: 2 replies` / `Inbox Agent sends after approval: 3 items`).
   The lines follow the ticks and choices (`Inbox Agent posts nothing:
-  LinkedIn not ticked`), and the decided banner says what each side did
-  (`You posted: X` / `Inbox Agent posts now: LinkedIn`). A mixed
-  preview's steps say per actor what is still open, on one line, then the
-  footer as it reads now (`LinkedIn: tick Approve · X: copy, post it
-  yourself, tick Posted ✓ · then press Submit`). Its primary reads `Submit`
+  LinkedIn not ticked`). A platform that cannot be approved is left out of
+  the plan from the start. The decided banner says what each side did
+  (`You posted: X` / `Inbox Agent posts now: LinkedIn`). A supplied
+  `task.steps` stays; live updates do not replace it. A mixed preview's
+  steps say per actor what is still open, then the footer as it reads now
+  (`LinkedIn: tick Approve · X: copy, post, Posted ✓ · then Submit`).
+  That two-platform line fits the 72-character measure; a longer list wraps.
+  Its primary reads `Submit`
   while both act (`Approve & post` with only auto platforms ticked,
   `Posted ✓` with only manual ones), and the status splits the count
   (`1 approved · 1 posted`). The result is unchanged. `decide-list`

@@ -12,7 +12,7 @@
     "actor": {
       "enum": ["bot", "user", "none"],
       "default": "bot",
-      "description": "Who acts next. bot (default): Looks good / Changes, or Approve & post / send / continue when action is set; results approve / request_changes. user: the person does it (Done / Skip, or Sent when action is send, or Posted when task.kind is post_yourself; results done / skipped). none: info only (Got it, plus one optional collapsed note; no section comments; result acknowledged). The bot never acts on user or none."
+      "description": "Who acts next. bot (default): Looks good / Changes, or Approve & post / send / continue when action is set; results approve / request_changes. user: the person does it and reports back. The mark names what they did: Posted when task.kind is post_yourself, Sent when action is send, Done only when there is no specific content or action. Results stay done / skipped. none: info only (Got it, plus one optional collapsed note; no section comments; result acknowledged). The bot never acts on user or none."
     },
     "action": {
       "type": "string",

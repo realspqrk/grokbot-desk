@@ -159,6 +159,7 @@ function render() {
 
 function update(save) {
   if (!values.length) {
+    if (save && RS.run.state === 'open') RS.draft.set({ decision: 'acknowledged', comment: comment.value });
     RS.setSubmitLabel(label('acknowledged'));
     var noted = /\S/.test(comment.value) ? comment.value : '';
     RS.setResult({ decision: 'acknowledged', comment: noted });
@@ -170,7 +171,9 @@ function update(save) {
   if (!decision) {
     RS.setSubmitLabel(label(values[0]));
     RS.setResult(null);
-    RS.setStatus(RS.t(actor === 'user' ? 'decision_pick_user' : 'decision_pick'));
+    RS.setStatus(actor === 'user'
+      ? RS.t('decision_pick_user', { choice: label('done').replace(/ ✓$/, ''), skip: RS.t('skip') })
+      : RS.t('decision_pick'));
     return;
   }
   if (decision === 'request_changes') {

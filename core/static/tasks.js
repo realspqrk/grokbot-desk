@@ -30,7 +30,7 @@
       secondary: ['skipped'],
       items: { done: 'posted', skipped: 'skip', later: 'later' },
       discard: true,
-      variants: ['footer_done', 'done_mark', 'sent_mark', 'request_changes']
+      variants: ['footer_done', 'done_mark', 'sent_mark', 'request_changes', 'send_request']
     },
     approve_bot_acts: {
       primary: 'approve',
@@ -189,9 +189,12 @@
     });
     function split(list) {
       if (opts.changes) return { names: [], dropped: [] };
+      /* a blocked platform cannot be approved, so it is never planned and
+         never described as merely unticked */
+      var open = list.filter(function (party) { return !party.blocked; });
       return {
-        names: list.filter(function (party) { return party.on !== false; }),
-        dropped: opts.decided ? [] : list.filter(function (party) { return party.on === false; })
+        names: open.filter(function (party) { return party.on !== false; }),
+        dropped: opts.decided ? [] : open.filter(function (party) { return party.on === false; })
       };
     }
     var lines = [];
@@ -215,8 +218,8 @@
   }
 
   /* The steps of a mixed preview, one line: per role what is still open, in
-     tab order ("LinkedIn: tick Approve · X: copy, post it yourself, tick
-     Posted ✓"), then the footer as it reads now (tail then, before any
+     tab order ("LinkedIn: tick Approve · X: copy, post, Posted ✓"),
+     then the footer as it reads now (tail then, before any
      tick; or, while something is left; now, once nothing is). A platform
      that cannot be approved (blocked) is never a step. */
   var STEP_KEYS = { auto: 'task_step_auto', manual: 'task_step_manual' };

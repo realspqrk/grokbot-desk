@@ -18,7 +18,7 @@ MAX_WHY = 360
 MAX_WHY_SENTENCES = 3
 
 # Kinds each built-in can show (blocking wraps the derived kind). Templates
-# without an actor model accept every kind and keep their own controls.
+# without an actor model accept review or blocking only and keep their own controls.
 APPLICABLE = {
     "approve-one": {"approve_bot_acts", "post_yourself", "fyi", "blocking"},
     "review-doc": {"review", "approve_bot_acts", "post_yourself", "fyi", "blocking"},

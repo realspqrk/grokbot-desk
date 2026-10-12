@@ -330,7 +330,9 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
         };
       });
       assert.match(view.summary, /You paste the corrected tagline/);
-      assert.match(view.summary, /Looks good means those three are live/);
+      assert.match(view.summary, /Done means those three are live/);
+      assert.match(view.summary, /Erledige das selbst/);
+      assert.equal(await page.textContent('#rs-submit-label'), de.done_mark);
       assert.equal(view.repeated, false);
       assert.match(view.verdict, /fix the tagline, the description and the price/);
       assert.equal(view.verdictBeforeCopies, true);

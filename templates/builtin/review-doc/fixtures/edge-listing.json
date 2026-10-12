@@ -1,5 +1,6 @@
 {
-  "summary": "You paste the corrected tagline, description and price into the shop. Looks good means those three are live and the listing can go out. The bot does not edit the page.",
+  "actor": "user",
+  "summary": "You paste the corrected tagline, description and price into the shop. Done means those three are live and the listing can go out. The bot does not edit the page.",
   "copy": [
     {"label": "Copy tagline", "text": "A mug that keeps tea hot until the meeting ends."},
     {"label": "Copy description", "text": "Stoneware mug, 350 ml, with a lid. Dishwasher safe. Made for Example Goods."},
