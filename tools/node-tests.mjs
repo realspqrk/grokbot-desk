@@ -3,7 +3,11 @@
 // headless Edge/Chrome instances on one CI runner intermittently fail plain
 // local requests with net::ERR_NO_BUFFER_SPACE (WSAENOBUFS) while the server
 // and the runner's ports are fine; a desk itself runs one app window.
-//   node tools/node-tests.mjs unit|browser|all [--browser-concurrency N]
+//
+//   node tools/node-tests.mjs gate      unit files + the browser smoke set (CI, blocking)
+//   node tools/node-tests.mjs browser   every browser file, bounded (CI, advisory)
+//   node tools/node-tests.mjs all       unit + every browser file (release gate, locally)
+//   [--browser-concurrency N]           default 2
 import { readdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -13,10 +17,36 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = path.join(ROOT, 'tests_js');
 export const STARTS_BROWSER = /\bloadChromium\b|\bchromium\.launch/;
 
+/* The blocking smoke set: one served page renders a template, the mouse
+   and keyboard decide flows write their result, discard writes a cancel,
+   the empty state, and the pop-up opens and auto-advances. Exact test
+   names, so a renamed test fails the guard test instead of dropping out. */
+export const SMOKE = {
+  'shell.e2e.test.mjs': [
+    'renders the starter golden: strings, copy text, CSP, same-origin only, no console errors',
+    'expect.flow (mouse) + Ctrl+Enter writes the result file = expect.result',
+    'expect.keyboard (keys only, one open run) writes the same result',
+    'Verwerfen asks first, then writes a cancelled result',
+    'no open runs: empty state and title',
+  ],
+  'popup.e2e.test.mjs': [
+    '1 open: compact pop-up without a strip; header = avatar, bold name, quiet report title',
+    'a decision auto-advances to the next open report; the last one ends in a calm done state',
+  ],
+  'builtin-review-pick.e2e.test.mjs': [
+    'review-doc: a half-done review survives a reload, sends, and reopens read-only',
+  ],
+};
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export function groups(dir = DIR, read = (f) => readFileSync(f, 'utf8')) {
   const files = readdirSync(dir).filter((f) => f.endsWith('.test.mjs')).sort();
   const browser = files.filter((f) => STARTS_BROWSER.test(read(path.join(dir, f))));
   return { unit: files.filter((f) => !browser.includes(f)), browser };
+}
+
+export function smokeArgs() {
+  return Object.values(SMOKE).flat().map((name) => `--test-name-pattern=^${escape(name)}$`);
 }
 
 function run(files, extra) {
@@ -29,13 +59,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const which = process.argv[2] || 'all';
   const i = process.argv.indexOf('--browser-concurrency');
   const limit = i > 0 ? Number(process.argv[i + 1]) : 2;
-  if (!['unit', 'browser', 'all'].includes(which) || !(limit >= 1)) {
-    console.error('usage: node tools/node-tests.mjs unit|browser|all [--browser-concurrency N]');
+  if (!['gate', 'browser', 'all'].includes(which) || !(limit >= 1)) {
+    console.error('usage: node tools/node-tests.mjs gate|browser|all [--browser-concurrency N]');
     process.exit(2);
   }
   const g = groups();
   let code = 0;
   if (which !== 'browser') code = run(g.unit, []) || code;
-  if (which !== 'unit') code = run(g.browser, [`--test-concurrency=${limit}`]) || code;
+  if (which === 'gate') code = run(Object.keys(SMOKE), [`--test-concurrency=${limit}`, ...smokeArgs()]) || code;
+  else code = run(g.browser, [`--test-concurrency=${limit}`]) || code;
   process.exit(code);
 }

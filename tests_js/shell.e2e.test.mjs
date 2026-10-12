@@ -171,9 +171,16 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
           importScripts('/static/twitter-text-v3-data.js', '/static/count.js');
           onmessage = (event) => {
             RS_COUNT.setPlatforms(event.data.platforms);
-            const started = performance.now();
-            const result = RS_COUNT.count(event.data.text, 'x');
-            postMessage({ result, elapsed: performance.now() - started });
+            /* the fastest of three runs: a backtracking regression is slow
+               every time, a cold JIT or a busy runner only once */
+            let result;
+            let elapsed = Infinity;
+            for (let i = 0; i < 3; i += 1) {
+              const started = performance.now();
+              result = RS_COUNT.count(event.data.text, 'x');
+              elapsed = Math.min(elapsed, performance.now() - started);
+            }
+            postMessage({ result, elapsed });
           };
         `,
       }));

@@ -36,15 +36,30 @@ browser. Then run:
 
 ```bash
 python -m pytest -q
-RS_E2E_PORT=18921 node --test tests_js/
+RS_E2E_PORT=18921 node tools/node-tests.mjs all
 python tools/lint_src.py
 ```
+
+`node tools/node-tests.mjs all` runs every Node test file: unit files fully
+parallel, files that start a browser at most two at a time
+(`--browser-concurrency N` changes that). `node --test tests_js/` also works.
 
 On Windows, `py -3` may be used instead of `python` when the Python launcher is
 installed. On macOS, run the same commands from a virtualenv with Python 3.11
 or newer (`python3.12 -m venv .venv`; `.venv` and `node_modules` are ignored by
 git and by the source lint), with Google Chrome installed and
-`RS_BROWSER_CHANNEL=chrome`. The macOS CI jobs are advisory.
+`RS_BROWSER_CHANNEL=chrome`.
+
+### What CI checks
+
+CI runs on Windows and macOS with Python 3.11 and 3.12. Blocking: pytest,
+the source lint, every Node unit file and a small browser smoke set
+(`node tools/node-tests.mjs gate`: a template renders, the mouse and keyboard
+decide flows write their result, discard writes a cancel, the empty state, the
+pop-up opens and auto-advances). Advisory (`continue-on-error`, labelled so in
+the job): the full browser suite, whose timing budgets, burst and pop-up timing
+tests are flaky on shared runners. A red advisory step does not block a merge;
+read it, and fix what it finds that is real.
 
 Use a temporary `RS_DATA_DIR` and distinct ports in `18920`–`18939` for local
 server checks. Never use the product port 18742, and never point tests at a
@@ -71,6 +86,21 @@ new dependencies unless the maintainers approve them.
 3. Add synthetic golden, edge, and invalid fixtures without personal data.
 4. Run `python report_shell.py check my-template` and the full test suite.
 5. Document the template's inputs, decisions, and result shape.
+
+## Release checklist
+
+A release is cut only after the full suite passes on real machines, not only
+in CI. On one Windows machine and one Mac (Apple silicon, Google Chrome), on
+the commit to be tagged:
+
+- [ ] `python -m pytest -q` passes.
+- [ ] `node tools/node-tests.mjs all` passes (the full browser suite).
+- [ ] `python tools/lint_src.py` reports no findings.
+- [ ] The built-in templates are rendered to screenshots (light and dark,
+      German and English) and reviewed by a person on both machines.
+- [ ] The blocking CI jobs are green on that commit.
+- [ ] `CHANGELOG.md` names the version, and the version is the same in
+      `pyproject.toml`, `core/__init__.py` and the README badge.
 
 ## Pull request checklist
 

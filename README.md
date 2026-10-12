@@ -12,7 +12,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 [![CI](https://github.com/realspqrk/grokbot-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/realspqrk/grokbot-desk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Platforms: Windows | macOS (experimental)](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%28experimental%29-lightgrey.svg)](#platforms)
+[![Platforms: Windows | macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-blue.svg)](#platforms)
 [![Version: 1.0.0-beta.2](https://img.shields.io/badge/version-1.0.0--beta.2-blue.svg)](CHANGELOG.md)
 
 </div>
@@ -35,7 +35,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 
 Chat is awful for discussing serious work. When a bot needs your decision, a calm window pops up instead: the bot sends JSON, you decide, the bot reads your decision as JSON. Everything stays on your computer.
 
-**Status:** 1.0.0-beta.2. Windows is supported; macOS is a beta.
+**Status:** 1.0.0-beta.2. Windows and macOS are supported.
 
 ## What you see
 
@@ -212,7 +212,7 @@ Optional `avatar`: PNG, JPEG, WebP or GIF only, at most 256 KB. For payload avat
 
 ## Platforms
 
-Windows is supported. Edge or Chrome opens an app window. macOS is a beta: on macOS 26 on Apple silicon with Google Chrome, `show` opens the app window, and deciding, `wait`, `result`, the copy buttons (through `pbcopy`) and `stop` work. The macOS CI job is advisory.
+Windows and macOS are supported; CI runs on both, and every release passes the full suite on a real Windows machine and a Mac. Edge or Chrome opens an app window. On macOS (tested on macOS 26 on Apple silicon with Google Chrome), `show` opens the app window, and deciding, `wait`, `result`, the copy buttons (through `pbcopy`) and `stop` work.
 
 On macOS, follow [macOS setup](#macos-setup) and replace every `python` command with `./report-shell` or your Python 3.11+ (`python3.12`, for example). Use forward-slash paths and shell `export` syntax for environment variables. The default data directory is `~/Library/Application Support/grokbot-desk`; `RS_DATA_DIR` overrides it.
 

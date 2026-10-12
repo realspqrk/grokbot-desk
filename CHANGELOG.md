@@ -2,6 +2,12 @@
 
 ## 1.0.0-beta.2 (unreleased)
 
+- macOS is supported: its CI jobs are blocking like the Windows ones.
+- CI is split: pytest, the source lint, the Node unit files and a browser
+  smoke set block; the full browser suite (timing budgets, burst, pop-up
+  timing) runs as an advisory step. The release gate is the full suite and
+  screenshots on a real Windows machine and a Mac (CONTRIBUTING.md).
+- An already read report is no longer rewritten on every window focus.
 - Task banner: every report opens with a tinted banner above its title that
   says what to do and who acts next, one line of steps, at most three
   sentences of why (the rest folded) and the effort and due date (`~3 min`,

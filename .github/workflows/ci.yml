@@ -60,11 +60,19 @@ jobs:
           Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', $file
           Start-Sleep 7
           Get-Content $log -ErrorAction SilentlyContinue
-      - name: Node tests
-        # unit files fully parallel; browser files at most two at a time
-        # (several Edge/Chrome instances on one runner hit WSAENOBUFS)
-        # one command: its exit code fails the step if either group fails
-        run: node tools/node-tests.mjs all --browser-concurrency 2
+      - name: Node unit tests and browser smoke
+        # blocking: every unit file plus a small browser smoke set (render,
+        # decide by mouse and keyboard, discard, empty state, pop-up)
+        run: node tools/node-tests.mjs gate
+      - name: Browser e2e (advisory)
+        # advisory: the full browser suite, including timing budgets, burst
+        # and pop-up timing, which shared CI runners make flaky. It does not
+        # fail the job; the release gate runs it on real Windows and macOS
+        # machines (CONTRIBUTING.md, Release checklist). Browser files run at
+        # most two at a time: several Edge/Chrome instances on one runner
+        # hit WSAENOBUFS.
+        continue-on-error: true
+        run: node tools/node-tests.mjs browser --browser-concurrency 2
       - name: Socket sampler report
         if: always()
         shell: pwsh
@@ -75,10 +83,8 @@ jobs:
       - name: Source lint
         run: python tools/lint_src.py
 
-  macos-experimental:
-    name: macOS experimental / Python ${{ matrix.python-version }}
-    # Advisory until native browser launch, clipboard, and platform tests land.
-    continue-on-error: true
+  macos:
+    name: macOS / Python ${{ matrix.python-version }}
     strategy:
       fail-fast: false
       matrix:
@@ -114,11 +120,19 @@ jobs:
       - name: Python tests
         run: python -m pytest -q
 
-      - name: Node tests
-        # unit files fully parallel; browser files at most two at a time
-        # (several Edge/Chrome instances on one runner hit WSAENOBUFS)
-        # one command: its exit code fails the step if either group fails
-        run: node tools/node-tests.mjs all --browser-concurrency 2
+      - name: Node unit tests and browser smoke
+        # blocking: every unit file plus a small browser smoke set (render,
+        # decide by mouse and keyboard, discard, empty state, pop-up)
+        run: node tools/node-tests.mjs gate
+      - name: Browser e2e (advisory)
+        # advisory: the full browser suite, including timing budgets, burst
+        # and pop-up timing, which shared CI runners make flaky. It does not
+        # fail the job; the release gate runs it on real Windows and macOS
+        # machines (CONTRIBUTING.md, Release checklist). Browser files run at
+        # most two at a time: several Edge/Chrome instances on one runner
+        # hit WSAENOBUFS.
+        continue-on-error: true
+        run: node tools/node-tests.mjs browser --browser-concurrency 2
 
       - name: Source lint
         run: python tools/lint_src.py
