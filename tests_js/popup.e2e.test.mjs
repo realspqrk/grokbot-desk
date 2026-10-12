@@ -57,8 +57,12 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(server.url(`?client=test&run=${runId}${extra}`));
-    await ready(page);
+    // a page that never gets ready must not leave its context (and its
+    // live event stream) running into the next tests
+    try {
+      await page.goto(server.url(`?client=test&run=${runId}${extra}`));
+      await ready(page);
+    } catch (e) { await ctx.close().catch(() => {}); throw e; }
     return { ctx, page, errors };
   }
   /* on a timeout, says where the page got stuck (diagnostics for a rare
@@ -124,13 +128,15 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
   /** A test window opened by script (window.close() is allowed there). */
   async function openPopup(query) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: 'reduce' });
-    const opener = await ctx.newPage();
-    await opener.goto(server.url('?client=test'));
-    const popup = ctx.waitForEvent('page');
-    await opener.evaluate((url) => { window.open(url); }, server.url(query));
-    const page = await popup;
-    await ready(page);
-    return { ctx, page };
+    try {
+      const opener = await ctx.newPage();
+      await opener.goto(server.url('?client=test'));
+      const popup = ctx.waitForEvent('page');
+      await opener.evaluate((url) => { window.open(url); }, server.url(query));
+      const page = await popup;
+      await ready(page);
+      return { ctx, page };
+    } catch (e) { await ctx.close().catch(() => {}); throw e; }
   }
 
   test('1 open: compact pop-up without a strip; header = avatar, bold name, quiet report title', async () => {

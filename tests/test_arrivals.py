@@ -500,3 +500,24 @@ def test_docs_teach_the_same_wait_flow():
                        "`--timeout 0`", "results --since", "topic + OK"):
             assert needle.lower() in text.lower(), (name, needle)
         assert "--timeout 120" not in text, name
+
+
+def test_marking_a_read_run_read_again_does_not_rewrite_it(live):
+    """Each window focus posts /read. Only the first marks the run read and
+    saves it; later ones change nothing and must not queue another fsync
+    under the store lock that every API read waits on."""
+    detail = live.runs.register(validate_payload(valid_payload(), live.registry))
+    run_id = detail["run_id"]
+    saved = []
+    original = live.runs._save
+
+    def counting(record):
+        saved.append(record["payload"]["run_id"])
+        original(record)
+
+    with patch.object(live.runs, "_save", side_effect=counting):
+        for _ in range(5):
+            live.runs.mark_read(run_id)
+    assert saved == [run_id]
+    on_disk = json.loads((live.runs.runs_dir / f"{run_id}.json").read_text(encoding="utf-8"))
+    assert on_disk["unread"] is False

@@ -496,6 +496,11 @@ class RunStore:
         with self._lock:
             if run_id not in self._runs:
                 raise UnknownRun(run_id)
+            # every focus of a window posts /read; an already read run is not
+            # rewritten, so a burst of focus events does not queue fsyncs
+            # under the lock every API read waits on
+            if self._runs[run_id].get("unread") is False:
+                return
             self._runs[run_id]["unread"] = False
             self._save(self._runs[run_id])
 

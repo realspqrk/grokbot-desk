@@ -61,7 +61,10 @@ jobs:
           Start-Sleep 7
           Get-Content $log -ErrorAction SilentlyContinue
       - name: Node tests
-        run: node --test tests_js/
+        # unit files fully parallel; browser files at most two at a time
+        # (several Edge/Chrome instances on one runner hit WSAENOBUFS)
+        # one command: its exit code fails the step if either group fails
+        run: node tools/node-tests.mjs all --browser-concurrency 2
       - name: Socket sampler report
         if: always()
         shell: pwsh
@@ -112,7 +115,10 @@ jobs:
         run: python -m pytest -q
 
       - name: Node tests
-        run: node --test tests_js/
+        # unit files fully parallel; browser files at most two at a time
+        # (several Edge/Chrome instances on one runner hit WSAENOBUFS)
+        # one command: its exit code fails the step if either group fails
+        run: node tools/node-tests.mjs all --browser-concurrency 2
 
       - name: Source lint
         run: python tools/lint_src.py
