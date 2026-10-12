@@ -1942,6 +1942,11 @@ test('introduced finding 2: short waits preserve a simultaneous long focus fade 
         </script>
       `);
 
+      // warm the page and the protocol first: the first audit in a fresh
+      // context pays cold-start costs a busy runner stretches past any
+      // tight budget, and they say nothing about waiting for the fade
+      await auditCopyFocus(page);
+      await page.evaluate(() => document.activeElement?.blur());
       const started = Date.now();
       const audit = await auditCopyFocus(page);
 
@@ -1949,7 +1954,8 @@ test('introduced finding 2: short waits preserve a simultaneous long focus fade 
       assert.equal(audit.controls.length, 1, `${delay}: ${JSON.stringify(audit)}`);
       assert.equal(audit.controls[0].visible, false, `${delay}: ${JSON.stringify(audit)}`);
       assert.equal(audit.controls[0].motion_blocked, true, `${delay}: ${JSON.stringify(audit)}`);
-      assert.ok(Date.now() - started < 500, `${delay} focus audit took ${Date.now() - started} ms`);
+      // waiting out the 1000 ms fade would take at least 1000 ms
+      assert.ok(Date.now() - started < 900, `${delay} focus audit took ${Date.now() - started} ms`);
     } finally {
       await context.close();
     }
