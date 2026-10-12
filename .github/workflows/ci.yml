@@ -47,15 +47,19 @@ jobs:
       - name: Start socket sampler
         shell: pwsh
         run: |
-          $script = {
-            while ($true) {
-              $states = Get-NetTCPConnection -ErrorAction SilentlyContinue | Group-Object State | ForEach-Object { "$($_.Name)=$($_.Count)" }
-              $pool = (Get-Counter '\Memory\Pool Nonpaged Bytes' -ErrorAction SilentlyContinue).CounterSamples.CookedValue
-              "$(Get-Date -Format HH:mm:ss) pool_nonpaged_mb=$([math]::Round($pool / 1MB)) $($states -join ' ')" | Add-Content "$env:RUNNER_TEMP/sockets.log"
-              Start-Sleep 5
-            }
+          $log = Join-Path $env:RUNNER_TEMP 'sockets.log'
+          $file = Join-Path $env:RUNNER_TEMP 'sampler.ps1'
+          @"
+          while (`$true) {
+            `$states = Get-NetTCPConnection -ErrorAction SilentlyContinue | Group-Object State | ForEach-Object { "`$(`$_.Name)=`$(`$_.Count)" }
+            `$pool = (Get-Counter '\Memory\Pool Nonpaged Bytes' -ErrorAction SilentlyContinue).CounterSamples.CookedValue
+            "`$(Get-Date -Format HH:mm:ss) pool_nonpaged_mb=`$([math]::Round(`$pool / 1MB)) `$(`$states -join ' ')" | Add-Content '$log'
+            Start-Sleep 5
           }
-          Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "& {$script}"
+          "@ | Set-Content $file
+          Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', $file
+          Start-Sleep 7
+          Get-Content $log -ErrorAction SilentlyContinue
       - name: Node tests
         run: node --test tests_js/
       - name: Socket sampler report

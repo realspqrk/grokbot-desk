@@ -75,7 +75,9 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(server.url(`?client=test&run=${runId}`));
-    await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+    /* ready alone can belong to a first render of another open run; wait
+       for the requested run, as the strip switches below do */
+    await page.waitForFunction((id) => window.RS?.activeRun === id && document.documentElement.dataset.rsReady === '1', runId, { timeout: 8000 });
     return { ctx, page, errors };
   }
 
