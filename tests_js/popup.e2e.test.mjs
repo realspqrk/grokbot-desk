@@ -94,11 +94,13 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
     await page.click('rs-action-row button[value="erledigt"]');
     await page.click('#rs-submit');
   }
-  /** Arms a pending window launch as the CLI does; returns its one-time app token. */
+  /** Arms a pending window launch as the CLI does (same 20 s deadline as
+   * LAUNCH_PENDING_SECONDS: a cold persistent Edge on a busy Windows runner
+   * can take longer than 5 s to connect); returns its one-time app token. */
   function armLaunch() {
     const generation = randomBytes(16).toString('hex');
     writeFileSync(path.join(server.dataDir, 'browser-launch.pending'),
-      JSON.stringify({ generation, deadline: Date.now() / 1000 + 5 }), 'ascii');
+      JSON.stringify({ generation, deadline: Date.now() / 1000 + 20 }), 'ascii');
     return generation;
   }
   /** A test window opened by script (window.close() is allowed there). */
