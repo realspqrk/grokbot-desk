@@ -61,7 +61,25 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
     await ready(page);
     return { ctx, page, errors };
   }
-  const ready = (page) => page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+  /* on a timeout, says where the page got stuck (diagnostics for a rare
+     Windows-runner stall of a freshly opened window) */
+  const ready = async (page) => {
+    try {
+      await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+    } catch (e) {
+      const where = await page.evaluate(() => ({
+        url: location.pathname + location.search.replace(/token=[^&]*/g, 'token=?'),
+        readyState: document.readyState,
+        rs: typeof window.RS,
+        active: window.RS?.activeRun ?? null,
+        ready: document.documentElement.dataset.rsReady ?? null,
+        mount: document.querySelector('.rs-mount, #rs-mount')?.textContent.trim().slice(0, 80) ?? null,
+        resources: performance.getEntriesByType('resource').map((r) => `${new URL(r.name).pathname} ${Math.round(r.startTime)}+${Math.round(r.duration)}ms`).slice(-15),
+      })).catch((err) => ({ evaluate: String(err) }));
+      e.message += ` | page state: ${JSON.stringify(where)}`;
+      throw e;
+    }
+  };
   const activeIs = (page, id) => page.waitForFunction((x) => window.RS.activeRun === x
     && document.documentElement.dataset.rsReady === '1', id, { timeout: 8000 });
   const strip = (page) => page.evaluate(() => {

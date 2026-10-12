@@ -199,6 +199,8 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    // diagnostics for a rare net::ERR_NO_BUFFER_SPACE on Windows runners: which request failed
+    page.on('requestfailed', (r) => r.failure()?.errorText !== 'net::ERR_ABORTED' && console.error(`[requestfailed] ${r.method()} ${new URL(r.url()).pathname} range=${r.headers().range || '-'} type=${r.resourceType()} ${r.failure()?.errorText}`));
     if (opts.beforeGoto) await opts.beforeGoto(page);
     await page.goto((opts.server || server).url(`?client=test${query}`));
     await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });

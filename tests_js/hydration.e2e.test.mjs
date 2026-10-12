@@ -163,6 +163,8 @@ describe('external decision hydrates once (served, headless Edge)', { skip }, ()
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    // diagnostics for a rare net::ERR_NO_BUFFER_SPACE on Windows runners: which request failed
+    page.on('requestfailed', (r) => r.failure()?.errorText !== 'net::ERR_ABORTED' && console.error(`[requestfailed] ${r.method()} ${new URL(r.url()).pathname} range=${r.headers().range || '-'} type=${r.resourceType()} ${r.failure()?.errorText}`));
     try {
       await page.route('**/copy', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }));
       await page.goto(server.url('?client=test&run=' + run.run_id));

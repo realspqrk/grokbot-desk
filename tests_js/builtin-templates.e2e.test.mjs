@@ -69,6 +69,8 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     const page = await ctx.newPage();
     const log = { errors: [], copies: [], images: [], paths: [], reveals: [] };
     page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.errors.push(m.type() + ': ' + m.text()); });
+    // diagnostics for a rare net::ERR_NO_BUFFER_SPACE on Windows runners: which request failed
+    page.on('requestfailed', (r) => r.failure()?.errorText !== 'net::ERR_ABORTED' && console.error(`[requestfailed] ${r.method()} ${new URL(r.url()).pathname} range=${r.headers().range || '-'} type=${r.resourceType()} ${r.failure()?.errorText}`));
     page.on('pageerror', (e) => log.errors.push('pageerror: ' + e.message));
     await page.route(ORIGIN + '/copy', async (route) => {
       log.copies.push(JSON.parse(route.request().postData()));
