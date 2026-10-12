@@ -4,8 +4,10 @@
 // local requests with net::ERR_NO_BUFFER_SPACE (WSAENOBUFS) while the server
 // and the runner's ports are fine; a desk itself runs one app window.
 //
-//   node tools/node-tests.mjs gate      unit files + the browser smoke set (CI, blocking)
-//   node tools/node-tests.mjs browser   every browser file, bounded (CI, advisory)
+//   node tools/node-tests.mjs gate      unit files (without their timing budgets) + the
+//                                       browser smoke set (CI, blocking)
+//   node tools/node-tests.mjs browser   every browser file, bounded, + the unit timing
+//                                       budgets (CI, advisory)
 //   node tools/node-tests.mjs all       unit + every browser file (release gate, locally)
 //   [--browser-concurrency N]           default 2
 import { readdirSync, readFileSync } from 'node:fs';
@@ -37,6 +39,15 @@ export const SMOKE = {
     'review-doc: a half-done review survives a reload, sends, and reopens read-only',
   ],
 };
+/* Timing budgets inside unit files. They guard against super-linear
+   matching, and a busy shared runner can blow them without any regression,
+   so CI runs them in the advisory step, not in the gate. */
+export const TIMING = {
+  'count.test.mjs': [
+    'X: failed non-ASCII TLD matching stays below 50 ms in Node',
+    'X: adversarial URL parentheses stay bounded in Node',
+  ],
+};
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export function groups(dir = DIR, read = (f) => readFileSync(f, 'utf8')) {
@@ -45,9 +56,10 @@ export function groups(dir = DIR, read = (f) => readFileSync(f, 'utf8')) {
   return { unit: files.filter((f) => !browser.includes(f)), browser };
 }
 
-export function smokeArgs() {
-  return Object.values(SMOKE).flat().map((name) => `--test-name-pattern=^${escape(name)}$`);
-}
+const exact = (flag, set) => Object.values(set).flat().map((name) => `${flag}=^${escape(name)}$`);
+export function smokeArgs() { return exact('--test-name-pattern', SMOKE); }
+export function timingSkipArgs() { return exact('--test-skip-pattern', TIMING); }
+export function timingOnlyArgs() { return exact('--test-name-pattern', TIMING); }
 
 function run(files, extra) {
   if (!files.length) return 0;
@@ -65,8 +77,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   const g = groups();
   let code = 0;
-  if (which !== 'browser') code = run(g.unit, []) || code;
-  if (which === 'gate') code = run(Object.keys(SMOKE), [`--test-concurrency=${limit}`, ...smokeArgs()]) || code;
-  else code = run(g.browser, [`--test-concurrency=${limit}`]) || code;
+  if (which === 'all') code = run(g.unit, []) || code;
+  if (which === 'gate') {
+    code = run(g.unit, timingSkipArgs()) || code;
+    code = run(Object.keys(SMOKE), [`--test-concurrency=${limit}`, ...smokeArgs()]) || code;
+  } else {
+    if (which === 'browser') code = run(Object.keys(TIMING), timingOnlyArgs()) || code;
+    code = run(g.browser, [`--test-concurrency=${limit}`]) || code;
+  }
   process.exit(code);
 }

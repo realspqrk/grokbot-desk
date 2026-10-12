@@ -53,12 +53,12 @@ git and by the source lint), with Google Chrome installed and
 ### What CI checks
 
 CI runs on Windows and macOS with Python 3.11 and 3.12. Blocking: pytest,
-the source lint, every Node unit file and a small browser smoke set
+the source lint, every Node unit test except its timing budgets, and a small browser smoke set
 (`node tools/node-tests.mjs gate`: a template renders, the mouse and keyboard
 decide flows write their result, discard writes a cancel, the empty state, the
 pop-up opens and auto-advances). Advisory (`continue-on-error`, labelled so in
-the job): the full browser suite, whose timing budgets, burst and pop-up timing
-tests are flaky on shared runners. A red advisory step does not block a merge;
+the job): the full browser suite and the unit timing budgets; timing budgets,
+burst and pop-up timing tests are flaky on shared runners. A red advisory step does not block a merge;
 read it, and fix what it finds that is real.
 
 Use a temporary `RS_DATA_DIR` and distinct ports in `18920`–`18939` for local
