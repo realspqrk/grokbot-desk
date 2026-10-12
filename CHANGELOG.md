@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0-beta.2 (unreleased)
+## 1.0.0-beta.2 (2026-10-12)
 
 - macOS is supported: its CI jobs are blocking like the Windows ones.
 - CI is split: pytest, the source lint, the Node unit files and a browser
