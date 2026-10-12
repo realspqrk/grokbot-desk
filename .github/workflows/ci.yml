@@ -42,8 +42,28 @@ jobs:
 
       - name: Python tests
         run: python -m pytest -q
+      # Diagnostics for a rare net::ERR_NO_BUFFER_SPACE (WSAENOBUFS) in the
+      # browser tests: samples TCP states and the non-paged pool while they run.
+      - name: Start socket sampler
+        shell: pwsh
+        run: |
+          $script = {
+            while ($true) {
+              $states = Get-NetTCPConnection -ErrorAction SilentlyContinue | Group-Object State | ForEach-Object { "$($_.Name)=$($_.Count)" }
+              $pool = (Get-Counter '\Memory\Pool Nonpaged Bytes' -ErrorAction SilentlyContinue).CounterSamples.CookedValue
+              "$(Get-Date -Format HH:mm:ss) pool_nonpaged_mb=$([math]::Round($pool / 1MB)) $($states -join ' ')" | Add-Content "$env:RUNNER_TEMP/sockets.log"
+              Start-Sleep 5
+            }
+          }
+          Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "& {$script}"
       - name: Node tests
         run: node --test tests_js/
+      - name: Socket sampler report
+        if: always()
+        shell: pwsh
+        run: |
+          netsh int ipv4 show dynamicport tcp
+          if (Test-Path "$env:RUNNER_TEMP/sockets.log") { Get-Content "$env:RUNNER_TEMP/sockets.log" }
 
       - name: Source lint
         run: python tools/lint_src.py

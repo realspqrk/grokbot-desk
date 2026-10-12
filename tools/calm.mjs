@@ -1184,12 +1184,20 @@ export function calmEvaluator(options) {
   const wideText = readingBlocks
     .map((element) => {
       const style = getComputedStyle(element);
+      // the reading measure exactly as CSS resolves it for this element: a
+      // canvas given the same font string may pick another face (macOS
+      // system-ui), so it can disagree with the max-width the layout obeys
+      const probe = document.createElement('span');
+      probe.style.cssText = `position:absolute;visibility:hidden;display:block;box-sizing:content-box;width:${thresholds.readingWidthMaxCh}ch;padding:0;border:0;margin:0`;
+      element.appendChild(probe);
+      const domMeasure = probe.getBoundingClientRect().width;
+      probe.remove();
       textContext.font = style.font;
       const ch = textContext.measureText('0').width || Number.parseFloat(style.fontSize) / 2;
       return {
         identity: identity(element),
         width: rectOf(element).width,
-        max_width: thresholds.readingWidthMaxCh * ch,
+        max_width: domMeasure || thresholds.readingWidthMaxCh * ch,
       };
     })
     .filter((item) => item.width > item.max_width + 0.5);

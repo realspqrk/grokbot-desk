@@ -173,14 +173,19 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
   });
 
   test('nothing open shown: the oldest arrival becomes active, the rest wait, one announcement', async () => {
-    const { ctx, page } = await open('');
+    const { ctx, page } = await open('', { clock: true });
     try {
       assert.equal(await page.evaluate(() => window.RS.activeRun), null);
+      /* as in the six-report burst: the page's clock stands still while the
+         three pushes land, so a slow runner cannot space them further apart
+         than the quiet gap and split the one announcement */
+      await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1000);
       const a = push(SOCIAL, 'Social X');
       const b = push(INBOX, 'Inbox X');
       const c = push(SOCIAL, 'Social Y');
-      await activeIs(page, a.run_id);
       await stripCountIs(page, fill('strip_count', { n: 1, m: 3 }));
+      await page.clock.resume();
+      await activeIs(page, a.run_id);
       await page.waitForFunction(() => window.__announced.length > 0, null, { timeout: 8000 });
       await page.waitForTimeout(BURST_MS * 2);
       assert.equal(await page.evaluate(() => window.RS.activeRun), a.run_id, 'the first arrival stays');
