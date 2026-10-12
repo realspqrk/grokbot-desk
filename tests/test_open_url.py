@@ -148,7 +148,7 @@ def _server(tmp_path):
 
 
 def _request(server, body):
-    connection = http.client.HTTPConnection("127.0.0.1", server.port, timeout=2)
+    connection = http.client.HTTPConnection("127.0.0.1", server.port, timeout=15)  # socket timeout, not a budget
     headers = {
         "Host": f"127.0.0.1:{server.port}",
         "Origin": f"http://127.0.0.1:{server.port}",

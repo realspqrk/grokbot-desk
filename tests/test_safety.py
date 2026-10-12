@@ -35,8 +35,14 @@ from core.timeutil import to_vienna
 from core.webhook import deliver, webhook_enabled, validate_webhook_url
 
 
+# A socket timeout for the test client, not a latency budget: a valid push
+# takes ~10 ms, but a busy Windows runner once stalled its fsync past 2 s.
+# Same allowance CI gives the CLI (RS_CLI_HTTP_TIMEOUT=15).
+REQUEST_TIMEOUT_S = 15
+
+
 def request(port, method, path, body=b"", headers=None):
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=REQUEST_TIMEOUT_S)
     connection.request(method, path, body=body, headers=headers or {})
     response = connection.getresponse()
     payload = response.read()
