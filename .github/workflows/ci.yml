@@ -64,6 +64,8 @@ jobs:
         # blocking: every unit file plus a small browser smoke set (render,
         # decide by mouse and keyboard, discard, empty state, pop-up)
         run: node tools/node-tests.mjs gate
+      - name: Source lint
+        run: python tools/lint_src.py
       - name: Browser e2e (advisory)
         # advisory: the full browser suite, including timing budgets, burst
         # and pop-up timing, which shared CI runners make flaky. It does not
@@ -71,6 +73,8 @@ jobs:
         # machines (CONTRIBUTING.md, Release checklist). Browser files run at
         # most two at a time: several Edge/Chrome instances on one runner
         # hit WSAENOBUFS.
+        # a hung browser must not hold the job for the 6 h default
+        timeout-minutes: 30
         continue-on-error: true
         run: node tools/node-tests.mjs browser --browser-concurrency 2
       - name: Socket sampler report
@@ -80,8 +84,6 @@ jobs:
           netsh int ipv4 show dynamicport tcp
           if (Test-Path "$env:RUNNER_TEMP/sockets.log") { Get-Content "$env:RUNNER_TEMP/sockets.log" }
 
-      - name: Source lint
-        run: python tools/lint_src.py
 
   macos:
     name: macOS / Python ${{ matrix.python-version }}
@@ -124,6 +126,8 @@ jobs:
         # blocking: every unit file plus a small browser smoke set (render,
         # decide by mouse and keyboard, discard, empty state, pop-up)
         run: node tools/node-tests.mjs gate
+      - name: Source lint
+        run: python tools/lint_src.py
       - name: Browser e2e (advisory)
         # advisory: the full browser suite, including timing budgets, burst
         # and pop-up timing, which shared CI runners make flaky. It does not
@@ -131,8 +135,8 @@ jobs:
         # machines (CONTRIBUTING.md, Release checklist). Browser files run at
         # most two at a time: several Edge/Chrome instances on one runner
         # hit WSAENOBUFS.
+        # a hung browser must not hold the job for the 6 h default
+        timeout-minutes: 30
         continue-on-error: true
         run: node tools/node-tests.mjs browser --browser-concurrency 2
 
-      - name: Source lint
-        run: python tools/lint_src.py
