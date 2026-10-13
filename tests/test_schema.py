@@ -96,7 +96,9 @@ def test_url_keyword_rejects_every_bad_vector_on_both_url_fields():
         (ROOT / "templates" / "builtin" / "decide-list" / "schema.json").read_text(encoding="utf-8")
     )
     target = preview["properties"]["target"]["properties"]["url"]
-    item = listing["properties"]["items"]["items"]["properties"]["url"]
+    bot_item, user_item = listing["properties"]["items"]["items"]["oneOf"]
+    item = bot_item["properties"]["url"]
+    assert user_item["properties"]["url"] == item, "bot and user items share one URL rule"
     assert target["x-rs-url"] == "https" and target["maxLength"] == 2048
     assert item["x-rs-url"] is True and "pattern" in item
     for bad in vectors["bad"]:

@@ -5,7 +5,10 @@
    built from DOM nodes with textContent only: raw HTML stays text, an
    http(s) Markdown link opens in the system browser, and an image loads
    only through the template's media field (RS.media).
-   Bot: "Looks good" is the primary and "Changes" the quiet alternative
+   A quote that starts with [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or
+   [!CAUTION] alone on its line is a quiet tinted callout with a translated
+   title and no copy button.
+   Bot: "Looks good" is the primary and "Request changes" the quiet alternative
    (or Approve & post / send / continue when action is set). User: "Done"
    (or "Sent", or "Posted" when it is a post) and "Skip". Info only: "Got it"
    and one collapsed note. The alternative opens the overall comment and the
@@ -200,6 +203,15 @@ var HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
 var RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 var QUOTE = /^ {0,3}> ?(.*)$/;
 var DELIM_ROW = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
+/* > [!NOTE] alone on the first quoted line makes the quote a callout */
+var CALLOUT = /^\[!(note|tip|important|warning|caution)\][ \t]*$/i;
+var CALLOUT_TITLES = {
+  note: 'rd_callout_note',
+  tip: 'rd_callout_tip',
+  important: 'rd_callout_important',
+  warning: 'rd_callout_warning',
+  caution: 'rd_callout_caution'
+};
 
 function closesFence(line, fence) {
   var t = line.replace(/^ {0,3}/, '').replace(/\s+$/, '');
@@ -226,7 +238,8 @@ function startsBlock(line) {
   return FENCE.test(line) || HEADING.test(line) || RULE.test(line) || QUOTE.test(line) || LIST_ITEM.test(line);
 }
 
-function parseBlocks(src) {
+/* nested: inside a callout, where a quote stays a plain quote */
+function parseBlocks(src, nested) {
   var lines = src.replace(/\r\n?/g, '\n').split('\n');
   var blocks = [];
   var para = [];
@@ -272,6 +285,11 @@ function parseBlocks(src) {
       flush();
       var quoted = [];
       while (i < lines.length && (m = QUOTE.exec(lines[i]))) { quoted.push(m[1]); i++; }
+      var callout = nested ? null : CALLOUT.exec(quoted[0].trim());
+      if (callout) {
+        blocks.push({ type: 'callout', kind: callout[1].toLowerCase(), blocks: parseBlocks(quoted.slice(1).join('\n'), true) });
+        continue;
+      }
       blocks.push({ type: 'quote', paras: quoted.join('\n').split(/\n\s*\n/) });
       continue;
     }
@@ -483,6 +501,14 @@ function renderBlock(b) {
     quoteWrap.appendChild(q);
     return quoteWrap;
   }
+  if (b.type === 'callout') {
+    /* a quiet tinted note with its own title; no copy button */
+    var note = make('div', 'rd__callout rd__callout--' + b.kind);
+    note.setAttribute('role', 'note');
+    note.appendChild(make('p', 'rd__callout-title', RS.t(CALLOUT_TITLES[b.kind])));
+    b.blocks.forEach(function (inner) { note.appendChild(renderBlock(inner)); });
+    return note;
+  }
   if (b.type === 'list') {
     var base = Math.min.apply(null, b.items.map(function (it) { return it.indent; }));
     return renderList(b.items, 0, base).el;
@@ -579,7 +605,12 @@ function hideBox(entry, focus) {
   if (focus) entry.open.focus();
 }
 
-blocks.forEach(function (b) {
+/* The lead is the text before the first heading; a heading that opens the
+   document is its title and does not end the lead. */
+var leadParagraphs = [];
+var inLead = true;
+blocks.forEach(function (b, index) {
+  if (b.type === 'h' && index > 0) inLead = false;
   if (b.type === 'h' && b.level <= sectionLevel && sections.length < MAX_SECTIONS) {
     target = sectionFor(b);
     doc.appendChild(target);
@@ -591,6 +622,7 @@ blocks.forEach(function (b) {
   }
   var rendered = renderBlock(b);
   target.appendChild(rendered);
+  if (inLead && b.type === 'p' && rendered.tagName === 'P') leadParagraphs.push(rendered);
   rendered.querySelectorAll('rs-copy[data-rs-described]').forEach(function (copy) {
     var button = copy.querySelector('button');
     if (button) button.setAttribute('aria-describedby', copy.getAttribute('data-rs-described'));
@@ -613,12 +645,11 @@ if (data.copy && data.copy.length) {
     copy.text = entry.text;
     copies.appendChild(copy);
   });
-  /* The bold verdict leads the texts to paste. It is the first paragraph
-     that contains strong; everything else stays in the article. */
-  var strong = part('doc').querySelector('strong');
-  var paragraph = strong;
-  while (paragraph && paragraph.tagName !== 'P') paragraph = paragraph.parentNode;
-  if (paragraph && paragraph.tagName === 'P') part('lead').appendChild(paragraph);
+  /* The bold verdict leads the texts to paste. It is the first paragraph of
+     the lead that contains strong; a bold word further down stays where it
+     is. */
+  var verdict = leadParagraphs.filter(function (p) { return !!p.querySelector('strong'); })[0];
+  if (verdict) part('lead').appendChild(verdict);
   part('lead').appendChild(copies);
 }
 var words = (data.doc.match(/[^\s#>*_`|~-]+/g) || []).length;
@@ -643,7 +674,7 @@ var requesting = false;
 /* the task kind says who acts next (RS.cta, the shell's table): the user
    does it (Done, or Sent, or Posted when it is a post; Skip), information
    only (Got it, plus one collapsed note), the bot acts once approved
-   (Approve & verb, Request changes), or a plain review (Looks good, Changes) */
+   (Approve & verb, Request changes), or a plain review (Looks good, Request changes) */
 var base = RS.task.base;
 if (base === 'fyi') {
   var fyiNote = make('details', 'rs-disclosure');
@@ -657,6 +688,9 @@ if (base === 'fyi') {
   fyiBody.appendChild(overall);
   fyiNote.appendChild(fyiSummary);
   fyiNote.appendChild(fyiBody);
+  /* a closed note keeps its field out of the layout, not just out of view */
+  fyiBody.hidden = true;
+  fyiNote.addEventListener('toggle', function () { fyiBody.hidden = !fyiNote.open; });
   part('request').hidden = true;
   part('request').parentNode.insertBefore(fyiNote, part('request'));
 }
@@ -705,7 +739,9 @@ function update(save) {
     RS.setAlternative(RS.cta('request_changes'), function () { setRequesting(true, true); });
     RS.setResult({ decision: 'approve', comment: '', comments: list });
   }
-  if (!list.length) RS.setStatus(RS.t('rd_waiting'));
+  /* the banner and the buttons already say a decision is open: the status
+     only counts section comments */
+  if (!list.length) RS.setStatus(null);
   else if (list.length === 1) RS.setStatus(RS.t('rd_with_comments_one'));
   else RS.setStatus(RS.t('rd_with_comments', { n: RS.number(list.length) }));
 }
@@ -733,6 +769,10 @@ if (sent) {
 }
 if (restore && typeof restore === 'object' && base === 'fyi') {
   if (typeof restore.comment === 'string') overall.value = restore.comment;
+  if (overall.value) {
+    fyiNote.open = true;
+    fyiBody.hidden = false;
+  }
 } else if (restore && typeof restore === 'object' && commentable) {
   if (typeof restore.comment === 'string') overall.value = restore.comment;
   if (restore.requesting === true) { requesting = true; part('request').hidden = false; }

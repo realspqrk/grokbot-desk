@@ -1,12 +1,13 @@
 /* decide-list (built-in, calm). Tokens only: var(--rs-*) colours,
    var(--space-*) spacing, no colour literals, no URLs.
    One thing at a time: the current item is the one raised card with its
-   choices; the other items are single quiet rows (click to open). What the
+   choices; the other items are quiet rows (click to open): the request in
+   ink, up to two lines, and the source and kind as a muted line. What the
    agent already handled sits under one closed disclosure. */
 .dl {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-4);
 }
 
 .dl-intro { max-width: var(--rs-measure); color: var(--rs-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -22,7 +23,7 @@
   width: 100%;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
-  align-items: baseline;
+  align-items: start;
   column-gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border: 0;
@@ -33,22 +34,34 @@
   cursor: pointer;
   transition: background-color var(--rs-dur) var(--rs-ease);
 }
-/* with categories, every row gets the same kind column */
-.dl[data-dl-kinds] .dl-row { grid-template-columns: 18px 7em minmax(0, 1fr) auto; }
 .dl-row:hover { background: var(--rs-hover); }
 .dl-item[data-current] > .dl-row { display: none; }
 
-.dl-row__kind,
 .dl-card__eyebrow { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
-.dl-row__kind { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dl-row__text {
   min-width: 0;
-  white-space: nowrap;
+  max-width: var(--rs-measure);
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+}
+/* the request leads in ink and may take two lines */
+.dl-row__title {
+  color: var(--rs-ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
+}
+.dl-row__meta {
+  max-width: var(--rs-measure);
+  font-size: var(--rs-fs-sm);
+  color: var(--rs-muted);
+  overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
-.dl-source { font-weight: var(--rs-fw-strong); }
-.dl-row__title { color: var(--rs-muted); }
 .dl-row__state {
   display: inline-flex;
   align-items: center;
@@ -59,12 +72,10 @@
 }
 .dl-row__state > .rs-ico { width: 16px; height: 16px; color: var(--rs-muted); }
 /* open vs decided at a glance: ring + ink text + chevron vs check + muted text + outcome */
-.dl-row__mark { display: inline-grid; align-self: center; color: var(--rs-ink); }
+.dl-row__mark { display: inline-grid; color: var(--rs-ink); padding-top: 1px; }
 .dl-row__mark > .rs-ico { width: 18px; height: 18px; }
 .dl-item[data-decided] .dl-row__mark { color: var(--rs-muted); }
-.dl-item[data-decided] .dl-row__text,
-.dl-item[data-decided] .dl-row__kind { color: var(--rs-muted); }
-.dl-item[data-decided] .dl-source { font-weight: var(--rs-fw-normal); }
+.dl-item[data-decided] .dl-row__title { color: var(--rs-muted); }
 .dl-row__outcome { color: var(--rs-ink); }
 
 /* ---- current item: the one card ---- */

@@ -4,7 +4,7 @@
    page itself (no card), one hairline above it, a 72ch reading column and a
    relaxed line height. Each section is an item whose "Comment" action shows
    on hover/focus; "Request changes" is the footer's quiet alternative. */
-.rd { display: flex; flex-direction: column; gap: var(--space-5); }
+.rd { display: flex; flex-direction: column; gap: var(--space-3); }
 .rd__lead { display: flex; flex-direction: column; gap: var(--space-1); }
 .rd__summary { max-width: var(--rs-measure); }
 .rd__meta { font-size: var(--rs-fs-sm); color: var(--rs-muted); font-variant-numeric: tabular-nums; }
@@ -14,9 +14,9 @@
 .rd__doc {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-5);
   max-width: var(--rs-measure);
-  padding-top: var(--space-5);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--rs-line);
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -99,6 +99,29 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+/* callouts: a quiet neutral tint, a thin edge and a small title. The calm
+   rules keep colour out of the document (no tinted box, no dot inside a
+   box), so the title carries the kind; important, warning and caution get
+   an ink edge. */
+.rd__callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--rs-line-strong);
+  border-radius: var(--rs-r-sm);
+  background: var(--rs-hover);
+}
+.rd__callout--important,
+.rd__callout--warning,
+.rd__callout--caution { border-left-color: var(--rs-ink); }
+.rd__callout-title {
+  margin: 0;
+  font-size: var(--rs-fs-sm);
+  font-weight: var(--rs-fw-strong);
+  color: var(--rs-ink);
 }
 
 .rd__pre {

@@ -38,7 +38,7 @@
       secondary: ['request_changes', 'reject'],
       items: { approve: 'choice_approve', reject: 'choice_reject', defer: 'choice_defer' },
       discard: true,
-      variants: ['send_request', 'send_rejection', 'posted', 'submit', 'submit_mixed', 'request_send', 'cancel']
+      variants: ['send_request', 'send_rejection', 'posted', 'submit', 'submit_mixed', 'request_send', 'cancel', 'send_decisions', 'send_decision_one']
     },
     pick: {
       primary: 'choose',
@@ -59,7 +59,7 @@
     },
     review: {
       primary: 'approve',
-      labels: { approve: 'looks_good', request_changes: 'changes' },
+      labels: { approve: 'looks_good', request_changes: 'request_changes' },
       secondary: ['request_changes'],
       items: {},
       discard: true,
@@ -155,11 +155,13 @@
   }
 
   /* The default steps line, or null. Steps show only where they add what
-     the task line and the buttons do not say: a list of replies or a mixed
-     list, each to decide before the footer's {button}. A mixed preview's
+     the task line and the buttons do not say: a list of replies, of other
+     things the person does, or a mixed list, each to decide before the
+     footer's {button}. A mixed preview's
      steps come from mixedSteps; a payload's task.steps always shows. */
   function stepsKey(task) {
     if (task && task.steps_for === 'replies') return 'task_steps_replies';
+    if (task && task.steps_for === 'user_items') return 'task_steps_user_items';
     if (task && task.steps_for === 'mixed_items') return 'task_steps_mixed_items';
     return null;
   }

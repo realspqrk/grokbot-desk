@@ -3,52 +3,263 @@
   "required": ["items"],
   "additionalProperties": false,
   "properties": {
-    "intro": {"type": "string", "minLength": 1, "maxLength": 300, "description": "Optional one or two sentences above the items (plain text)."},
-    "action": {"enum": ["post", "send", "continue"], "default": "continue", "description": "Optional. What the bot does with the bot items you approve: post, send or continue. Names the footer (Approve & post, Approve & send, Approve & continue) and the bot's line in the task banner of a mixed list. The result does not change."},
+    "intro": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "description": "Optional one or two sentences above the items (plain text)."
+    },
+    "action": {
+      "enum": ["post", "send", "continue"],
+      "default": "continue",
+      "description": "Optional. What the bot does with the bot items you approve: post, send or continue. Names the bot in the task banner (Approve and the bot sends). The footer reads Send decisions. The result does not change."
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approve": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+          "description": "Label of the approve choice instead of Approve. The result value stays approve."
+        },
+        "reject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+          "description": "Label of the reject choice instead of Reject. The result value stays reject."
+        },
+        "defer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+          "description": "Label of the defer choice instead of Defer. The result value stays defer."
+        }
+      },
+      "description": "Optional button labels for bot items, plain text of 1-24 characters each, e.g. {\"approve\": \"Pay\", \"defer\": \"Next week\"}. An item's own labels win. The banner, the rows and the status use them. The result keeps approve, reject and defer."
+    },
     "items": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 5,
+      "maxItems": 12,
       "x-rs-unique-key": "id",
-      "description": "The items to decide, at most 5 per screen. Shown one at a time in this order; every id is different.",
+      "description": "The items to decide, at most 12 per screen. Shown one at a time in this order; every id is different. An item is a bot item (no actor, or actor bot) or a user item (actor user).",
       "items": {
-        "type": "object",
-        "required": ["id", "title"],
-        "additionalProperties": false,
-        "properties": {
-          "id": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$", "description": "Stable id, unique within the payload (a repeated id is rejected); echoed in the result."},
-          "kind": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Optional short category shown above the title, e.g. \"Expense\"."},
-          "source": {"type": "string", "minLength": 1, "maxLength": 60, "description": "Optional requester, sender or counterparty; also names the item in the status line."},
-          "title": {"type": "string", "minLength": 1, "maxLength": 140, "description": "One-line summary of what is to be decided. http(s) addresses in the text become links."},
-          "detail": {"type": "string", "minLength": 1, "maxLength": 600, "description": "Optional short detail (a snippet, never a full document). http(s) addresses in the text become links."},
-          "actor": {"enum": ["bot", "user"], "default": "bot", "description": "Who does the next step. bot (default): Approve, Reject, Defer, results approve / reject / defer. user: the person does it. The choice reads Done unless content is post or reply (Posted) or the payload task.kind is post_yourself. Results stay done / skipped / later. The bot never acts on a user item."},
-          "content": {"enum": ["post", "reply"], "description": "Optional. Set post or reply when the person publishes this item: the choice then reads Posted. Without it a user item reads Done. The result value is still done."},
-          "url": {"type": "string", "minLength": 8, "maxLength": 2048, "pattern": "^https?://[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.?(?::(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[0-9]{1,4}))?(?:[/?#][^\\x00-\\x1F\\x7F-\\x9F\\s\\\\]*)?$", "x-rs-url": true, "description": "Optional http(s) address of the post to reply under or the target. A hostname of ASCII letters, digits, hyphens and dots is required (punycode for an IDN; no IP literal in brackets). No backslash or control character. Credentials are rejected only in the authority; @ may appear in the path, query or fragment. Also checked with the opener (x-rs-url). Shown as one link on its own line when it can be opened. The same address is not linked again in the title or detail."},
-          "due": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$", "description": "Optional due date YYYY-MM-DD."},
-          "copy": {
-            "type": "array",
-            "maxItems": 4,
-            "description": "Values the person would otherwise retype (reference, amount, reply draft). Each is shown in full next to its button.",
-            "items": {
-              "type": "object",
-              "required": ["label", "text"],
-              "additionalProperties": false,
-              "properties": {
-                "label": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Button label, e.g. \"Copy reference\"."},
-                "text": {"type": "string", "minLength": 1, "maxLength": 5000, "description": "Exact string that lands on the clipboard."}
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "title"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{1,40}$",
+                "description": "Stable id, unique within the payload (a repeated id is rejected); echoed in the result."
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24,
+                "description": "Optional short category shown above the title, e.g. \"Expense\"."
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60,
+                "description": "Optional requester, sender or counterparty; also names the item in the status line."
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 140,
+                "description": "One-line summary of what is to be decided. http(s) addresses in the text become links."
+              },
+              "detail": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 600,
+                "description": "Optional short detail (a snippet, never a full document). http(s) addresses in the text become links."
+              },
+              "content": {
+                "enum": ["post", "reply"],
+                "description": "Optional. Set post or reply when the person publishes this item: the choice then reads Posted. Without it a user item reads Done. The result value is still done."
+              },
+              "url": {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 2048,
+                "pattern": "^https?://[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.?(?::(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[0-9]{1,4}))?(?:[/?#][^\\x00-\\x1F\\x7F-\\x9F\\s\\\\]*)?$",
+                "x-rs-url": true,
+                "description": "Optional http(s) address of the post to reply under or the target. A hostname of ASCII letters, digits, hyphens and dots is required (punycode for an IDN; no IP literal in brackets). No backslash or control character. Credentials are rejected only in the authority; @ may appear in the path, query or fragment. Also checked with the opener (x-rs-url). Shown as one link on its own line when it can be opened. The same address is not linked again in the title or detail."
+              },
+              "due": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
+                "description": "Optional due date YYYY-MM-DD."
+              },
+              "copy": {
+                "type": "array",
+                "maxItems": 4,
+                "description": "Values the person would otherwise retype (reference, amount, reply draft). Each is shown in full next to its button.",
+                "items": {
+                  "type": "object",
+                  "required": ["label", "text"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 24,
+                      "description": "Button label, e.g. \"Copy reference\"."
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 5000,
+                      "description": "Exact string that lands on the clipboard."
+                    }
+                  }
+                }
+              },
+              "actor": {
+                "enum": ["bot"],
+                "default": "bot",
+                "description": "bot (default): the bot does the next step. Choices Approve, Reject, Defer; results approve / reject / defer."
+              },
+              "labels": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "approve": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 24,
+                    "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+                    "description": "Label of the approve choice instead of Approve. The result value stays approve."
+                  },
+                  "reject": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 24,
+                    "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+                    "description": "Label of the reject choice instead of Reject. The result value stays reject."
+                  },
+                  "defer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 24,
+                    "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+                    "description": "Label of the defer choice instead of Defer. The result value stays defer."
+                  }
+                },
+                "description": "Optional labels for this item's choices; they win over the top-level labels."
+              },
+              "choices": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true,
+                "default": ["approve", "reject", "defer"],
+                "description": "Choice buttons for this item, in this order. No choice is preselected.",
+                "items": {"enum": ["approve", "reject", "defer"]}
               }
             }
           },
-          "choices": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 3,
-            "uniqueItems": true,
-            "default": ["approve", "reject", "defer"],
-            "description": "Choice buttons for this item, in this order. No choice is preselected.",
-            "items": {"enum": ["approve", "reject", "defer"]}
+          {
+            "type": "object",
+            "required": ["id", "title", "actor"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{1,40}$",
+                "description": "Stable id, unique within the payload (a repeated id is rejected); echoed in the result."
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24,
+                "description": "Optional short category shown above the title, e.g. \"Expense\"."
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60,
+                "description": "Optional requester, sender or counterparty; also names the item in the status line."
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 140,
+                "description": "One-line summary of what is to be decided. http(s) addresses in the text become links."
+              },
+              "detail": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 600,
+                "description": "Optional short detail (a snippet, never a full document). http(s) addresses in the text become links."
+              },
+              "content": {
+                "enum": ["post", "reply"],
+                "description": "Optional. Set post or reply when the person publishes this item: the choice then reads Posted. Without it a user item reads Done. The result value is still done."
+              },
+              "url": {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 2048,
+                "pattern": "^https?://[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.?(?::(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[0-9]{1,4}))?(?:[/?#][^\\x00-\\x1F\\x7F-\\x9F\\s\\\\]*)?$",
+                "x-rs-url": true,
+                "description": "Optional http(s) address of the post to reply under or the target. A hostname of ASCII letters, digits, hyphens and dots is required (punycode for an IDN; no IP literal in brackets). No backslash or control character. Credentials are rejected only in the authority; @ may appear in the path, query or fragment. Also checked with the opener (x-rs-url). Shown as one link on its own line when it can be opened. The same address is not linked again in the title or detail."
+              },
+              "due": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
+                "description": "Optional due date YYYY-MM-DD."
+              },
+              "copy": {
+                "type": "array",
+                "maxItems": 4,
+                "description": "Values the person would otherwise retype (reference, amount, reply draft). Each is shown in full next to its button.",
+                "items": {
+                  "type": "object",
+                  "required": ["label", "text"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 24,
+                      "description": "Button label, e.g. \"Copy reference\"."
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 5000,
+                      "description": "Exact string that lands on the clipboard."
+                    }
+                  }
+                }
+              },
+              "actor": {
+                "const": "user",
+                "description": "user: the person does it and reports back; the bot never acts on it. The done choice reads Posted when content is post or reply or task.kind is post_yourself, else Done. Results done / skipped / later."
+              },
+              "choices": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true,
+                "default": ["done", "skipped", "later"],
+                "description": "Choice buttons for this user item, in this order. No choice is preselected.",
+                "items": {"enum": ["done", "skipped", "later"]}
+              }
+            }
           }
-        }
+        ]
       }
     },
     "done": {
@@ -59,7 +270,9 @@
         "type": "object",
         "required": ["text"],
         "additionalProperties": false,
-        "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 140}}
+        "properties": {
+          "text": {"type": "string", "minLength": 1, "maxLength": 140}
+        }
       }
     }
   }

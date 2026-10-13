@@ -191,7 +191,7 @@ Calm-UI helpers (template API, all scoped to the active report):
 - `RS.addMenuMeta(text)`: a quiet metadata line (not an action) in the header `…` panel, below the agent and time (e.g. *Persona: …*). Cleared on every report switch.
 - `RS.icon(name)`: a decorative inline SVG (`copy`, `check`, `plus`, `hash`, `ring`, `done`, `chevron`, `dot`, `more`, …).
 - `RS.openUrl(url)`: ask the server to open that http(s) address in the system browser (`POST /open-url`). `RS.fillText(el, text)` replaces an element's contents with the text and turns addresses in it into those links. `RS.appendLinks(el, text)` appends only the extracted http(s) links, not the surrounding words. `RS.externalLink(url, text)` returns one link, or null when `url` cannot be opened (not http(s), no hostname, a bad port, credentials in the authority, a control character, or a backslash).
-- Reports meant to be read (`review-doc`) stay short and scannable: TL;DR first, then a table, bold verdicts, check states (`- [x]` / `- [ ]`), and the long detail last.
+- Reports meant to be read (`review-doc`) stay short and scannable: a one-line TL;DR first, then a table, bold verdicts, check states (`- [x]` / `- [ ]`), at most one callout (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` alone on the first quoted line), and the long detail last. `review-doc/fixtures/edge-report.json` is the model.
 - `RS.run.result`: for a **submitted** report, the immutable result `data` (otherwise `null`). Show it read-only instead of the draft; the shell locks decisions and text but keeps tabs, disclosures and item rows (`aria-expanded`) working, and copies and buttons marked `data-rs-view-action` (view-only, e.g. `rs-post-frame`'s *Reload image*).
 
 4. New German strings: a template branch never edits `core\` (that includes `core\i18n\de.json`). Ask the maintainer of the installation to add the shared key (English key, German value) to `de.json`; `check` fails until the key exists there, then list it in `template.json` `strings`.
@@ -213,7 +213,7 @@ Calm-UI helpers (template API, all scoped to the active report):
 - Editing the core (`core\`, `tokens.css`, components, `rs.js`) from a template, or copying core CSS into a template.
 - Colour literals in template CSS. Literal German text in `template.html` or `template.js`.
 - `//` comments in `template.js` (the URL lint fails).
-- Preselected choices, more than 3 choices per item, more than 5 items per screen.
+- Preselected choices, more than 3 choices per item, more than 12 items per screen.
 - Full email bodies or secrets in the payload.
 - Building the result path by hand instead of using `result_path`; reading the action log; parsing the page.
 - `wait --timeout 0` from a bot, a timeout above the runtime's shell-call cap, or a background shell that is expected to wake the bot; polling the result file in a tight loop.
@@ -347,10 +347,10 @@ Buttons per kind (one table, `core\static\tasks.js`, used by the actor-model bui
 | `approve_bot_acts` | the bot, after approval | `Freigeben & posten` / `& senden` / `& weiter` (or the payload's `approve_label`) | `Änderungen anfordern` or `Ablehnen` |
 | `pick` | the bot, with the chosen option | `Auswählen` (`<Option> wählen` once picked) | an optional note |
 | `fyi` | nobody | `Verstanden`, enabled at once | no other decision, and no `Verwerfen`. One collapsed note (`Notiz hinzufügen`), closed by default |
-| `review` | the bot, with the verdict | `Passt` | `Änderungen` |
+| `review` | the bot, with the verdict | `Passt` | `Änderungen anfordern` |
 | `blocking` | as the derived kind | the derived kind's primary, emphasised | as the derived kind |
 
-The mark names what the person did. Post content — a manual `preview-post` platform, a decide-list item with `content` `post` or `reply`, or an explicit `task.kind` of `post_yourself` — reads `Gepostet ✓` / `Posted ✓`. A user task on `approve-one` or `review-doc` with `action` `send` reads `Gesendet ✓` / `Sent ✓` (`mark` stays `sent`). `Erledigt ✓` / `Done ✓` is only when there is no specific content or action. Result values stay `done` / `skipped` (and `later` on a list). A decide-list footer reads `Fertig` when every item is `actor: "user"`, and `Freigeben & weiter` only when the bot acts next. A mixed report (a preview with `auto` and `manual` platforms, a list with `user` and `bot` items) gives each actor one banner line, the person first, the bot by its display name (from `identity` or the registry):
+The mark names what the person did. Post content — a manual `preview-post` platform, a decide-list item with `content` `post` or `reply`, or an explicit `task.kind` of `post_yourself` — reads `Gepostet ✓` / `Posted ✓`. A user task on `approve-one` or `review-doc` with `action` `send` reads `Gesendet ✓` / `Sent ✓` (`mark` stays `sent`). `Erledigt ✓` / `Done ✓` is only when there is no specific content or action. Result values stay `done` / `skipped` (and `later` on a list). A decide-list footer reads `Fertig` when every item is `actor: "user"`, otherwise `Entscheidungen senden` (`Entscheidung senden` for one item): it sends every choice at once and approves nothing by itself. A mixed report (a preview with `auto` and `manual` platforms, a list with `user` and `bot` items) gives each actor one banner line, the person first, the bot by its display name (from `identity` or the registry):
 
 | State | Deutsch | English |
 |---|---|---|

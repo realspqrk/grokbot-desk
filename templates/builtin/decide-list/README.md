@@ -1,6 +1,6 @@
 # `decide-list`: approve, reject or defer several items
 
-Built-in template. Use it when the person has to decide on **2 to 5 items** (expense and travel requests, purchases, access requests, contract renewals, sorted mail that needs an answer). For a single yes/no decision use `approve-one`.
+Built-in template. Use it when the person has to decide on **2 to 12 items** (expense and travel requests, purchases, access requests, contract renewals, sorted mail that needs an answer). For a single yes/no decision use `approve-one`.
 
 ```
 py -3 report_shell.py show decide-list --data payload.json
@@ -9,11 +9,11 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 ## What the person sees
 
-- An optional `intro` line (shown as the why of the task banner above the title; it stays in the report, muted, when the payload brings its own `task.why` or the intro has a link), then **one item at a time**: the current item is a card with its kind and due date, the source and title, an optional detail, the values the person would otherwise retype next to copy icons, one segmented choice (`Approve`, `Reject`, `Defer`) and an optional note (`Add note`, shown on hover and keyboard focus).
-- The other items are one-line rows (kind, source, title). Open rows carry a ring, the due date and a chevron; decided rows a check, muted text and the chosen outcome. A row opens its card.
+- An optional `intro` line (shown as the why of the task banner above the title; it stays in the report, muted, when the payload brings its own `task.why` or the intro has a link), then **one item at a time**: the current item is a card with its source, kind and due date in a quiet line, the request itself, an optional detail, the values the person would otherwise retype next to copy icons, one segmented choice (`Approve`, `Reject`, `Defer`, or the payload's own `labels`) and an optional note (`Add note`, shown on hover and keyboard focus).
+- The other items are quiet rows: the request in ink (up to two lines), then the source and kind as a muted line. Open rows carry a ring, the due date and a chevron; decided rows a check, muted text and the chosen outcome. A row opens its card. When nothing was handled by the agent, the list has no visible heading (its accessible name stays).
 - Picking a choice by click, Enter or Space moves on to the first open item; the arrow keys only change the choice.
 - What the agent already handled (`done`) sits under one closed disclosure (`Sorted by your agent: 3 done`). The overall note sits behind `Add a note for your agent`.
-- The primary `Send to agent` (or Ctrl+Enter) is enabled only when every item has a choice. Until then the status line names what is still open (`2 of 5 still open: IT desk, People team`; an item without `source` is named by its title), afterwards it reads `All decided`.
+- The primary `Send decisions` / `Entscheidungen senden` (`Send decision` for one item; `Done` / `Fertig` when every item is the person's own) is enabled only when every item has a choice; Ctrl+Enter sends. It sends every choice at once and approves nothing by itself. The status line counts the choices by their labels and what is open (`2 Approve · 1 Reject · 2 open`); its accessible name adds the open items (`2 of 5 still open: IT desk, People team`; an item without `source` is named by its title).
 - Nothing is preselected. Choices and notes are kept as a draft and come back after a reload; the first open item is current again. A sent report shows what was sent, read-only; rows still open their cards and copies still work.
 
 ## Payload `data` (`schema.json`)
@@ -48,19 +48,21 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | Field | Rule |
 |---|---|
 | `intro` | optional, 1–300 characters, plain text |
-| `action` | optional `post`, `send` or `continue` (default): what the bot does with the bot items you approve. Names the footer (Approve & send) and the bot's banner line in a mixed list. The result does not change |
-| `items[]` | required, 1–5 items, shown in this order |
+| `action` | optional `post`, `send` or `continue` (default): what the bot does with the bot items you approve. Names the bot's banner line (Approve and the bot sends; in a mixed list `Inbox Agent sends after approval: 3 items`). The footer stays Send decisions. The result does not change |
+| `labels` | optional `{approve?, reject?, defer?}`, each plain text of 1–24 characters (no line break, no leading or trailing space): the bot items' button labels, e.g. `{"approve": "Pay", "reject": "Dispute"}`. `labels.approve` also leads the banner (`Pay, then the bot carries on`); rows and the status use the labels. The result keeps `approve`, `reject`, `defer` |
+| `items[]` | required, 1–12 items, shown in this order. Each is a bot item (no `actor`, or `bot`) or a user item (`actor: user`) |
 | `items[].id` | `^[a-z0-9-]{1,40}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/items/1/id`; echoed in the result |
 | `items[].kind` | optional, 1–24 (a short category above the title, e.g. `Expense`) |
 | `items[].source` | optional, 1–60 (requester, sender or counterparty) |
 | `items[].title` | required, 1–140 (one line). An http(s) address in the title or detail becomes a link |
 | `items[].detail` | optional, 1–600 (a snippet, never a full document) |
-| `items[].actor` | optional `bot` (default) or `user`. `bot`: Approve, Reject, Defer. `user`: the person does it. The choices are Done ✓, Skip and Later unless `content` is `post` or `reply` (Posted ✓) or `task.kind` is `post_yourself`. Results stay `done`, `skipped`, `later`. `choices` is ignored. The bot never acts on a user item |
+| `items[].actor` | optional `bot` (default) or `user`. `bot`: Approve, Reject, Defer. `user`: the person does it. The choices are Done ✓, Skip and Later unless `content` is `post` or `reply` (Posted ✓) or `task.kind` is `post_yourself`. Results stay `done`, `skipped`, `later`. The bot never acts on a user item |
 | `items[].content` | optional `post` or `reply`. Marks the item as something the person publishes, so the done choice reads Posted ✓. Without it a user item reads Done ✓ |
 | `items[].url` | optional http(s) address, 8–2048 characters. A hostname is required. No backslash or control character. Credentials are rejected only in the authority (`user@host`); `@` may appear in the path, query or fragment. Shown as one link on its own line (that link opens the post) when it can be opened. The same address is not linked again in the title or detail. A URL the opener would reject is plain text |
 | `items[].due` | optional `YYYY-MM-DD` (shown as `due Oct 14` / `fällig 14.10.`) |
 | `items[].copy[]` | optional, at most 4 of `{label 1–24, text 1–5000}`; each value is shown in full next to its button (long or multi-line values on their own line, clamped with *Show all*) |
-| `items[].choices` | optional, 1–3 unique of `approve`, `reject`, `defer`, in this order; default all three |
+| `items[].labels` | optional, bot items only: `{approve?, reject?, defer?}` as top-level `labels`; wins over them for this item. A user item with `labels` is rejected at `/items/<n>/labels` |
+| `items[].choices` | optional, 1–3 unique, in this order. Bot item: of `approve`, `reject`, `defer` (default all three). User item: of `done`, `skipped`, `later` (default all three). A value from the other side is rejected at `/items/<n>/choices/<m>` |
 | `done[]` | optional, at most 12 of `{text 1–140}`; not rendered when empty |
 
 ## Result `data` (`result.schema.json`)
@@ -75,23 +77,25 @@ py -3 report_shell.py wait <run_id> --timeout 120
 }
 ```
 
-`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`). For a `user` item, `choice` is `done`, `skipped` or `later`. `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Done (Fertig): it reports the status back. Approve & continue (Freigeben & weiter) only when the bot acts next. A mix of user and bot items gives each actor one banner line, the person first, counted: `You post: 2 replies` / `Inbox Agent sends after approval: 3 items` (the verb from the optional top-level `action`: `post`, `send` or `continue`, which also names the footer, e.g. Approve & send). A skipped, deferred or rejected item leaves its line; a side with nothing left says so (`Inbox Agent sends nothing`), and the decided banner says what each side did. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
+`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`), whatever the labels say. For a `user` item, `choice` is one of its `choices` (`done`, `skipped`, `later`). `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Done (Fertig): it reports the status back, and the banner steps say `Do or skip each item, then press Done` (`Post or skip each reply…` for replies). Otherwise it reads Send decisions (Entscheidungen senden). A mix of user and bot items gives each actor one banner line, the person first, counted: `You post: 2 replies` / `Inbox Agent sends after approval: 3 items` (the verb from the optional top-level `action`: `post`, `send` or `continue`, which also names the footer, e.g. Approve & send). A skipped, deferred or rejected item leaves its line; a side with nothing left says so (`Inbox Agent sends nothing`), and the decided banner says what each side did. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)
 
 | Key | English | German |
 |---|---|---|
-| `section_todo` | Needs you | Wartet auf dich |
+| `section_todo` | Needs you (visually hidden when it is the only group) | Wartet auf dich |
 | `choice_approve`, `choice_reject`, `choice_defer` | Approve, Reject, Defer | Freigeben, Ablehnen, Zurückstellen |
 | `done_mark`, `posted`, `skip`, `later` | Done ✓ or Posted ✓, Skip, Later (user items) | Erledigt ✓ or Gepostet ✓, Überspringen, Später |
 | `footer_done` | Done (footer when every item is a user item) | Fertig |
+| `send_decisions`, `send_decision_one` | Send decisions; Send decision (the footer otherwise) | Entscheidungen senden; Entscheidung senden |
+| `dl_count` | {n} {label} (one count in the status line) | {n} {label} |
 | `links_label` | Links (name of a row that holds more than one link) | Links |
 | `choice_group_label` | Decision: {what} (name of each choice row) | Entscheidung: {what} |
 | `due` | due {date} | fällig {date} |
 | `add_note`, `note_for` | Add note; Note on: {what} | Notiz hinzufügen; Notiz zu: {what} |
 | `add_note_overall`, `note_overall` | Add a note for your agent; Note to your agent | Notiz an den Bot hinzufügen; Notiz an den Bot |
 | `handled_summary`, `handled_done`, `section_done` | Sorted by your agent: {parts}; {n} done; Taken care of | Vom Bot sortiert: {parts}; {n} erledigt; Erledigt |
-| `items_open_short`, `items_open_named`, `sep_list`, `sep_names`, `items_all_decided` | visible `{n} open` (the accessible name is that text, then ` · `, then `{n} of {total} still open: {names}`); ` · `; `, `; All decided | sichtbar `{n} offen` (der Name ist dieser Text, dann ` · `, dann `{n} von {total} noch offen: {names}`); ` · `; `, `; Alles entschieden |
+| `items_open_short`, `items_open_named`, `sep_list`, `sep_names` | the counts, then `{n} open` (the accessible name is that text, then ` · `, then `{n} of {total} still open: {names}`); ` · `; `, ` | die Zählung, dann `{n} offen` (der Name ist dieser Text, dann ` · `, dann `{n} von {total} noch offen: {names}`); ` · `; `, ` |
 
 Copy button labels come from the payload (`copy[].label`).
 
@@ -114,8 +118,10 @@ Tab ×5 passes the `…` menu and the two copy icons of the first card and reach
 | `fixtures/golden.json` | 5 items, every choice set, copies, due dates, a detail, done list |
 | `fixtures/edge-single.json` | one item, no kind, intro or done |
 | `fixtures/edge-unicode.json` | emoji (ZWJ, flags, skin tone), CJK, Hangul, tabs, CRLF, decomposed umlauts |
-| `fixtures/edge-max.json` | every field at its maximum (5 items, 4 copies each, one 5000-character copy, 12 done) |
-| `fixtures/invalid-six-items.json` | rejected at `/items` |
+| `fixtures/edge-max.json` | every field at its maximum (12 items, 4 copies each, one 5000-character copy, 24-character labels, 12 done) |
+| `fixtures/edge-many.json` | 12 invoices with the payload's own labels (Pay, Dispute, Next week) and one item label |
+| `fixtures/edge-replies.json` | four replies the person posts (`actor: user`, `content: reply`) |
+| `fixtures/invalid-too-many-items.json` | 13 items, rejected at `/items` |
 | `fixtures/invalid-bad-choice.json` | rejected at `/items/1/choices/0` |
 | `fixtures/invalid-duplicate-ids.json` | rejected at `/items/1/id` (two different items share the id `travel-workshop`) |
 | `fixtures/expect/golden.json` | copies, `flow`, `keyboard`, `result` |

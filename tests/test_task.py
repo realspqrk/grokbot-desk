@@ -154,6 +154,9 @@ def test_a_kind_sets_the_actor_when_the_payload_leaves_it_out():
     assert (bot["data"].get("actor", "bot"), bot["data"]["action"]) == ("bot", "continue")
     items = validate_payload(envelope("decide-list", fixture("decide-list", "golden"), task={"kind": "post_yourself"}), REGISTRY)
     assert {item["actor"] for item in items["data"]["items"]} == {"user"}
+    assert all("choices" not in item and "labels" not in item for item in items["data"]["items"]), (
+        "bot choices and labels do not carry over to the person's own items"
+    )
     posts = validate_payload(envelope("preview-post", fixture("preview-post", "edge-max"), task={"kind": "post_yourself"}), REGISTRY)
     assert [entry["mode"] for entry in posts["data"]["platforms"]] == ["manual"] * 4
 
@@ -386,6 +389,29 @@ def test_a_user_action_is_generic_unless_it_is_a_post_or_a_send():
     replies = task_view(envelope("decide-list", fixture("decide-list", "edge-replies")), REGISTRY)
     assert replies["mark"] == "posted"
     assert replies["steps_for"] == "replies"
+    chores = task_view(
+        envelope("decide-list", {"items": [{"id": "a", "title": "Book the room", "actor": "user", "choices": ["done", "later"]}]}),
+        REGISTRY,
+    )
+    assert (chores["mark"], chores["steps_for"]) == ("done", "user_items")
+
+
+def test_decide_list_labels_name_the_banner_and_keep_the_result_values():
+    data = fixture("decide-list", "edge-many")
+    view = task_view(envelope("decide-list", data), REGISTRY)
+    assert (view["base"], view["label"]) == ("approve_bot_acts", data["labels"]["approve"])
+    plain = task_view(envelope("decide-list", fixture("decide-list", "golden")), REGISTRY)
+    assert "label" not in plain
+    for bad, pointer in (
+        ({"items": [{"id": "a", "title": "A", "choices": ["done"]}]}, "/data/items/0/choices/0"),
+        ({"items": [{"id": "a", "title": "A", "actor": "user", "choices": ["approve"]}]}, "/data/items/0/choices/0"),
+        ({"items": [{"id": "a", "title": "A", "actor": "user", "labels": {"approve": "Pay"}}]}, "/data/items/0/labels"),
+        ({"items": [{"id": "a", "title": "A"}], "labels": {"approve": "Pay\nnow"}}, "/data/labels/approve"),
+        ({"items": [{"id": "a", "title": "A"}], "labels": {"approve": "x" * 25}}, "/data/labels/approve"),
+    ):
+        with pytest.raises(EnvelopeError) as caught:
+            validate_payload(envelope("decide-list", bad), REGISTRY)
+        assert caught.value.pointer == pointer, bad
 
 
 def test_a_mixed_report_names_both_actors():
