@@ -177,10 +177,18 @@ if (actor === 'none') {
   box.replaceWith(note);
   /* a closed note keeps its field out of the layout, not just out of view */
   body.hidden = true;
-  note.addEventListener('toggle', function () { body.hidden = !note.open; });
+  /* a closed note keeps its text but is not sent */
+  note.addEventListener('toggle', function () {
+    body.hidden = !note.open;
+    noteShown = note.open;
+    update(true);
+  });
 }
 
-function noted() { return actor === 'none' || !box.hidden ? comment.value : ''; }
+function noted() {
+  if (actor === 'none') return note.open ? comment.value : '';
+  return !box.hidden ? comment.value : '';
+}
 
 function render() {
   if (actor === 'none') return;
@@ -212,7 +220,7 @@ function update(save) {
   if (actor === 'none') {
     RS.setSubmitLabel(label('acknowledged'));
     RS.setAlternatives([]);
-    RS.setResult({ decision: 'acknowledged', comment: /\S/.test(comment.value) ? comment.value : '' });
+    RS.setResult({ decision: 'acknowledged', comment: /\S/.test(noted()) ? noted() : '' });
     RS.setStatus(null);
     return;
   }
@@ -250,12 +258,11 @@ if (draft && typeof draft === 'object') {
   if (typeof draft.comment === 'string') comment.value = draft.comment.slice(0, 2000);
   noteShown = draft.note === true;
 }
-if (actor === 'none' && comment.value) {
+if (actor === 'none' && noteShown) {
   note.open = true;
   body.hidden = false;
 }
 render();
 update(false);
-if (draft && !sent && (changes || noteShown)) comment.focus();
 
 comment.addEventListener('input', function () { update(true); });

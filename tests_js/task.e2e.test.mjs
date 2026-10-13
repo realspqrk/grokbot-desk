@@ -585,6 +585,10 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       assert.equal(await summary.evaluate((el) => el.parentElement.open), false);
       assert.equal(await page.locator('#rs-mount rs-action-row').count(), 0);
       assert.equal(await page.isHidden('#rs-discard'), true);
+      await summary.click();
+      await page.fill('#ao-comment', 'Second thoughts');
+      await summary.click();
+      assert.equal(await summary.evaluate((el) => el.parentElement.open), false, 'a closed note is not sent');
       await page.click('#rs-submit');
       const deadline = Date.now() + 5000;
       while (!server.result(run.run_id) && Date.now() < deadline) await sleep(20);
