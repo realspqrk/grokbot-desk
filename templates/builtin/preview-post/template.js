@@ -6,7 +6,7 @@
    approval state: tick, blocked dot, accessible name) over one large
    preview (only the selected panel is in the document). Approve = the core
    primary button; "Request changes" is the footer's quiet alternative and
-   opens a comment (posting yourself: "Skip"). The decision mode is part of the draft, so a reload never
+   opens a comment. The decision mode is part of the draft, so a reload never
    turns a change request into an approval.
 
    The checkboxes hold the decision: restored from the draft, or from the
@@ -18,16 +18,18 @@
    Mode per platform (payload: a plain id is auto; {platform, mode}):
    auto, the bot posts after "Approve & post"; manual, the reviewer posts it
    by hand: copies first (text, hashtags, comment, image or video path,
-   the target link, folder), the note
-   "You post this yourself." and "Posted". A video replaces the image.
-   An optional target is a quote card under the body, or a reply line
-   plus the parent card above the post; its URL is not part of the text,
-   so X does not count it. A ticked manual platform is
-   `done`; an unticked one is `skipped`. The primary stays disabled until
-   a platform is ticked. When every platform is manual, the footer's
-   alternative is "Skip": it reports every platform as skipped (and
-   `platforms` is empty). The result lists only auto
-   approvals in `platforms` (what the bot may post) and every platform
+   the target link), then "Posted". A video replaces the image. "Show in
+   folder" is in the overflow menu. An optional target is a quote card under
+   the body, or a reply line plus the parent card above the post; its URL is
+   not part of the text, so X does not count it.
+
+   Only an auto platform can be blocked (over its limit, Instagram over its
+   hashtags or without media): one reason line under the checkbox says how
+   to recover. A manual platform is never blocked: Posted is a fact the
+   person reports, so a limit is advice there. A ticked manual platform is
+   `done`; an unticked one is `skipped`. The primary stays disabled until a
+   platform is ticked, so an approval always has one. The result lists only
+   auto approvals in `platforms` (what the bot may post) and every platform
    with its mode and decision in `per_platform`. */
 var data = RS.data;
 var ORDER = ['x', 'linkedin', 'instagram', 'facebook'];
@@ -44,9 +46,9 @@ var modes = {};
 entries.forEach(function (e) { modes[e.platform] = e.mode; });
 function manual(p) { return modes[p] === 'manual'; }
 var anyManual = platforms.some(manual);
-var tags = data.hashtags || [];
-var tagLine = tags.map(function (h) { return '#' + h; }).join(' ');
-var append = (data.hashtag_mode || 'append') === 'append' && tags.length > 0;
+var anyAuto = platforms.some(function (p) { return !manual(p); });
+var mixed = anyManual && anyAuto;
+var appendMode = (data.hashtag_mode || 'append') === 'append';
 var image = data.image || null;
 var video = data.video || null;
 var hasVisual = !!(image || video);
@@ -63,13 +65,18 @@ var imageState = {};
 
 function part(name, el) { return (el || root).querySelector('[data-pp="' + name + '"]'); }
 
-/* Composed text: T = variants[p].text ?? text, plus a blank line and the hashtags
+/* Per platform: variants[p].text ?? text and variants[p].hashtags ?? hashtags. */
+function variantOf(p) { return (data.variants && data.variants[p]) || {}; }
+function tagsOf(p) { return variantOf(p).hashtags || data.hashtags || []; }
+function tagLineOf(p) { return tagsOf(p).map(function (h) { return '#' + h; }).join(' '); }
+function appends(p) { return appendMode && tagsOf(p).length > 0; }
+
+/* Composed text: the platform's text, plus a blank line and its hashtags
    when hashtag_mode is append. NFC once here, because rs-post-frame shows the
    NFC text and RS.count counts it: shown = copied = counted. */
 function composed(p) {
-  var variant = data.variants && data.variants[p];
-  var text = variant ? variant.text : data.text;
-  if (append) text += '\n\n' + tagLine;
+  var text = variantOf(p).text || data.text;
+  if (appends(p)) text += '\n\n' + tagLineOf(p);
   return text.normalize('NFC');
 }
 
@@ -90,16 +97,8 @@ function quoteDomain(url) {
   }
 }
 
-function badge(box, variant, text) {
-  var b = document.createElement('rs-badge');
-  b.setAttribute('variant', variant);
-  b.textContent = text;
-  box.appendChild(b);
-  return b;
-}
-
 /* ---- agent note; persona and post id (when given) are quiet lines in the
-   overflow, next to "Show in folder" ---- */
+   overflow, next to "Show in folder" (its one place) ---- */
 if (data.notes && RS.task.why_from !== 'notes') part('notes').textContent = data.notes;
 else part('notes').remove();
 if (data.persona) RS.addMenuMeta(RS.t('meta_persona', { persona: data.persona }));
@@ -128,8 +127,9 @@ platforms.forEach(function (p) {
   tab.setAttribute('data-platform', p);
   var label = document.createElement('span');
   label.textContent = name;
-  if (manual(p)) {
-    /* the mode, quietly, as part of the name: "X · manual" */
+  if (manual(p) && mixed) {
+    /* in a mix the mode, quietly, as part of the name: "X · manual"
+       (posting everything yourself: the banner says it once) */
     var modeText = document.createElement('span');
     modeText.className = 'pp__mode';
     modeText.textContent = ' · ' + RS.t('mode_manual');
@@ -225,14 +225,15 @@ platforms.forEach(function (p) {
 
   /* Copy icons. Text and (appended) hashtags are visible in the preview, so
      their value is hidden; the first comment shows its full text. */
+  var tags = tagsOf(p);
   var copyText = part('copy-text', col);
   copyText.setAttribute('label', RS.t('copy_text'));
   copyText.text = text;
   var copyTags = part('copy-hashtags', col);
   if (tags.length) {
     copyTags.setAttribute('label', RS.t('copy_hashtags'));
-    copyTags.text = tagLine;
-    if (append) copyTags.setAttribute('no-value', '');
+    copyTags.text = tagLineOf(p);
+    if (appends(p)) copyTags.setAttribute('no-value', '');
   } else {
     copyTags.remove();
   }
@@ -245,33 +246,29 @@ platforms.forEach(function (p) {
   }
 
   /* Manual: the reviewer posts by hand, so copying comes first (in the DOM,
-     hence the Tab order, as on screen), with the image as a picture and its
-     folder. Auto keeps today's panel. */
+     hence the Tab order, as on screen), with the image as a picture, then
+     Posted. Auto: the decision first, then the copies. */
   var manualNote = part('manual-note', col);
   var copyImage = part('copy-image', col);
   var copyVideo = part('copy-video', col);
   var copyLink = part('copy-link', col);
-  var revealButton = part('reveal', col);
+  var decide = part('decide', col);
   col.setAttribute('data-mode', modes[p]);
   if (manual(p)) {
-    manualNote.textContent = RS.t('manual_note');
+    if (mixed) manualNote.textContent = RS.t('manual_note');
+    else manualNote.remove();
     if (video) {
       copyImage.remove();
       copyVideo.setAttribute('label', RS.t('copy_path'));
       copyVideo.setAttribute('media', video.path);
       copyVideo.setAttribute('media-copy', 'path');
-      part('reveal-label', revealButton).textContent = RS.t('reveal');
-      revealButton.addEventListener('click', function () { RS.reveal(video.path); });
     } else if (image) {
       copyVideo.remove();
       copyImage.setAttribute('label', RS.t('copy_image'));
       copyImage.setAttribute('media', image.path);
-      part('reveal-label', revealButton).textContent = RS.t('reveal');
-      revealButton.addEventListener('click', function () { RS.reveal(image.path); });
     } else {
       copyImage.remove();
       copyVideo.remove();
-      revealButton.remove();
     }
     if (target) {
       copyLink.setAttribute('label', RS.t('copy_link'));
@@ -279,62 +276,84 @@ platforms.forEach(function (p) {
     } else {
       copyLink.remove();
     }
-    manualNote.parentNode.insertBefore(col.querySelector('.pp__copies'), manualNote.nextSibling);
+    decide.parentNode.insertBefore(part('copies', col), decide);
   } else {
     manualNote.remove();
     copyImage.remove();
     copyVideo.remove();
     copyLink.remove();
-    revealButton.remove();
   }
 
-  /* Lints and blocking: over the limit (incl. more than 30 Instagram
-     hashtags) and Instagram without an image block approving. */
-  var badges = part('badges', col);
+  /* One reason under the checkbox. Auto: what blocks approving and how to
+     recover (over the limit, Instagram over its hashtags or without media).
+     Manual: the same facts as advice; Posted stays possible. The payload's
+     style flags are one quiet note; X past 280 is a quiet long-post note. */
   var checked = text + '\n' + (data.first_comment || '').normalize('NFC');
   var res = RS.count(text, p);
-  var blocked = null;
-  var blockedBy = null;
-  if (res.count > res.limit) blocked = RS.t('over_limit_blocks');
-  if (p === 'instagram' && res.hashtags > res.hashtagLimit) {
-    badge(badges, 'danger', RS.t('lint_over_hashtags', { n: res.hashtags - res.hashtagLimit }));
-    blocked = RS.t('over_limit_blocks');
+  var reasons = [];
+  if (res.count > res.limit) {
+    reasons.push(manual(p)
+      ? RS.t('manual_over_limit', { limit: RS.number(res.limit), platform: name })
+      : RS.t('shorten_to_approve', { n: RS.number(res.count - res.limit) }));
   }
-  if (p === 'instagram' && !hasVisual) {
-    blockedBy = badge(badges, 'danger', RS.t('lint_ig_needs_image'));
-    blockedBy.id = 'lint-image-' + p;
-  } else if (p === 'instagram' && hasVisual) {
-    blockedBy = badge(badges, 'danger', RS.t('lint_ig_needs_image'));
-    blockedBy.id = 'lint-image-' + p;
+  if (res.hashtagLimit !== undefined && res.hashtags > res.hashtagLimit) {
+    reasons.push(manual(p)
+      ? RS.t('manual_over_hashtags', { limit: res.hashtagLimit, platform: name })
+      : RS.t('hashtags_to_approve', { limit: res.hashtagLimit }));
   }
-  /* the payload's own style flags (characters or words to avoid) */
-  flags.forEach(function (f) {
-    if (checked.indexOf(f.normalize('NFC')) >= 0) badge(badges, 'warn', RS.t('lint_found', { text: f }));
-  });
+  if (p === 'instagram' && !hasVisual) reasons.push(RS.t('lint_ig_needs_image'));
+  if (p === 'x' && res.fold && res.count > res.fold && res.count <= res.limit) {
+    var longNote = part('long-note', col);
+    longNote.textContent = RS.t('x_long_post');
+    longNote.hidden = false;
+  }
+  var found = flags.filter(function (f) { return checked.indexOf(f.normalize('NFC')) >= 0; });
+  if (found.length) {
+    var styleNote = part('style-note', col);
+    styleNote.textContent = RS.t('style_notes', {
+      items: found.map(function (f) { return RS.t('quoted', { text: f }); }).join(', ')
+    });
+    styleNote.hidden = false;
+  }
 
   var input = part('approve', col);
   part('approve-label', col).textContent = RS.t(manual(p) ? 'posted' : 'approve_for', { platform: name });
   var reason = part('blocked', col);
-  if (blocked) {
-    part('blocked-text', reason).textContent = blocked;
+  if (reasons.length) {
+    part('blocked-text', reason).textContent = reasons.join(' ' + RS.t('sep') + ' ');
     reason.hidden = false;
+    if (manual(p)) reason.setAttribute('data-advice', '');
     input.setAttribute('aria-describedby', reason.id);
-  } else if (blockedBy) {
-    input.setAttribute('aria-describedby', blockedBy.id);
   }
-  /* over the limit, or Instagram without any image: never approvable */
-  fixedBlock[p] = !!(blocked || (blockedBy && !hasVisual));
+  /* an auto platform over a limit, or Instagram without any media: never
+     approvable; a manual platform never is blocked */
+  fixedBlock[p] = !manual(p) && reasons.length > 0;
   if (fixedBlock[p]) {
     input.disabled = true;
     input.setAttribute('data-rs-blocked', '');
     col.setAttribute('data-blocked', '');
+  }
+  /* Instagram (auto) with media: until it has loaded a new approval waits;
+     its note sits where the reason goes */
+  if (p === 'instagram' && hasVisual && !manual(p)) {
+    var imageNote = document.createElement('p');
+    imageNote.className = 'pp__reason';
+    imageNote.id = 'lint-image-' + p;
+    imageNote.hidden = true;
+    var imageDot = document.createElement('span');
+    imageDot.className = 'rs-dot';
+    imageDot.setAttribute('data-rs-status', 'danger');
+    imageDot.setAttribute('aria-hidden', 'true');
+    imageNote.appendChild(imageDot);
+    imageNote.appendChild(document.createTextNode(RS.t('lint_ig_needs_image')));
+    reason.parentNode.insertBefore(imageNote, reason.nextSibling);
   }
   inputs[p] = input;
   cols[p] = col;
 
   /* Instagram needs its image. Only the selected panel is mounted, so until
      its frame reports a state the image element itself tells. */
-  if (p === 'instagram' && hasVisual) {
+  if (p === 'instagram' && hasVisual && !manual(p)) {
     var visual = vid || img;
     imageState[p] = function () {
       var known = frame.getAttribute('data-image-state');
@@ -367,7 +386,7 @@ function syncControl(p) {
   if (!imageState[p]) return;
   var input = inputs[p];
   var col = cols[p];
-  var note = part('badges', col).querySelector('#lint-image-' + p);
+  var note = col.querySelector('#lint-image-' + p);
   var visualState = imageState[p]();
   var loaded = visualState === 'loaded';
   /* A clip that cannot be previewed is not missing media. */
@@ -453,7 +472,7 @@ function renderTicks() {
     box.setAttribute('data-rs-status', state);
     tabs[p].setAttribute('data-rs-approval-state', on ? 'approved' : 'pending');
     var spoken = state === 'blocked' ? 'blocked'
-      : manual(p) ? (state === 'open' ? 'skip' : 'posted')
+      : manual(p) ? (state === 'open' ? 'not_posted' : 'posted')
       : (state === 'open' ? 'not_approved' : 'approved');
     ticks[p].text.textContent = RS.t(spoken);
   });
@@ -479,14 +498,14 @@ function perPlatform(list, note) {
 }
 
 /* The task kind says who acts next (RS.cta, the shell's table). Every
-   platform manual: you post yourself, "Posted ✓" once one is ticked, "Skip"
-   reports every platform as skipped. Any auto platform: "Approve & post"
-   (the bot posts what is ticked; "Posted ✓" when only manual ones are
-   ticked), "Request changes" as the alternative. A mix names neither actor
+   platform manual: you post yourself, "Posted ✓" once one is ticked.
+   Any auto platform: "Approve & post" (the bot posts what is ticked;
+   "Posted ✓" when only manual ones are ticked). A mix names neither actor
    while both act ("Submit"); before any tick every approvable platform is
-   the plan. */
+   the plan. "Request changes" is always the alternative. */
 var selfPost = RS.task.base === 'post_yourself';
-var mixed = anyManual && platforms.some(function (p) { return !manual(p); });
+/* nothing can be approved or marked: only a change request is left */
+var deadEnd = platforms.every(function (p) { return fixedBlock[p]; });
 function submitLabel(list) {
   if (selfPost) return RS.cta('done');
   var plan = list.length || !mixed ? list : platforms.filter(function (p) { return !fixedBlock[p]; });
@@ -503,9 +522,11 @@ function splitCount(list) {
   if (hand) parts.push(RS.t('mixed_posted_count', { n: hand }));
   return parts.join(' ' + RS.t('sep') + ' ');
 }
-function skipAll() {
-  RS.setResult({ decision: 'approve', platforms: [], comment: '', per_platform: perPlatform([]) });
-  RS.submit();
+/* the footer status while nothing is ticked */
+function idleStatus() {
+  if (deadEnd) return RS.t('nothing_approvable');
+  if (!anyAuto) return RS.t('select_posted');
+  return RS.t(anyManual ? 'select_platform_manual' : 'select_platform');
 }
 
 function saveSelection() { if (RS.run.state === 'open') update(true); }
@@ -528,8 +549,7 @@ function update(save) {
   }
   /* an approval never carries the (hidden) change-request text */
   RS.setSubmitLabel(submitLabel(list));
-  if (selfPost) RS.setAlternative(RS.cta('skipped'), skipAll);
-  else RS.setAlternative(RS.cta('request_changes'), function () { setRequesting(true, true); });
+  RS.setAlternative(RS.cta('request_changes'), function () { setRequesting(true, true); });
   var waiting = list.filter(function (p) { return !confirmed(p); })[0];
   if (waiting) {
     RS.setResult(null);
@@ -543,8 +563,7 @@ function update(save) {
     return;
   }
   /* only auto approvals are the bot's to post; a manual one never is.
-     Nothing ticked: stay disabled (posting yourself, "Skip" reports every
-     skip). */
+     Nothing ticked: stay disabled. */
   if (list.length) {
     RS.setResult({
       decision: 'approve', platforms: list.filter(function (p) { return !manual(p); }), comment: '',
@@ -554,7 +573,7 @@ function update(save) {
       : RS.t(anyManual ? 'decided_count' : 'approve_count', { n: list.length, total: platforms.length }));
   } else {
     RS.setResult(null);
-    RS.setStatus(RS.t(anyManual ? 'select_platform_manual' : 'select_platform'));
+    RS.setStatus(idleStatus());
   }
 }
 
@@ -565,7 +584,15 @@ function update(save) {
    decided banner words the same state in the past. The steps say per actor
    what is still open, then the footer as it reads now. */
 function refreshBanner(list) {
-  if (!anyManual || selfPost || typeof RS.setTaskLive !== 'function') return;
+  if (typeof RS.setTaskLive !== 'function') return;
+  if (deadEnd && !anyManual) {
+    /* the default steps would ask to approve: say what is left */
+    RS.setTaskLive(requesting
+      ? { stepsKey: 'task_steps_changes', stepsButton: RS.t('send_request') }
+      : { stepsKey: 'steps_nothing_approvable', stepsButton: RS.cta('request_changes') });
+    return;
+  }
+  if (!mixed || selfPost) return;
   var approvable = platforms.filter(function (p) { return !fixedBlock[p]; });
   var picked = list.length > 0;
   var chosen = picked ? list : approvable;

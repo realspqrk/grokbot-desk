@@ -6,7 +6,7 @@
   "counters": {
     "x": {
       "count": 31,
-      "limit": 280,
+      "limit": 25000,
       "over": false
     },
     "linkedin": {

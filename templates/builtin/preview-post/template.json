@@ -3,12 +3,11 @@
   "namespace": "global",
   "version": 1,
   "title_de": "Post-Vorschau",
-  "description": "Built-in (calm): realistic X, LinkedIn, Instagram and Facebook previews of one post draft, one platform at a time. Tabs with approval ticks, one large preview with the platform's own fold label, counters, lints and copy icons. Per platform mode: auto (the bot posts after Approve & post) or manual (the reviewer posts by hand: copies first, including the image, then Posted). Request changes with a comment is the footer alternative.",
+  "description": "Built-in (calm): realistic X, LinkedIn, Instagram and Facebook previews of one post draft, one platform at a time. Tabs with approval ticks, one large preview with the platform's own fold label, counters, one reason line and copy icons. Per platform mode: auto (the bot posts after Approve & post; a platform over its limit is blocked) or manual (the reviewer posts by hand: copies first, including the image, then Posted; never blocked). Request changes with a comment is the footer alternative.",
   "components": [
     "rs-post-frame",
     "rs-counter",
-    "rs-copy",
-    "rs-badge"
+    "rs-copy"
   ],
   "strings": [
     "reveal",
@@ -30,10 +29,7 @@
     "copy_comment",
     "hashtags",
     "pf_handle",
-    "lint_found",
     "lint_ig_needs_image",
-    "lint_over_hashtags",
-    "over_limit_blocks",
     "select_platform",
     "comment_required",
     "approve_count",
@@ -46,7 +42,6 @@
     "approve_post",
     "footer_done",
     "posted",
-    "skip",
     "mark_posted",
     "mark_posted_on",
     "confirm_decision",
@@ -62,10 +57,21 @@
     "approval_video_failed",
     "decided_count",
     "select_platform_manual",
-    "report_skips",
     "submit_mixed",
     "mixed_approved_count",
     "mixed_posted_count",
-    "sep"
+    "sep",
+    "select_posted",
+    "not_posted",
+    "x_long_post",
+    "shorten_to_approve",
+    "hashtags_to_approve",
+    "manual_over_limit",
+    "manual_over_hashtags",
+    "nothing_approvable",
+    "steps_nothing_approvable",
+    "task_steps_changes",
+    "style_notes",
+    "quoted"
   ]
 }

@@ -22,8 +22,14 @@
     }
   },
   "platforms": [
-    {"platform": "x", "mode": "manual"},
-    {"platform": "linkedin", "mode": "auto"}
+    {
+      "platform": "x",
+      "mode": "manual"
+    },
+    {
+      "platform": "linkedin",
+      "mode": "auto"
+    }
   ],
-  "notes": "Quote a fictional thread. You post X yourself; I post LinkedIn after your approval."
+  "notes": "A short quote of a fictional thread, with the counter clip as the video."
 }

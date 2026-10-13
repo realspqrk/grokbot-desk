@@ -1,0 +1,13 @@
+{
+  "copies": {
+    "x-text": "Behind the counter: how the bread gets made.\n\nThe starter is fed at 9 every evening, the dough is mixed at 4 and shaped at 5. The first loaves leave the oven at 7, which is why the queue starts at ten to.\n\nRye takes longest: two days from starter to shelf. Spelt is the quickest, so it sells out first.\n\nNothing is frozen. What is left at 6 goes to the food bank on Linden Street the same evening.\n\nQuestions about a loaf? Ask at the counter, the bakers are happy to explain.\n\n#Sourdough",
+    "x-hashtags": "#Sourdough"
+  },
+  "counters": {
+    "x": {
+      "count": 487,
+      "limit": 25000,
+      "over": false
+    }
+  }
+}

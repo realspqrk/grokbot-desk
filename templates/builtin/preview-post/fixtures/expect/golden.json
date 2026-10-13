@@ -16,7 +16,7 @@
   "counters": {
     "x": {
       "count": 245,
-      "limit": 280,
+      "limit": 25000,
       "over": false
     },
     "linkedin": {
@@ -36,7 +36,7 @@
     },
     "instagram-hashtags": {
       "count": 3,
-      "limit": 30,
+      "limit": 5,
       "over": false
     },
     "facebook": {
@@ -77,14 +77,14 @@
       "press": "Tab"
     },
     {
-      "repeat": 6,
+      "repeat": 5,
       "press": "Tab"
     },
     {
       "press": "Space"
     },
     {
-      "repeat": 6,
+      "repeat": 5,
       "press": "Shift+Tab"
     },
     {
