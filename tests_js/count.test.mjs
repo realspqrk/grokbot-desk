@@ -100,7 +100,7 @@ test('platforms.json carries the spec limits', () => {
 test('result shape', () => {
   assert.deepEqual(count('abc', 'x'), { count: 3, limit: 25000, over: false, fold: 280 });
   assert.deepEqual(count('abc', 'linkedin'), { count: 3, limit: 3000, over: false, fold: 210 });
-  assert.deepEqual(count('abc #a', 'instagram'), { count: 6, limit: 2200, over: false, fold: 125, hashtags: 1, hashtagLimit: 5 });
+  assert.deepEqual(count('abc #a', 'instagram'), { count: 6, limit: 2200, over: false, fold: 125, hashtags: 1, hashtagLimit: 5, tags: ['a'] });
   assert.deepEqual(count('', 'facebook'), { count: 0, limit: 63206, over: false });
 });
 
@@ -476,6 +476,13 @@ test('Instagram: a number or a URL fragment is not a hashtag', () => {
   assert.equal(count('Menu: example.com/#menu', 'instagram').hashtags, 0);
   assert.equal(count('Menu: https://example.com/#menu and https://example.com/page?a=1#top', 'instagram').hashtags, 0);
   assert.equal(count('Menu https://example.com/ #menu', 'instagram').hashtags, 1);
+});
+
+test('Instagram: tags lists the counted hashtags, the same ones the count sees', () => {
+  assert.deepEqual(count('#Café ##Doppelt https://example.com/#one me#two #three!', 'instagram').tags,
+    ['café', 'doppelt', 'three']);
+  assert.deepEqual(count('https://example.com/#one', 'instagram').tags, []);
+  assert.equal(count('Hello', 'x').tags, undefined);
 });
 
 test('foldIndex: LinkedIn 210 and Instagram 125 code points', () => {
