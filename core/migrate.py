@@ -126,20 +126,68 @@ def _moved(value, old, new):
     return value
 
 
-def _rewrite_config(config, old, new):
-    """Point config.json media_roots under old to new, atomically. Returns
-    the original bytes when the file changed (to put back), else None."""
-    if not config.is_file():
+def _rewrite_json(path, old, new, select=None):
+    """Point absolute paths under old to new in one JSON file, atomically.
+    With select, only that top-level list changes. Returns the original
+    bytes when the file changed (to put back), else None."""
+    if not path.is_file():
         return None
-    original = config.read_bytes()
-    value = loads(original.decode("utf-8"))
-    if not isinstance(value, dict) or not isinstance(value.get("media_roots"), list):
+    original = path.read_bytes()
+    try:
+        value = loads(original.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None  # unreadable now, unreadable after the move: leave it
+    if select is not None and not (
+        isinstance(value, dict) and isinstance(value.get(select), list)
+    ):
         return None
-    roots = _moved(value["media_roots"], old, new)
-    if roots == value["media_roots"]:
-        return None
-    _replace(config, (dumps(dict(value, media_roots=roots), ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+    changed = value[select] if select is not None else value
+    for prefix in old:
+        changed = _moved(changed, prefix, new)
+    if select is not None:
+        if changed == value[select]:
+            return None
+        text = dumps(dict(value, **{select: changed}), ensure_ascii=False, indent=2)
+    else:
+        if changed == value:
+            return None
+        # the run store's own format (core/runs.py RunStore._save)
+        text = dumps(changed, ensure_ascii=False, separators=(",", ":"))
+    _replace(path, (text + "\n").encode("utf-8"))
     return original
+
+
+def _rewrite_references(legacy, current):
+    """Point run records (media paths, roots) and config.json media_roots
+    under legacy to current, inside legacy, one atomic file at a time.
+    Returns {path: original bytes} of every file changed. On an error the
+    files changed so far are put back before it is raised."""
+    old = [str(legacy)]
+    try:
+        resolved = str(legacy.resolve())
+    except OSError:
+        resolved = old[0]
+    if os.path.normcase(resolved) != os.path.normcase(old[0]):
+        old.append(resolved)
+    originals = {}
+    try:
+        for path in sorted((legacy / "runs").glob("*.json")):
+            before = _rewrite_json(path, old, str(current))
+            if before is not None:
+                originals[path] = before
+        config = legacy / "config.json"
+        before = _rewrite_json(config, old, str(current), select="media_roots")
+        if before is not None:
+            originals[config] = before
+    except BaseException:
+        _restore(originals)
+        raise
+    return originals
+
+
+def _restore(originals):
+    for path, data in originals.items():
+        _replace(path, data)
 
 
 def _replace(path, data):
@@ -162,10 +210,10 @@ def migrate(local):
 
     Raises MigrationRefused (nothing changed) when a desk runs or starts in
     either folder, another migrate runs, a run in the old folder is still
-    open, or the new folder already holds files. With no open run no stored
-    run needs its paths changed: only config.json media_roots that point
-    into the old folder are rewritten, inside the old folder before the
-    move, and put back when the move fails."""
+    open, or the new folder already holds files. Paths under the old folder
+    in decided run records (media paths and roots) and in config.json
+    media_roots are rewritten inside the old folder before the move, and
+    every rewritten file is put back when the move fails."""
     local = Path(local)
     legacy, current = local / LEGACY_NAME, local / PRODUCT_NAME
     summary = {"from": str(legacy), "to": str(current)}
@@ -194,8 +242,7 @@ def migrate(local):
                 "decide or discard open desks first, close the desk, then run migrate again",
                 4,
             )
-        config = legacy / "config.json"
-        original = _rewrite_config(config, str(legacy), str(current))
+        originals = _rewrite_references(legacy, current)
         emptied = []
         try:
             if current.exists():
@@ -206,14 +253,19 @@ def migrate(local):
                     os.rmdir(folder)
                     emptied.append(folder)
             os.replace(legacy, current)
-        except OSError:
+        except BaseException:
             for folder in reversed(emptied):
                 os.makedirs(folder, exist_ok=True)
-            if original is not None:
-                _replace(config, original)
+            _restore(originals)
             raise
         marker = current / PENDING_NAME
-        return {"migrated": True, **summary, "config_rewritten": original is not None}
+        config = legacy / "config.json"
+        return {
+            "migrated": True,
+            **summary,
+            "config_rewritten": config in originals,
+            "runs_rewritten": len(originals) - (config in originals),
+        }
     finally:
         try:
             marker.unlink()

@@ -112,7 +112,7 @@ def _decide(base, run_id):
 
 
 def test_migrate_refuses_while_a_run_is_open_and_moves_once_decided(tmp_path):
-    run_id, _ = _preview_with_legacy_media(tmp_path)
+    run_id, media_id = _preview_with_legacy_media(tmp_path)
     legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
     config = (legacy / "config.json").read_bytes()
 
@@ -129,7 +129,31 @@ def test_migrate_refuses_while_a_run_is_open_and_moves_once_decided(tmp_path):
     assert not legacy.exists()
     assert json.loads((current / "config.json").read_text())["media_roots"] == [str(current / "media")]
     assert json.loads((current / "results" / f"{run_id}.json").read_text())["status"] == "cancelled"
+    assert summary["runs_rewritten"] == 1
+    assert "spqrk-report-shell" not in (current / "runs" / f"{run_id}.json").read_text(encoding="utf-8")
     assert migrate.migrate(tmp_path)["migrated"] is False
+
+
+def test_a_submitted_report_keeps_its_media_after_migrate(tmp_path):
+    from core.actionlog import ActionLog
+    from core.runs import RunStore
+
+    run_id, media_id = _preview_with_legacy_media(tmp_path)
+    legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
+    store = RunStore(legacy, _scan(legacy), paths.load_config(legacy), ActionLog(legacy))
+    store.decide(run_id, "submitted", {
+        "decision": "approve",
+        "platforms": ["linkedin"],
+        "comment": "",
+        "per_platform": {"linkedin": {"mode": "auto", "decision": "approved"}},
+    })
+
+    assert migrate.migrate(tmp_path)["migrated"] is True
+
+    reloaded = _reload(current)
+    assert reloaded.detail(run_id)["state"] == "submitted"
+    assert media_id in reloaded.media
+    assert reloaded.media[media_id].path == current / "media" / "photo.png"
 
 
 def test_migrate_replaces_an_empty_new_dir_but_never_one_with_files(tmp_path):
@@ -193,6 +217,8 @@ def test_failed_move_puts_the_old_config_back(tmp_path, monkeypatch):
     legacy = tmp_path / "spqrk-report-shell"
     _decide(legacy, run_id)
     before = (legacy / "config.json").read_bytes()
+    run_file = legacy / "runs" / f"{run_id}.json"
+    run_before = run_file.read_bytes()
     real_replace = migrate.os.replace
 
     def refuse(source, target):
@@ -205,6 +231,8 @@ def test_failed_move_puts_the_old_config_back(tmp_path, monkeypatch):
         migrate.migrate(tmp_path)
 
     assert (legacy / "config.json").read_bytes() == before
+    assert run_file.read_bytes() == run_before
+    assert not list(legacy.rglob("*.migrate.tmp"))
     assert not (legacy / "migrate.pending").exists()
     assert not (tmp_path / "grokbot-desk").exists()
 

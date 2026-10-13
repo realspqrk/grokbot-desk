@@ -151,8 +151,8 @@ This is the release candidate for 1.0. The desk is calmer, and you decide in one
   while the desk is closed and no report in the old folder is still open.
 - `migrate` also refuses while a desk runs or is starting, while another
   migrate runs, or when the new folder already holds files. It rewrites
-  `config.json` media folders under the old path, and puts that file back
-  if the move fails. A moved folder is never created again. Starting the
+  `config.json` media folders under the old path and also updates paths in
+  decided reports, and puts those files back if the move fails. A moved folder is never created again. Starting the
   desk on the old folder after the move is refused. macOS has nothing to
   migrate. `RS_DATA_DIR` is never moved.
 - Breaking: the webhook variable `SPQRK_REPORT_SHELL_WEBHOOK_KEY` is gone.
