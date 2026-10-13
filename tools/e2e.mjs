@@ -1528,9 +1528,13 @@ async function stringsMode() {
   });
 }
 
+/* Fixtures beyond golden and edge-max that the calm checker also covers. */
+const CALM_EXTRA = { 'decide-list': ['edge-many'], 'review-doc': ['edge-report'] };
+
 function calmFixtureCases(selected) {
   const all = fixtureCases(selected);
-  const cases = all.filter((item) => ['golden', 'edge-max'].includes(item.fixture));
+  const cases = all.filter((item) => ['golden', 'edge-max'].includes(item.fixture)
+    || (CALM_EXTRA[item.manifest.id] || []).includes(item.fixture));
   for (const template of templates(selected)) {
     const fixtures = new Set(
       cases.filter((item) => item.manifest.id === template.manifest.id)
