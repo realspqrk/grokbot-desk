@@ -13,7 +13,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Platforms: Windows | macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-blue.svg)](#platforms)
-[![Version: 1.0.0-beta.2](https://img.shields.io/badge/version-1.0.0--beta.2-blue.svg)](CHANGELOG.md)
+[![Version: 1.0.0-beta.3](https://img.shields.io/badge/version-1.0.0--beta.3-blue.svg)](CHANGELOG.md)
 
 </div>
 
@@ -35,7 +35,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 
 Chat is awful for discussing serious work. When a bot needs your decision, a calm window pops up instead: the bot sends JSON, you decide, the bot reads your decision as JSON. Everything stays on your computer.
 
-**Status:** 1.0.0-beta.2. Windows and macOS are supported.
+**Status:** 1.0.0-beta.3. Windows and macOS are supported.
 
 ## What you see
 

@@ -1,52 +1,177 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-beta.3 (2026-10-13)
 
-- The report title leads: it is the strongest line. The bot's name, a small
-  avatar and, while several reports wait, the open count (`1 von 2 offen`)
-  form a quiet line above it, next to the `…` menu. The task banner sits
-  under the title.
-- The banner is one line (what to do, effort, due date) and the why. Steps
-  show only when they add something: your own `task.steps`, a mixed
-  report's plan per side, a list's "decide each, then <button>" with the
-  footer's current label. An `approve_label` leads the banner line.
-- A template's summary, intro, context or notes becomes the banner's why only
-  when it fits whole (three sentences, 360 characters); otherwise it stays in
-  the report. Line breaks are kept, German abbreviations (`z. B.`, `ca.`,
-  `Nr.`), ordinals and dates (`15.`, `31.12.`) no longer end a sentence,
-  while `...`, `…` and a year (`2026.`) still do, and a cut falls between
-  words.
-- A list of the bot's actions says "Make your decisions, then <bot>
-  continues" (one item: "Make your decision"); a choice label such as `Pay`
-  no longer names the whole desk. A mixed preview's steps are one line
-  ("Review the platforms, then <button>") and its footer reads "Send
-  response". After "None of these" the banner says new options were
-  requested, also when the report is reopened.
-- decide-list: the list's heading reads `Items` (`Einträge`) instead of
-  `Needs you`, so a sent list no longer announces open work.
-- review-doc: with section comments, Request changes no longer opens an
-  empty overall comment; it waits behind a quiet `Add a note`.
-- approve-one: `summary` is optional. Without it the banner's `task.why`
-  and the facts carry the request.
-- Discard report moves from the footer into the `…` menu, behind the same
-  confirmation. The footer holds the status, up to two quiet alternatives
-  (`RS.setAlternatives`) and the one primary.
-- A short report keeps its footer right under the content; a long one keeps
-  it at the window bottom.
-- One German verb, `Freigeben`, everywhere. English says bot, not agent. The
-  default primary names the bot (`An Release Bot senden`).
-- Times, due dates and "today" use the machine's time zone instead of
-  Europe/Vienna. `RS_TZ` pins a zone (tests and screenshots).
-- New `migrate` command: on Windows it moves the older data folder
+This is the release candidate for 1.0. The desk is calmer, and you decide in one click.
+
+- **Desk layout and wording.** The report title is the strongest line. Above
+  it, a quiet line holds the bot's name, a small avatar and, while several
+  reports wait, the open count (`1 von 2 offen`, or `1 of 2 open`), next to
+  the `…` menu. The task banner sits under the title.
+- The banner is one line (what to do, the effort, the due date) and the why.
+  Steps show only when they add something: your own `task.steps`, a mixed
+  preview (`Review the platforms, then Send response`), several items the
+  bot will act on (`Decide each item, then Send decisions`), or a list that
+  is entirely yours (`Do or skip each item, then press Done`; replies say
+  `Post or skip each reply`). The button in that line is the footer's
+  current label.
+- An `approve_label` leads the line for one approval (`Approve deploy, then
+  Release Bot continues`). A list the bot will act on says `Make your
+  decisions, then Release Bot continues` (one item: `Make your decision`).
+  `action` `post` says "posts" and `send` says "sends". A choice label such
+  as `Pay` stays on the buttons.
+- A template `summary`, `intro`, `context` or `notes` becomes the why only
+  when the whole text fits (three sentences, 360 characters) and has no
+  link. Otherwise it stays in the report. Line breaks are kept. German
+  abbreviations (`z. B.`, `ca.`, `Nr.`), ordinals and dates (`15.`,
+  `31.12.`) do not end a sentence. `...`, `…` and a year from 1900 through
+  2099 (`2026.`) still do. A cut falls between words. Any other number, and
+  a version (`2.4.`), stays in the same sentence.
+- Discard report is in the `…` menu, behind the same confirmation. An
+  information-only report has no Discard. The footer holds the status, up
+  to two quiet alternatives and the one primary. A short report keeps the
+  footer under the content. A long one keeps it at the window bottom.
+- German uses one approval verb, `Freigeben`. English says bot (`Approve
+  and the bot continues`). The default primary names the bot when the
+  display name is at most 24 characters and is not the raw id (`An Release
+  Bot senden`). Otherwise it stays `An Bot senden`.
+- Times, due dates and "today" use the machine's time zone. `RS_TZ` pins a
+  zone. When the server falls back to that zone, the page uses it too.
+
+- **Decisions.** Breaking: `approve-one` has no segmented choice. The footer
+  is the decision, one click each. The primary approves (`Approve & post`,
+  `Approve & send` or `Approve & continue`, or your `approve_label`).
+  `Reject` sends at once and needs no reason. With `allow_changes`,
+  `Request changes` opens `What should change?` and the primary becomes
+  `Send request` until `Cancel`.
+- `summary` is optional. Without it, put the question in `task.why`. The
+  facts carry the request. A blank `summary` is still rejected. With
+  `checks`, one line before the facts names warnings and failures (`3 ok ·
+  1 warning: Bundle size`). A fact label may be 32 characters. A note is
+  part of the result only while its field is open.
+- A user action uses `Posted ✓`, `Sent ✓` or `Done ✓`, plus `Skip`.
+  Information only is `Got it`. That note is sent only while it is open.
+- `pick-option` shows the question as the heading, and leaves it out when
+  it only repeats the title. Nothing is preselected. The primary names the
+  option (`Choose Old Mill Studio`) and stays off until one is picked.
+  `Add note` is a quiet button under the cards.
+- `None of these` is on unless `allow_none` is false. It asks what is
+  missing, requires the note, and sends a change request (`decision`
+  `request_changes`, no `choice`). The decided banner says `New options
+  requested: the bot keeps looking`, including when the report is reopened.
+  A pick is still `choice` and `note`.
+- Breaking: a `decide-list` with any bot item uses `Send decisions`
+  (`Send decision` for one item). The button sends the choices and approves
+  nothing by itself. When every item is the person's, the footer is `Done`.
+  The banner asks for the decisions and then names the bot. It does not use
+  the choice labels. A mix still gives each side one line, you first, and
+  the footer stays `Send decisions`.
+- A list holds 1 to 12 items. The status counts by the labels on the
+  buttons (`2 Pay · 1 Reject · 2 open`). Results stay `approve`, `reject`
+  and `defer`, or `done`, `skipped` and `later` on a user item. `content`
+  `post` or `reply` shows `Posted ✓` for that item.
+- Breaking: `show` rejects a label that repeats another choice of the same
+  item, including a top-level label or a default such as `Reject` or
+  `Ablehnen`. The error points at that `labels` entry. A user item cannot
+  carry `labels`, and a choice from the other side is rejected. `due` is
+  `YYYY-MM-DD` and must be a real calendar day (`2026-02-31` is rejected).
+- The list heading reads `Items` (`Einträge`), so a sent list does not say
+  it needs you. When nothing was already handled, the list has no visible
+  heading. `Add note` on an item is a quiet link.
+- `review-doc` uses `Request changes`. With section comments, that button
+  does not open an empty overall comment. The comment waits behind `Add a
+  note`, and the request can be sent from the section comments alone. An
+  empty section field closes when it loses focus, or with Esc.
+- Breaking: the `review-doc` result is stricter. `approve`, `done` and
+  `skipped` keep `comment` empty. `approve` may still carry section
+  comments. `request_changes` needs a non-blank overall comment, or a blank
+  one plus at least one section comment. A blank or whitespace-only section
+  comment does not count. Each section comment is `{section, heading,
+  comment}`.
+
+- **Social posts.** Breaking: an auto Instagram post allows 5 hashtags (the
+  limit was 30). More than 5 blocks approval (`Cut to 5 hashtags to
+  approve`). A manual post only advises (`More than 5 hashtags: check in
+  Instagram`).
+- A listed tag counts toward those 5 even when `hashtag_mode` is `none`,
+  unless the text already contains that hashtag. A tag needs a letter or an
+  underscore, so `#1` does not count. A `#` inside a URL, or after a slash,
+  does not count.
+- X allows 25,000 weighted characters and folds after 280. The
+  fold cuts at the last word boundary, never inside a URL, ends the visible
+  text with `…`, and puts `Show more` on its own line. The counter reads
+  `245 / 280` up to the fold and `487 / 25,000` past it (`25.000` in
+  German). Past the fold, a quiet line says `Long post (X Premium)`. An
+  auto post over 25,000 is blocked. A whole emoji counts as one unit at the
+  fold. A URL in the text still weighs 23. `target.url` is still not part
+  of the text.
+- Breaking: when every platform is manual there is no `Skip`. The primary
+  stays off until one platform is marked `Posted ✓`, and it then reads
+  `Posted ✓`. An unticked manual platform is still `skipped`. `Request
+  changes` remains. The banner says `Post it yourself` once, and the panel
+  does not say `You post this yourself.` The tabs do not repeat `manual`.
+  In a mix, a manual tab still says `X · manual`. The footer reads
+  `Send response` before anything is ticked and while both sides are
+  ticked, `Approve & post` when only auto platforms are ticked, and
+  `Posted ✓` when only manual ones are.
+- A manual post is never blocked. Over a limit, `Posted ✓` stays on and the
+  line is advice. A blocked auto platform shows one recovery line
+  (`Shorten by 12 characters to approve`). When nothing can be approved,
+  the status says `Nothing can be approved: request changes`.
+- `variants.<platform>` may set `text`, `hashtags`, or both. Image and
+  video ratios add `3:4` and `9:16`. On a manual platform the copies sit
+  above `Posted ✓`, and `Show in folder` is in the `…` menu. Flag words are
+  one quiet line (`Style note: contains “—”`). Post only auto platforms
+  whose `per_platform` decision is `approved`.
+
+- **Reports.** `review-doc` renders `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`,
+  `[!WARNING]` and `[!CAUTION]` as a quiet, neutral note with a title. A
+  callout copies nothing, including a code block or quote inside it. With
+  `copy` texts, only a bold paragraph in the lead (before the first
+  heading) moves above them.
+- A status, weekly summary or research outcome uses `review-doc` with
+  `task.kind` `fyi`: a bold one-line summary, a facts table, checks as
+  `- [x]` and `- [ ]`, at most one callout, details last, about 400 words.
+  That desk is `Got it` only. A closed note sends an empty `comment`.
+
+- **Bots.** Open a desk for a decision, and for a report longer than about
+  five lines. Keep chat for a short question or a one-line acknowledgement.
+  The title is the decision or the report, about 60 characters. Say why in
+  one or two sentences. Do not restate the title, who acts, or which button
+  to press.
+- The window does not translate your text. Its buttons are German unless
+  `RS_LANG=en` was set before the server started. Read
+  `templates/builtin/<id>/README.md` for the payload and the result. On a
+  `user` or `none` result, record it and stop.
+
+- **Data folder and setup.** Breaking: on Windows the older data folder
+  stays in use until you run `python report_shell.py migrate`. `paths`,
+  `doctor` and `show` say so. The command moves
   `%LOCALAPPDATA%\spqrk-report-shell` to `%LOCALAPPDATA%\grokbot-desk`
-  while the desk is closed and no report in it is still open, and updates
-  `config.json` media folders under the old path. It refuses while a desk
-  runs or starts, or while a report waits for a decision. Until then the
-  older folder stays in use, and `paths`, `doctor` and `show` say to run
-  `python report_shell.py migrate`. A moved folder is never created again.
-  `RS_DATA_DIR` is never moved.
-- Breaking: the old webhook key variable `SPQRK_REPORT_SHELL_WEBHOOK_KEY` is
-  gone. Use `GROKBOT_DESK_WEBHOOK_KEY`.
+  while the desk is closed and no report in the old folder is still open.
+- `migrate` also refuses while a desk runs or is starting, while another
+  migrate runs, or when the new folder already holds files. It rewrites
+  `config.json` media folders under the old path, and puts that file back
+  if the move fails. A moved folder is never created again. Starting the
+  desk on the old folder after the move is refused. macOS has nothing to
+  migrate. `RS_DATA_DIR` is never moved.
+- Breaking: the webhook variable `SPQRK_REPORT_SHELL_WEBHOOK_KEY` is gone.
+  Use `GROKBOT_DESK_WEBHOOK_KEY`.
+- `python report_shell.py --version` prints `grokbot-desk 1.0.0-beta.3`.
+
+- **Fixes.** Cancelling a change request returns focus to the button that
+  opened it. On `preview-post`, Cancel returns to `Request changes`. A
+  restored draft does not move focus into the decision. `pick-option` keeps
+  the pick set aside by `None of these` in the draft, so Cancel after a
+  reload brings it back.
+- A failed Skip on `review-doc` puts the primary's result back, as
+  `approve-one` does. A closed information-only note is left out of the
+  layout and out of the result.
+- For contributors: every built-in has a German review payload, `_starter`
+  has an English golden fixture, and the German and English string tables
+  must use the same placeholders. The source lint skips worktrees under
+  `.claude`. A built-in screenshot resets and logs any scroll offset before
+  the capture.
 
 ## 1.0.0-beta.2 (2026-10-12)
 
