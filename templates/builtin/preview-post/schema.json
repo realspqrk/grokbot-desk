@@ -7,7 +7,10 @@
     "platforms"
   ],
   "additionalProperties": false,
-  "x-rs-exclusive": ["image", "video"],
+  "x-rs-exclusive": [
+    "image",
+    "video"
+  ],
   "properties": {
     "persona": {
       "type": "string",
@@ -64,7 +67,7 @@
     "hashtags": {
       "type": "array",
       "maxItems": 30,
-      "description": "Stored without #; appended as \"#a #b\" after a blank line when hashtag_mode is append.",
+      "description": "Stored without #; appended as \"#a #b\" after a blank line when hashtag_mode is append. At most 30 here; Instagram blocks auto approval above 5. A platform's variants[p].hashtags replaces this list for that platform.",
       "items": {
         "type": "string",
         "pattern": "^[^\\s#]{1,100}$"
@@ -135,6 +138,8 @@
           "enum": [
             "1:1",
             "4:5",
+            "3:4",
+            "9:16",
             "1.91:1",
             "16:9"
           ]
@@ -175,6 +180,8 @@
           "enum": [
             "1:1",
             "4:5",
+            "3:4",
+            "9:16",
             "1.91:1",
             "16:9"
           ]
@@ -279,63 +286,191 @@
     "variants": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Per-platform text that replaces `text` for that platform.",
+      "description": "Per platform: `text` replaces `text` and `hashtags` replaces `hashtags` for that platform (give one or both).",
       "properties": {
         "x": {
-          "type": "object",
-          "required": [
-            "text"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "text": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 63206
+          "description": "Text and/or hashtags for this platform; at least one of the two.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63206
+                },
+                "hashtags": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^\\s#]{1,100}$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "hashtags"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "hashtags": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^\\s#]{1,100}$"
+                  }
+                }
+              }
             }
-          }
+          ]
         },
         "linkedin": {
-          "type": "object",
-          "required": [
-            "text"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "text": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 63206
+          "description": "Text and/or hashtags for this platform; at least one of the two.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63206
+                },
+                "hashtags": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^\\s#]{1,100}$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "hashtags"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "hashtags": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^\\s#]{1,100}$"
+                  }
+                }
+              }
             }
-          }
+          ]
         },
         "instagram": {
-          "type": "object",
-          "required": [
-            "text"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "text": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 63206
+          "description": "Text and/or hashtags for this platform; at least one of the two.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63206
+                },
+                "hashtags": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^\\s#]{1,100}$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "hashtags"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "hashtags": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^\\s#]{1,100}$"
+                  }
+                }
+              }
             }
-          }
+          ]
         },
         "facebook": {
-          "type": "object",
-          "required": [
-            "text"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "text": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 63206
+          "description": "Text and/or hashtags for this platform; at least one of the two.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63206
+                },
+                "hashtags": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^\\s#]{1,100}$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "hashtags"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "hashtags": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^\\s#]{1,100}$"
+                  }
+                }
+              }
             }
-          }
+          ]
         }
       }
     },
@@ -349,7 +484,7 @@
       "type": "array",
       "maxItems": 8,
       "uniqueItems": true,
-      "description": "Characters or words the post should avoid (house style); each one found in the composed text or the first comment shows a warning badge. Never blocks approving.",
+      "description": "Characters or words the post should avoid (house style); any found in the composed text or the first comment are named in one quiet style note. Never blocks approving.",
       "items": {
         "type": "string",
         "minLength": 1,

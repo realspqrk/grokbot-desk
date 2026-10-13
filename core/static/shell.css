@@ -1004,6 +1004,10 @@ rs-post-frame[no-chrome] .rs-pf__chrome { display: none; }
 .rs-pf__see-more { color: var(--rs-pf-muted); white-space: nowrap; user-select: none; }
 .rs-pf__see-more--gap { margin-inline-end: var(--space-1); }
 .rs-pf__see-more::before { content: attr(data-label); }
+/* X: an ellipsis ends the visible text, "Show more" stands on its own line */
+.rs-pf__ellipsis::before { content: attr(data-label); }
+.rs-pf__see-more--x { display: block; color: var(--rs-pf-link); white-space: normal; }
+.rs-pf__fold-gap { display: none; }
 .rs-pf__foldnote {
   padding: var(--space-1) var(--space-pf) 0;
   font-size: var(--rs-fs-sm);
@@ -1016,6 +1020,7 @@ rs-post-frame[no-chrome] .rs-pf__chrome { display: none; }
 ::highlight(rs-pf-tag-li) { color: var(--rs-li-link); }
 ::highlight(rs-pf-tag-ig) { color: var(--rs-ig-link); }
 ::highlight(rs-pf-tag-fb) { color: var(--rs-fb-link); }
+::highlight(rs-pf-after-x) { color: var(--rs-x-muted); }
 ::highlight(rs-pf-after-li) { color: var(--rs-li-muted); }
 ::highlight(rs-pf-after-ig) { color: var(--rs-ig-muted); }
 

@@ -5,15 +5,17 @@
     "code_points platforms (linkedin, linkedin_comment, instagram, facebook): count = number of Unicode code points. URLs and emoji count literally. These rules are assumptions until the template author verifies them against the real composers.",
     "x (twitter-text v3): URL ranges are weighted first. In the remaining text, each emoji entity recognized by the pinned twemoji-parser 13.1.0 regex weighs emoji_weight (2). Invalid flag pairs, arbitrary ZWJ combinations, and selectors or joiners outside a recognized entity use the per-code-point rule. Every other code point weighs 1 in the configured inclusive ranges and default_weight (2) otherwise. Over = weighted count > limit.",
     "URL rule (x only): extraction follows twitter-text 3.1.0 weighting needs. A scheme URL still requires a recognized domain. The pinned Apache-2.0 TLD table in twitter-text-v3-data.js includes gTLDs, ccTLDs, Unicode TLDs, and punycode. URL starts reject mention, hashtag, dollar, e-mail, filename, and adjacent-domain contexts. Paths and queries stop at twitter-text-compatible boundaries; balanced path parentheses stay in the URL, while unmatched punctuation and text after a t.co slug do not. Each extracted URL weighs url_weight (23).",
-    "Hashtags (instagram): a run of one or more '#' followed by a letter, mark, digit or '_' (\\p{L}\\p{M}\\p{N}_), where the run is not preceded by a letter, mark, digit, '_' or '&'. Each match is one hashtag ('##tag' counts once, 'a#b' and '# x' count zero). over = count > limit OR hashtags > hashtag_limit.",
-    "fold (linkedin 210, instagram 125) is a visual hint only: after that many code points the preview shows the platform's own muted inline \"… more\" label (never inside a grapheme) and greys the rest, which stays readable. It never blocks anything.",
+    "x limit 25000 is the X Premium long-post limit; a standard post ends at 280 weighted, which is the fold: the preview cuts at the last word boundary within 280 weighted, ends it with an ellipsis and shows X's own \"Show more\" on its own line (a URL is never split).",
+    "Hashtags (instagram): a run of one or more '#' followed by a letter, mark, digit or '_' (\\p{L}\\p{M}\\p{N}_), where the run is not preceded by a letter, mark, digit, '_' or '&'. Each match is one hashtag ('##tag' counts once, 'a#b' and '# x' count zero). over = count > limit OR hashtags > hashtag_limit. hashtag_limit 5 is Instagram's per-post limit since December 2025.",
+    "fold (linkedin 210, instagram 125 code points; x 280 weighted) is a visual hint only: after that many characters the preview shows the platform's own muted inline \"… more\" label (never inside a grapheme) and greys the rest, which stays readable. It never blocks anything.",
     "linkedin_comment is the LinkedIn first comment (first_comment, max 1250)."
   ],
   "platforms": {
     "x": {
       "name_key": "platform_x",
       "unit": "weighted",
-      "limit": 280,
+      "limit": 25000,
+      "fold": 280,
       "default_weight": 2,
       "ranges": [[0, 4351, 1], [8192, 8205, 1], [8208, 8223, 1], [8242, 8247, 1]],
       "url_weight": 23,
@@ -36,7 +38,7 @@
       "unit": "code_points",
       "limit": 2200,
       "fold": 125,
-      "hashtag_limit": 30
+      "hashtag_limit": 5
     },
     "facebook": {
       "name_key": "platform_facebook",

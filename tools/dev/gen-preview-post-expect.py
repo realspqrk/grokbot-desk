@@ -1,7 +1,8 @@
 """Generator (py -3 tools/dev/gen-preview-post-expect.py) for fixtures/expect/*.json of preview-post.
 
 Copies are the composed strings by the template rule (variant text or text,
-plus a blank line and the hashtags when hashtag_mode is append; NFC).
+plus a blank line and the platform's hashtags (variant hashtags or hashtags)
+when hashtag_mode is append; NFC).
 Counters are derived independently of count.js and only for fixtures whose
 composed text is plain ASCII without URLs: every code point then weighs 1 on
 X, and the code-point platforms count code points."""
@@ -12,19 +13,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 FIX = ROOT / "templates" / "builtin" / "preview-post" / "fixtures"
 EXP = FIX / "expect"
-LIMITS = {"x": 280, "linkedin": 3000, "instagram": 2200, "facebook": 63206}
+LIMITS = {"x": 25000, "linkedin": 3000, "instagram": 2200, "facebook": 63206}
+INSTAGRAM_HASHTAGS = 5
 # One platform tab at a time: overflow menu, then per tab. Auto: approve, the
 # panel's three copy icons, back to the tablist, ArrowRight to the next tab.
-# Manual (copies first): the three copy icons, copy image and its folder, then
-# "Posted" and back. On the last (auto) tab on through discard and the
+# Manual (copies first): the three copy icons and copy image, then "Posted"
+# and back ("Show in folder" is in the overflow menu). On the last (auto) tab on through discard and the
 # alternative to the submit button.
 AUTO_TAB = (
     {"press": "Tab"}, {"press": "Space"}, {"repeat": 3, "press": "Tab"},
     {"repeat": 4, "press": "Shift+Tab"}, {"press": "ArrowRight"},
 )
 MANUAL_TAB = (
-    {"repeat": 6, "press": "Tab"}, {"press": "Space"},
-    {"repeat": 6, "press": "Shift+Tab"}, {"press": "ArrowRight"},
+    {"repeat": 5, "press": "Tab"}, {"press": "Space"},
+    {"repeat": 5, "press": "Shift+Tab"}, {"press": "ArrowRight"},
 )
 
 
@@ -68,10 +70,14 @@ def load(name):
     return json.loads((FIX / f"{name}.json").read_text(encoding="utf-8"))
 
 
+def tags(data, p):
+    return data.get("variants", {}).get(p, {}).get("hashtags", data.get("hashtags", []))
+
+
 def composed(data, p):
     text = data.get("variants", {}).get(p, {}).get("text", data["text"])
-    if data.get("hashtag_mode", "append") == "append" and data.get("hashtags"):
-        text += "\n\n" + " ".join("#" + h for h in data["hashtags"])
+    if data.get("hashtag_mode", "append") == "append" and tags(data, p):
+        text += "\n\n" + " ".join("#" + h for h in tags(data, p))
     return unicodedata.normalize("NFC", text)
 
 
@@ -79,8 +85,8 @@ def copies(data):
     out = {}
     for p in ids(data):
         out[f"{p}-text"] = composed(data, p)
-        if data.get("hashtags"):
-            out[f"{p}-hashtags"] = " ".join("#" + h for h in data["hashtags"])
+        if tags(data, p):
+            out[f"{p}-hashtags"] = " ".join("#" + h for h in tags(data, p))
         if data.get("first_comment"):
             out[f"{p}-comment"] = data["first_comment"]
     return out
@@ -93,8 +99,8 @@ def counters(data):
         assert text.isascii() and "://" not in text and ".example" not in text, p
         out[p] = {"count": len(text), "limit": LIMITS[p], "over": len(text) > LIMITS[p]}
         if p == "instagram":
-            tags = len(data.get("hashtags", [])) if data.get("hashtag_mode", "append") == "append" else 0
-            out["instagram-hashtags"] = {"count": tags, "limit": 30, "over": tags > 30}
+            n = len(tags(data, p)) if data.get("hashtag_mode", "append") == "append" else 0
+            out["instagram-hashtags"] = {"count": n, "limit": INSTAGRAM_HASHTAGS, "over": n > INSTAGRAM_HASHTAGS}
         if p == "linkedin" and data.get("first_comment"):
             n = len(data["first_comment"])
             out["linkedin-comment"] = {"count": n, "limit": 1250, "over": n > 1250}
@@ -116,8 +122,9 @@ write("golden.json", {
     "keyboard": keyboard_path(golden),
     "result": approved_result(golden),
 })
-limit = load("edge-x-limit")
-write("edge-x-limit.json", {"copies": copies(limit), "counters": counters(limit)})
+for name in ("edge-x-limit", "edge-x-long"):
+    data = load(name)
+    write(f"{name}.json", {"copies": copies(data), "counters": counters(data)})
 for name in ("edge-no-image", "edge-max"):
     write(f"{name}.json", {"copies": copies(load(name)), "counters": {}})
 quote = load("quote-video")

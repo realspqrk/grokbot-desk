@@ -52,21 +52,33 @@
 .pp__side {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
   padding-top: var(--space-1);
   min-width: 0;
 }
+/* the decision: the tick, one reason (blocked, or advice on a manual
+   platform), the counter, then quiet notes */
+.pp__decide { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 .pp__approve { align-self: flex-start; }
 .pp__panel[data-blocked] .pp__approve { color: var(--rs-muted); cursor: not-allowed; }
+.pp__reason { display: flex; align-items: center; gap: var(--space-2); font-size: var(--rs-fs-sm); color: var(--rs-ink); }
+.pp__reason[hidden] { display: none; }
+.pp__reason[data-advice] { color: var(--rs-muted); }
+.pp__reason[data-advice] > .rs-dot { display: none; }
 .pp__counts { display: flex; flex-direction: column; gap: var(--space-1); }
+/* the counter stays neutral; only the amount over the limit stands out */
+.pp__counts rs-counter, .pp__counts rs-counter[over] { color: var(--rs-muted); }
+.pp__counts rs-counter > .rs-dot { display: none; }
+.pp__counts .rs-counter__over { color: var(--rs-ink); font-weight: var(--rs-fw-strong); }
 .pp__tagcount { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
-.pp__badges { display: flex; flex-direction: column; gap: var(--space-1); }
-.pp__badges:empty { display: none; }
-.pp__copies { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.pp__quiet { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.pp__quiet[hidden] { display: none; }
+/* what to copy, grouped tightly */
+.pp__copies { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.pp__copies:empty { display: none; }
 .pp__comment .rs-copy__value { font-size: var(--rs-fs-sm); }
 
-/* ---- mode: manual is named quietly in its tab; the panel starts with the
-   note and the copies (the reviewer posts by hand) ---- */
+/* ---- mode: in a mix a manual platform is named quietly in its tab and its
+   panel starts with the note and the copies (the reviewer posts by hand) ---- */
 .pp__mode { color: var(--rs-muted); font-weight: var(--rs-fw-normal); }
 .pp__manual { color: var(--rs-muted); }
-.pp__reveal { align-self: flex-start; }

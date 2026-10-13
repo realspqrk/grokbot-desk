@@ -40,6 +40,7 @@ const SHOTS = {
     fixtures: {
       golden: 'Autumn menu launch post',
       'edge-no-image': 'Bread class announcement',
+      'edge-x-long': 'How the bread gets made',
     },
   },
   'pick-option': {

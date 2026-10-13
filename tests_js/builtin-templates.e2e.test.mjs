@@ -109,7 +109,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   for (const [id, valid] of [
     ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies']],
     ['approve-one', ['golden', 'edge-access', 'edge-minimal', 'edge-max']],
-    ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-max']],
+    ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-max']],
   ]) {
     test(`${id}: expect.flow (mouse) and expect.keyboard (keys only) write expect.result`, async () => {
       const expect = expectFor(id, 'golden');
@@ -475,6 +475,11 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
         const counted = await page.$eval(`[data-counter-id="${p}"]`, (el) => el.result.count);
         assert.equal(counted, RS_COUNT.count(composed, p).count, `${p}: counted`);
         assert.equal(counted, expect.counters[p].count, `${p}: hand oracle`);
+        if (p === 'x') {
+          assert.equal(await page.textContent('[data-counter-id="x"] .rs-counter__num'),
+            t('counter_value', { value: String(counted), limit: '280' }), 'a standard X post reads against 280');
+          assert.equal(await page.isHidden('#panel-x [data-pp="long-note"]'), true);
+        }
         await page.click(`[data-copy-id="${p}-text"] .rs-copy__btn`);
         await page.waitForSelector(`[data-copy-id="${p}-text"][data-state="copied"]`);
         assert.equal(log.copies.at(-1).text, composed, `${p}: copied`);
@@ -493,11 +498,109 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('preview-post: edge-x-limit blocks X at 281; edge-no-image blocks Instagram and shows the payload flags', async () => {
+  test('preview-post: a long X post folds after 280 weighted with X\'s own label, says so quietly, and stays postable', async () => {
+    const expect = expectFor('preview-post', 'edge-x-long');
+    const { ctx, page, log, run } = await open('preview-post', 'edge-x-long');
+    try {
+      const composed = expect.copies['x-text'];
+      assert.equal(await page.textContent('#panel-x [slot="text"]'), composed, 'the whole text stays in the post');
+      const view = await page.evaluate(() => ({
+        labels: [...document.querySelectorAll('#panel-x .rs-pf__see-more')].map((n) => n.getAttribute('data-label')),
+        notes: [...document.querySelectorAll('#panel-x .rs-pf__foldnote')].filter((n) => !n.hidden).map((n) => n.textContent),
+        counter: document.querySelector('[data-counter-id="x"] .rs-counter__num').textContent,
+        over: document.querySelector('[data-counter-id="x"]').hasAttribute('over'),
+        long: document.querySelector('#panel-x [data-pp="long-note"]').textContent,
+        reason: document.querySelector('#blocked-x').hidden,
+        /* X cuts at a word: the visible text before the ellipsis, the label on its own line */
+        cut: (() => {
+          const ellipsis = document.querySelector('#panel-x .rs-pf__ellipsis');
+          const range = document.createRange();
+          range.setStart(document.querySelector('#panel-x [slot="text"]'), 0);
+          range.setEndBefore(ellipsis);
+          return {
+            before: range.toString(),
+            ellipsis: ellipsis.getAttribute('data-label'),
+            block: getComputedStyle(document.querySelector('#panel-x .rs-pf__see-more')).display,
+          };
+        })(),
+      }));
+      const cut = view.cut;
+      delete view.cut;
+      assert.equal(cut.ellipsis, '…');
+      assert.equal(cut.block, 'block', 'Show more stands on its own line');
+      assert.match(cut.before, /\S$/, 'the visible text ends on a word');
+      assert.match(composed.slice(cut.before.length), /^\s/, 'the cut is at whitespace');
+      assert.ok(RS_COUNT.count(cut.before, 'x').count <= 280, 'the visible part is a standard post');
+      assert.ok(cut.before.length > 200, 'the cut stays near 280');
+      assert.deepEqual(view, {
+        labels: [de.fold_more_x],
+        notes: [t('fold_hint', { n: 280, more: de.fold_more_x })],
+        counter: t('counter_value', { value: String(expect.counters.x.count), limit: '25.000' }),
+        over: false,
+        long: de.x_long_post,
+        reason: true,
+      });
+      /* posting everything yourself: the banner says it once; the panel does not repeat it */
+      assert.equal(await page.textContent('#tab-x'), `${de.platform_x}${de.not_posted}`);
+      assert.equal(await page.$('#panel-x [data-pp="manual-note"]'), null);
+      assert.equal(await page.textContent('#rs-status'), de.select_posted);
+      assert.equal(await page.textContent('#rs-alt'), de.request_changes);
+      assert.equal(await page.isEnabled('#approve-x'), true);
+      await page.check('#approve-x');
+      await page.keyboard.press('Control+Enter');
+      assert.deepEqual(await submitted(page, run), {
+        decision: 'approve', platforms: [], comment: '', per_platform: { x: { mode: 'manual', decision: 'done' } },
+      });
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('preview-post: a manual platform over a hard limit is advice and stays postable', async () => {
+    const data = fixture('preview-post', 'edge-x-limit');
+    const opened = await open('preview-post', 'edge-x-limit', {
+      data: {
+        ...data, image: undefined, hashtags: ['a', 'b', 'c', 'd', 'e', 'f'],
+        platforms: [{ platform: 'x', mode: 'manual' }, { platform: 'instagram', mode: 'manual' }],
+      },
+    });
+    const { page } = opened;
+    try {
+      const x = await page.evaluate(() => ({
+        advice: document.querySelector('#blocked-x').hasAttribute('data-advice'),
+        text: document.querySelector('#blocked-x [data-pp="blocked-text"]').textContent,
+        dot: document.querySelector('#tab-x .pp__state').getAttribute('data-rs-status'),
+      }));
+      assert.deepEqual(x, { advice: true, text: t('manual_over_limit', { limit: '25.000', platform: 'X' }), dot: 'open' });
+      assert.equal(await page.isEnabled('#approve-x'), true, 'Posted is a fact the person reports');
+      await page.click('#tab-instagram');
+      assert.equal(await page.isEnabled('#approve-instagram'), true, 'no media and six hashtags: still postable by hand');
+      assert.equal(await page.textContent('#blocked-instagram [data-pp="blocked-text"]'),
+        [t('manual_over_hashtags', { n: 6, limit: 5, platform: 'Instagram' }), de.lint_ig_needs_image].join(` ${de.sep} `));
+      await page.check('#approve-instagram');
+      assert.equal(await page.textContent('#rs-status'), t('decided_count', { n: 1, total: 2 }));
+      await page.keyboard.press('Control+Enter');
+      assert.deepEqual(await submitted(page, opened.run), {
+        decision: 'approve', platforms: [], comment: '',
+        per_platform: { x: { mode: 'manual', decision: 'skipped' }, instagram: { mode: 'manual', decision: 'done' } },
+      });
+      assert.deepEqual(opened.log.errors, []);
+    } finally { await opened.ctx.close(); }
+  });
+
+  test('preview-post: an auto platform over its limit names one recovery; nothing approvable says so', async () => {
     const limit = await open('preview-post', 'edge-x-limit');
     try {
       assert.equal(await limit.page.isDisabled('#approve-x'), true);
-      assert.equal(await limit.page.textContent('#blocked-x [data-pp="blocked-text"]'), de.over_limit_blocks);
+      const view = await limit.page.evaluate(() => ({
+        reasons: [...document.querySelectorAll('#panel-x .pp__reason')].filter((n) => !n.hidden).map((n) => n.textContent),
+        over: document.querySelector('[data-counter-id="x"] .rs-counter__over').textContent,
+        dot: document.querySelector('#tab-x .pp__state').getAttribute('data-rs-status'),
+        long: document.querySelector('#panel-x [data-pp="long-note"]').hidden,
+      }));
+      assert.deepEqual(view, {
+        reasons: [t('shorten_to_approve', { n: 12 })], over: t('counter_over', { n: 12 }), dot: 'blocked', long: true,
+      });
+      assert.equal(await limit.page.textContent('#rs-status'), de.select_platform);
       await limit.page.click('#tab-linkedin');
       assert.equal(await limit.page.isDisabled('#approve-linkedin'), false);
       await limit.page.check('#approve-linkedin');
@@ -506,12 +609,34 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await limit.page.evaluate(() => localStorage.clear());
       await limit.ctx.close();
     }
+    const data = fixture('preview-post', 'edge-x-limit');
+    const dead = await open('preview-post', 'edge-x-limit', { data: { ...data, platforms: ['x'] } });
+    try {
+      assert.equal(await dead.page.textContent('#rs-status'), de.nothing_approvable);
+      assert.equal(await dead.page.textContent('.rs-task__steps'), t('steps_nothing_approvable', { button: de.request_changes }));
+      assert.equal(await dead.page.isDisabled('#rs-submit'), true);
+      await dead.page.click('#rs-alt');
+      assert.equal(await dead.page.textContent('.rs-task__steps'), t('task_steps_changes', { button: de.send_request }));
+      assert.deepEqual(dead.log.errors, []);
+    } finally { await dead.ctx.close(); }
+    const max = await open('preview-post', 'edge-max');
+    try {
+      await max.page.click('#tab-instagram');
+      assert.equal(await max.page.isDisabled('#approve-instagram'), true);
+      assert.equal(await max.page.textContent('#blocked-instagram [data-pp="blocked-text"]'), t('hashtags_to_approve', { limit: 5 }));
+      await max.page.click('#tab-x');
+      assert.equal(await max.page.isDisabled('#approve-x'), false, 'X carries its own two hashtags');
+    } finally { await max.ctx.close(); }
+  });
+
+  test('preview-post: edge-no-image blocks Instagram and names the payload flags in one quiet style note', async () => {
     const noImage = await open('preview-post', 'edge-no-image');
     try {
-      assert.deepEqual(await noImage.page.$$eval('#panel-x [data-pp="badges"] rs-badge', (b) => b.map((x) => x.textContent)),
-        [t('lint_found', { text: '—' })], 'only the flag that occurs');
+      assert.equal(await noImage.page.textContent('#panel-x [data-pp="style-note"]'), t('style_notes', { items: t('quoted', { text: '—' }) }),
+        'only the flag that occurs');
       await noImage.page.click('#tab-instagram');
       assert.equal(await noImage.page.isDisabled('#approve-instagram'), true);
+      assert.equal(await noImage.page.textContent('#blocked-instagram [data-pp="blocked-text"]'), de.lint_ig_needs_image);
       assert.equal(await noImage.page.getAttribute('#tab-instagram .pp__state', 'data-rs-status'), 'blocked');
       await noImage.page.click('#tab-facebook');
       assert.equal(await noImage.page.isVisible('#panel-facebook .rs-pf__link'), true, 'link card without an image');
@@ -548,17 +673,22 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   });
   /* --------------------------------------------------- preview-post: modes */
   const label = (page) => page.textContent('#rs-submit-label');
+  /* "Show in folder" lives in the overflow menu only */
+  const revealFromMenu = async (page) => {
+    await page.click('#rs-more-btn');
+    await page.click('#rs-more-extra .rs-more__item');
+  };
 
   test('preview-post: a manual tab is named quietly, copies come first (image too) and the primary marks it as posted', async () => {
     const { ctx, page, log, run } = await open('preview-post', 'golden');
     try {
-      assert.equal(await page.textContent('#tab-x'), `${de.platform_x} · ${de.mode_manual}${de.skip}`);
+      assert.equal(await page.textContent('#tab-x'), `${de.platform_x} · ${de.mode_manual}${de.not_posted}`, 'in a mix the mode is named');
       assert.equal(await page.textContent('#tab-linkedin'), `${de.platform_linkedin}${de.not_approved}`, 'auto is the quiet default');
       assert.equal(await page.textContent('#panel-x [data-pp="manual-note"]'), de.manual_note);
       assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), de.posted);
       /* Tab order on the manual panel: the copies, then "Mark as posted" */
       const order = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
-      assert.deepEqual(order, ['x-text', 'x-hashtags', 'x-comment', 'x-image', 'reveal-x', 'approve-x']);
+      assert.deepEqual(order, ['x-text', 'x-hashtags', 'x-comment', 'x-image', 'approve-x']);
       assert.equal(await label(page), de.submit_mixed, 'you post and the bot posts: a neutral send');
       assert.equal(await page.textContent('#rs-status'), de.select_platform_manual);
       assert.equal(await page.isDisabled('#rs-submit'), true, 'nothing ticked yet');
@@ -568,7 +698,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await page.waitForSelector('[data-copy-id="x-image"][data-state="copied"]');
       assert.deepEqual(log.images, [{ run_id: run.run_id, media_id: mediaId }]);
       assert.deepEqual(log.copies, [], 'an image is not copied as text');
-      await page.click('#reveal-x');
+      await revealFromMenu(page);
       await page.waitForFunction(() => document.querySelector('#rs-toasts .rs-toast'));
       assert.deepEqual(log.reveals, [{ run_id: run.run_id, media_id: mediaId }]);
       await page.check('#approve-x');
@@ -653,7 +783,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await page.click('#panel-x [data-copy-id="x-link"] .rs-copy__btn');
       await page.waitForSelector('#panel-x [data-copy-id="x-link"][data-state="copied"]');
       assert.equal(log.copies.at(-1).text, data.target.url);
-      await page.click('#reveal-x');
+      await revealFromMenu(page);
       await page.waitForFunction(() => document.querySelector('#rs-toasts .rs-toast'));
       assert.deepEqual(log.reveals, [{ run_id: run.run_id, media_id: mediaId }]);
       await page.click('#panel-x .rs-pf__quote');
@@ -663,8 +793,8 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await page.keyboard.press('Control+Enter');
       await page.waitForSelector('.rs-banner[data-banner="submitted"]');
       assert.equal(await page.isEnabled('#panel-x [data-copy-id="x-video"] .rs-copy__btn'), true);
-      assert.equal(await page.isEnabled('#reveal-x'), true);
-      await page.click('#reveal-x');
+      await revealFromMenu(page);
+      await page.waitForFunction(() => document.querySelectorAll('#rs-toasts .rs-toast').length > 0);
       assert.equal(log.reveals.length, 2);
       await page.click('#tab-linkedin');
       await mediaSettled(page);
@@ -798,7 +928,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(view.retry, 0);
       assert.equal(view.icon, 0);
       assert.equal(await corrupt.page.locator('#panel-x [data-copy-id="x-video"]').count(), 1);
-      assert.equal(await corrupt.page.locator('#panel-x [data-pp="reveal"]').count(), 1);
+      assert.equal(await corrupt.page.locator('#rs-more-extra .rs-more__item').count(), 1, 'Show in folder stays in the menu');
       const counts = await calmCounts(corrupt.page);
       assert.deepEqual(counts, normalCounts);
       assert.ok(counts.every((n) => n <= 3), `error ${counts}`);
@@ -957,7 +1087,9 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     const handOnly = await open('preview-post', 'golden', { data: { ...data, platforms: [{ platform: 'x', mode: 'manual' }] } });
     try {
       assert.equal(await label(handOnly.page), de.posted);
-      assert.equal(await handOnly.page.textContent('#rs-status'), de.select_platform_manual);
+      assert.equal(await handOnly.page.textContent('#rs-status'), de.select_posted);
+      assert.equal(await handOnly.page.$('.pp__mode'), null, 'posting everything yourself: no mode in the tab');
+      assert.equal(await handOnly.page.$('[data-pp="manual-note"]'), null);
       assert.equal(await handOnly.page.isDisabled('#rs-submit'), true);
       await handOnly.page.check('#approve-x');
       assert.equal(await label(handOnly.page), de.posted);
@@ -999,35 +1131,32 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('preview-post: posting yourself, Skip reports every platform as skipped; a mixed report waits for a tick', async () => {
+  test('preview-post: posting yourself, the alternative is Request changes (no Skip); a mixed report waits for a tick', async () => {
     const data = fixture('preview-post', 'golden');
-    const cases = [
-      {
-        name: 'one manual',
-        platforms: [{ platform: 'x', mode: 'manual' }],
-        per_platform: { x: { mode: 'manual', decision: 'skipped' } },
-      },
-      {
-        name: 'two manuals',
-        platforms: [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'manual' }],
+    const platforms = [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'manual' }];
+    const opened = await open('preview-post', 'golden', { data: { ...data, platforms } });
+    try {
+      const { page } = opened;
+      assert.equal(await label(page), de.posted);
+      assert.equal(await page.isDisabled('#rs-submit'), true, 'an approval always has a tick');
+      assert.equal(await page.textContent('#rs-status'), de.select_posted);
+      assert.equal(await page.textContent('#rs-alt'), de.request_changes);
+      await page.check('#approve-x');
+      assert.equal(await page.textContent('#rs-status'), t('decided_count', { n: 1, total: 2 }));
+      await page.click('#rs-alt');
+      assert.equal(await label(page), de.send_request);
+      await page.fill('#pp-comment', 'Use the spring photo');
+      await page.keyboard.press('Control+Enter');
+      const note = 'Use the spring photo';
+      assert.deepEqual(await submitted(page, opened.run), {
+        decision: 'request_changes', platforms: [], comment: note,
         per_platform: {
-          x: { mode: 'manual', decision: 'skipped' },
-          linkedin: { mode: 'manual', decision: 'skipped' },
+          x: { mode: 'manual', decision: 'changes_requested', note },
+          linkedin: { mode: 'manual', decision: 'changes_requested', note },
         },
-      },
-    ];
-    for (const item of cases) {
-      const opened = await open('preview-post', 'golden', { data: { ...data, platforms: item.platforms } });
-      try {
-        assert.equal(await label(opened.page), de.posted, item.name);
-        assert.equal(await opened.page.isDisabled('#rs-submit'), true, item.name);
-        assert.equal(await opened.page.textContent('#rs-alt'), de.skip, item.name);
-        await opened.page.click('#rs-alt');
-        assert.deepEqual(await submitted(opened.page, opened.run), {
-          decision: 'approve', platforms: [], comment: '', per_platform: item.per_platform,
-        }, item.name);
-      } finally { await opened.ctx.close(); }
-    }
+      });
+      assert.deepEqual(opened.log.errors, []);
+    } finally { await opened.ctx.close(); }
     const mixed = await open('preview-post', 'golden', {
       data: { ...data, platforms: [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'auto' }] },
     });

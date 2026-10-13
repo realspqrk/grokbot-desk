@@ -82,13 +82,14 @@ function timedWorkerCount(text, timeout = 2000) {
 
 test('platforms.json carries the spec limits', () => {
   const p = platforms.platforms;
-  assert.equal(p.x.limit, 280);
+  assert.equal(p.x.limit, 25000);
+  assert.equal(p.x.fold, 280);
   assert.equal(p.linkedin.limit, 3000);
   assert.equal(p.linkedin.fold, 210);
   assert.equal(p.linkedin_comment.limit, 1250);
   assert.equal(p.instagram.limit, 2200);
   assert.equal(p.instagram.fold, 125);
-  assert.equal(p.instagram.hashtag_limit, 30);
+  assert.equal(p.instagram.hashtag_limit, 5);
   assert.equal(p.facebook.limit, 63206);
   assert.equal(p.x.url_weight, 23);
   assert.equal(p.x.emoji_weight, 2);
@@ -97,9 +98,9 @@ test('platforms.json carries the spec limits', () => {
 });
 
 test('result shape', () => {
-  assert.deepEqual(count('abc', 'x'), { count: 3, limit: 280, over: false });
+  assert.deepEqual(count('abc', 'x'), { count: 3, limit: 25000, over: false, fold: 280 });
   assert.deepEqual(count('abc', 'linkedin'), { count: 3, limit: 3000, over: false, fold: 210 });
-  assert.deepEqual(count('abc #a', 'instagram'), { count: 6, limit: 2200, over: false, fold: 125, hashtags: 1, hashtagLimit: 30 });
+  assert.deepEqual(count('abc #a', 'instagram'), { count: 6, limit: 2200, over: false, fold: 125, hashtags: 1, hashtagLimit: 5 });
   assert.deepEqual(count('', 'facebook'), { count: 0, limit: 63206, over: false });
 });
 
@@ -114,16 +115,16 @@ test('non-string input counts as empty / String()', () => {
 
 // ---- exact boundaries, every platform ----
 test('X boundary 280 / 281 (ASCII)', () => {
-  assert.deepEqual(count(rep('a', 280), 'x'), { count: 280, limit: 280, over: false });
-  assert.deepEqual(count(rep('a', 281), 'x'), { count: 281, limit: 280, over: true });
+  assert.deepEqual(count(rep('a', 280), 'x'), { count: 280, limit: 25000, over: false, fold: 280 });
+  assert.deepEqual(count(rep('a', 281), 'x'), { count: 281, limit: 25000, over: false, fold: 280 });
 });
 
 test('X boundary 280 / 281 with weight-2 characters', () => {
   assert.equal(count(rep('日', 140), 'x').count, 280);
-  assert.equal(count(rep('日', 140), 'x').over, false);
+  assert.equal(RS_COUNT.foldIndex(rep('日', 140), 'x'), -1, 'a standard post: no fold');
   const r = count(rep('日', 140) + 'a', 'x');
   assert.equal(r.count, 281);
-  assert.equal(r.over, true);
+  assert.equal(RS_COUNT.foldIndex(rep('日', 140) + 'a', 'x'), 140, 'past 280 weighted: the fold');
 });
 
 test('LinkedIn boundary 3000 / 3001', () => {
@@ -215,10 +216,9 @@ test('X: emoji with variation selector and keycap weigh 2', () => {
   assert.equal(count('1️⃣2️⃣', 'x').count, 4);
 });
 
-test('X: 140 emoji = 280 (boundary), 141 = over', () => {
+test('X: 140 emoji = 280 (boundary), one more = 281', () => {
   assert.equal(count(rep('👨‍👩‍👧', 140), 'x').count, 280);
-  assert.equal(count(rep('👨‍👩‍👧', 140), 'x').over, false);
-  assert.equal(count(rep('👨‍👩‍👧', 140) + '.', 'x').over, true);
+  assert.equal(count(rep('👨‍👩‍👧', 140) + '.', 'x').count, 281);
 });
 
 // review round 1, finding 2: only emoji sequences weigh 2; text-presentation
@@ -244,10 +244,10 @@ test('X: the same characters followed by U+FE0F are one emoji (weight 2)', () =>
 });
 
 test('X: 279 + plain \u00A9 = 280 (not over); with U+FE0F = 281 (over)', () => {
-  assert.deepEqual(count(rep('a', 279) + '\u00A9', 'x'), { count: 280, limit: 280, over: false });
-  assert.deepEqual(count(rep('a', 279) + '\u00AE', 'x'), { count: 280, limit: 280, over: false });
-  assert.deepEqual(count(rep('a', 279) + '\u00A9\uFE0F', 'x'), { count: 281, limit: 280, over: true });
-  assert.deepEqual(count(rep('a', 278) + '\u00A9\uFE0F', 'x'), { count: 280, limit: 280, over: false });
+  assert.deepEqual(count(rep('a', 279) + '\u00A9', 'x'), { count: 280, limit: 25000, over: false, fold: 280 });
+  assert.deepEqual(count(rep('a', 279) + '\u00AE', 'x'), { count: 280, limit: 25000, over: false, fold: 280 });
+  assert.deepEqual(count(rep('a', 279) + '\u00A9\uFE0F', 'x'), { count: 281, limit: 25000, over: false, fold: 280 });
+  assert.deepEqual(count(rep('a', 278) + '\u00A9\uFE0F', 'x'), { count: 280, limit: 25000, over: false, fold: 280 });
 });
 
 test('X: emoji sequences stay weight 2 (RGI, keycap, flag, tag, skin tone, ZWJ)', () => {
@@ -269,8 +269,8 @@ test('X: non-RGI emoji-like sequences use the per-code-point fallback', () => {
   ];
   for (const [name, text, expected] of cases) {
     assert.equal(count(text, 'x').count, expected, name);
-    assert.deepEqual(count(rep('a', 279 - expected) + ' ' + text, 'x'), { count: 280, limit: 280, over: false }, name + ' at 280');
-    assert.deepEqual(count(rep('a', 280 - expected) + ' ' + text, 'x'), { count: 281, limit: 280, over: true }, name + ' at 281');
+    assert.deepEqual(count(rep('a', 279 - expected) + ' ' + text, 'x'), { count: 280, limit: 25000, over: false, fold: 280 }, name + ' at 280');
+    assert.deepEqual(count(rep('a', 280 - expected) + ' ' + text, 'x'), { count: 281, limit: 25000, over: false, fold: 280 }, name + ' at 281');
   }
 });
 
@@ -315,11 +315,11 @@ test('X: unmatched surrounding parentheses are counted as text', () => {
 
 test('X: 280/281 boundary with a parenthesised path URL', () => {
   const t = rep('a', 256) + ' http://en.wikipedia.org/wiki/Primer_(film)';
-  assert.deepEqual(count(t, 'x'), { count: 280, limit: 280, over: false });
-  assert.deepEqual(count('b' + t, 'x'), { count: 281, limit: 280, over: true });
+  assert.deepEqual(count(t, 'x'), { count: 280, limit: 25000, over: false, fold: 280 });
+  assert.deepEqual(count('b' + t, 'x'), { count: 281, limit: 25000, over: false, fold: 280 });
   const u = rep('a', 255) + '(http://example.com)';
-  assert.deepEqual(count(u, 'x'), { count: 280, limit: 280, over: false });
-  assert.deepEqual(count('b' + u, 'x'), { count: 281, limit: 280, over: true });
+  assert.deepEqual(count(u, 'x'), { count: 280, limit: 25000, over: false, fold: 280 });
+  assert.deepEqual(count('b' + u, 'x'), { count: 281, limit: 25000, over: false, fold: 280 });
 });
 
 test('X: things that are not URLs', () => {
@@ -350,8 +350,8 @@ test('X: twitter-text v3 URL extraction conformance and 280/281 boundaries', () 
   ];
   for (const [name, text, expected] of cases) {
     assert.equal(count(text, 'x').count, expected, name);
-    assert.deepEqual(count(rep('a', 279 - expected) + ' ' + text, 'x'), { count: 280, limit: 280, over: false }, name + ' at 280');
-    assert.deepEqual(count(rep('a', 280 - expected) + ' ' + text, 'x'), { count: 281, limit: 280, over: true }, name + ' at 281');
+    assert.deepEqual(count(rep('a', 279 - expected) + ' ' + text, 'x'), { count: 280, limit: 25000, over: false, fold: 280 }, name + ' at 280');
+    assert.deepEqual(count(rep('a', 280 - expected) + ' ' + text, 'x'), { count: 281, limit: 25000, over: false, fold: 280 }, name + ' at 281');
   }
 });
 
@@ -376,12 +376,12 @@ test('X: shared review URL and IDNA corpus equals twitter-text at base and 280/2
     assert.equal(count(text, 'x').count, expected, name);
     assert.deepEqual(
       count(rep('a', 279 - expected) + ' ' + text, 'x'),
-      { count: 280, limit: 280, over: false },
+      { count: 280, limit: 25000, over: false, fold: 280 },
       name + ' at 280',
     );
     assert.deepEqual(
       count(rep('a', 280 - expected) + ' ' + text, 'x'),
-      { count: 281, limit: 280, over: true },
+      { count: 281, limit: 25000, over: false, fold: 280 },
       name + ' at 281',
     );
   }
@@ -403,18 +403,18 @@ test('X: CJK boundaries split adjacent bare URLs and preserve 280/281', () => {
   assert.equal(count('example.com日本語example.com', 'x').count, 52);
   assert.deepEqual(
     count(rep('a', 250) + ' 日本語example.com', 'x'),
-    { count: 280, limit: 280, over: false },
+    { count: 280, limit: 25000, over: false, fold: 280 },
   );
   assert.deepEqual(
     count(rep('a', 251) + ' 日本語example.com', 'x'),
-    { count: 281, limit: 280, over: true },
+    { count: 281, limit: 25000, over: false, fold: 280 },
   );
 });
 
 test('X: failed non-ASCII TLD matching stays below 50 ms in Node', async () => {
   for (const length of [30, 10000]) {
     const { result, elapsed } = await timedWorkerCount(rep('あ', length) + '.invalid');
-    assert.deepEqual(result, { count: (length * 2) + 8, limit: 280, over: length > 136 });
+    assert.deepEqual(result, { count: (length * 2) + 8, limit: 25000, over: length > 12496, fold: 280 });
     assert.ok(elapsed < 50, `${length}-character counter took ${elapsed.toFixed(1)} ms`);
   }
 });
@@ -452,15 +452,15 @@ test('text is NFC-normalised before counting', () => {
 });
 
 // ---- hashtags (Instagram) ----
-test('Instagram: hashtag count and 30/31 boundary', () => {
+test('Instagram: hashtag count and 5/6 boundary', () => {
   const tags = (n) => Array.from({ length: n }, (_, i) => '#tag' + i).join(' ');
-  const r30 = count('Text\n\n' + tags(30), 'instagram');
-  assert.equal(r30.hashtags, 30);
-  assert.equal(r30.hashtagLimit, 30);
-  assert.equal(r30.over, false);
-  const r31 = count('Text\n\n' + tags(31), 'instagram');
-  assert.equal(r31.hashtags, 31);
-  assert.equal(r31.over, true);
+  const r5 = count('Text\n\n' + tags(5), 'instagram');
+  assert.equal(r5.hashtags, 5);
+  assert.equal(r5.hashtagLimit, 5);
+  assert.equal(r5.over, false);
+  const r6 = count('Text\n\n' + tags(6), 'instagram');
+  assert.equal(r6.hashtags, 6);
+  assert.equal(r6.over, true);
 });
 
 test('Instagram: hashtags with umlauts, no false positives', () => {
@@ -475,5 +475,16 @@ test('foldIndex: LinkedIn 210 and Instagram 125 code points', () => {
   assert.equal(RS_COUNT.foldIndex(t, 'instagram'), 125);
   assert.equal(RS_COUNT.foldIndex(rep('a', 210), 'linkedin'), -1);
   assert.equal(RS_COUNT.foldIndex(rep('😀', 130), 'instagram'), 250); // UTF-16 index after 125 code points
-  assert.equal(RS_COUNT.foldIndex(t, 'x'), -1);
+});
+
+test('X: a long post (X Premium) is within 25,000 weighted, folds after 280 weighted', () => {
+  assert.deepEqual(count(rep('a', 25000), 'x'), { count: 25000, limit: 25000, over: false, fold: 280 });
+  assert.deepEqual(count(rep('a', 25001), 'x'), { count: 25001, limit: 25000, over: true, fold: 280 });
+  assert.equal(RS_COUNT.foldIndex(rep('a', 300), 'x'), 280);
+  assert.equal(RS_COUNT.foldIndex(rep('a', 280), 'x'), -1);
+  assert.equal(RS_COUNT.foldIndex(rep('日', 200), 'x'), 140, 'weight 2: 140 characters fill 280');
+  assert.equal(RS_COUNT.foldIndex(rep('a', 270) + ' https://example.com/ ' + rep('b', 40), 'x'), 271,
+    'a URL weighs 23 and is never split: 271 + 23 > 280 folds before it');
+  assert.equal(RS_COUNT.foldIndex(rep('a', 250) + ' https://example.com/ ' + rep('b', 40), 'x'), 251 + 20 + 1 + 5,
+    '251 + 23 = 274: the URL stays above the fold, then 6 more characters');
 });

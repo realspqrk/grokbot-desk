@@ -34,13 +34,13 @@ FIXTURES = {
         "expect": ("golden", "edge-access", "edge-max"),
     },
     "preview-post": {
-        "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-max", "quote-video", "mixed-image"),
+        "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-x-long", "edge-max", "quote-video", "mixed-image"),
         "invalid": {
             "invalid-hash-in-tag": "/hashtags/1",
             "invalid-no-platform": "/platforms",
             "invalid-image-and-video": "/video",
         },
-        "expect": ("golden", "edge-no-image", "edge-x-limit", "edge-max", "quote-video", "mixed-image"),
+        "expect": ("golden", "edge-no-image", "edge-x-limit", "edge-x-long", "edge-max", "quote-video", "mixed-image"),
     },
 }
 # Built-ins are product-neutral and do not carry vendor endorsements.
@@ -90,7 +90,7 @@ def test_every_string_exists_in_english_and_german(template):
             assert table.get(key), f"{lang}: {key}"
             if key != "lint_em_dash":
                 assert "—" not in table[key], f"{lang}: {key}"
-    for key in ("choice_approve", "choice_reject", "choice_defer", "decision_pick", "send_rejection", "lint_found"):
+    for key in ("choice_approve", "choice_reject", "choice_defer", "decision_pick", "send_rejection", "style_notes"):
         placeholders = {lang: sorted(re.findall(r"\{(\w+)\}", tables[lang][key])) for lang in tables}
         assert placeholders["en"] == placeholders["de"], key
 
@@ -233,9 +233,11 @@ def test_approve_one_copy_ids_and_fixture_roles():
 
 
 def _composed(data, platform):
-    text = data.get("variants", {}).get(platform, {}).get("text", data["text"])
-    if data.get("hashtag_mode", "append") == "append" and data.get("hashtags"):
-        text += "\n\n" + " ".join("#" + tag for tag in data["hashtags"])
+    variant = data.get("variants", {}).get(platform, {})
+    text = variant.get("text", data["text"])
+    tags = variant.get("hashtags", data.get("hashtags", []))
+    if data.get("hashtag_mode", "append") == "append" and tags:
+        text += "\n\n" + " ".join("#" + tag for tag in tags)
     return unicodedata.normalize("NFC", text)
 
 
@@ -316,14 +318,43 @@ def test_preview_post_result_names_mode_and_decision_per_platform():
     }, "the bot posts only auto + approved; X was posted by hand"
 
 
-def test_preview_post_x_limit_is_281_on_x_and_the_base_text_fits():
+def test_preview_post_x_limit_is_past_the_long_post_limit_and_the_base_text_fits():
     data = fixture("preview-post", "edge-x-limit")
     x_text, base = _composed(data, "x"), _composed(data, "linkedin")
     assert x_text.isascii() and "://" not in x_text
-    assert len(x_text) == 281
+    assert len(x_text) == 25012, "12 over the X Premium limit"
     assert len(base) <= 280
+    assert data["platforms"] == ["x", "linkedin"], "auto: the limit blocks the approval"
     counters = expect("preview-post", "edge-x-limit")["counters"]
-    assert counters["x"] == {"count": 281, "limit": 280, "over": True}
+    assert counters["x"] == {"count": 25012, "limit": 25000, "over": True}
+
+
+def test_preview_post_x_long_is_a_manual_long_post_past_the_fold():
+    data = fixture("preview-post", "edge-x-long")
+    text = _composed(data, "x")
+    assert text.isascii() and "://" not in text
+    assert 280 < len(text) <= 25000
+    assert data["platforms"] == [{"platform": "x", "mode": "manual"}]
+
+
+def test_preview_post_variant_hashtags_replace_the_shared_ones():
+    data = fixture("preview-post", "edge-max")
+    assert data["variants"]["x"]["hashtags"] == ["tag01", "tag02"]
+    assert _composed(data, "x").endswith("\n\n#tag01 #tag02")
+    assert expect("preview-post", "edge-max")["copies"]["x-hashtags"] == "#tag01 #tag02"
+    assert expect("preview-post", "edge-max")["copies"]["linkedin-hashtags"].count("#") == 30
+
+
+def test_preview_post_variants_take_text_or_hashtags_and_portrait_ratios():
+    base = fixture("preview-post", "golden")
+    payload = schema("preview-post")
+    for variants in ({"x": {"hashtags": ["Bread"]}}, {"x": {"text": "Short", "hashtags": []}}, {"x": {"text": "Short"}}):
+        validate({**base, "variants": variants}, payload)
+    for variants in ({"x": {}}, {"x": {"hashtags": ["#Bread"]}}, {"x": {"text": "Short", "tags": []}}):
+        with pytest.raises(SchemaError):
+            validate({**base, "variants": variants}, payload)
+    for ratio in ("9:16", "3:4"):
+        validate({**base, "image": {**base["image"], "ratio": ratio}}, payload)
 
 
 def test_preview_post_golden_folds_on_linkedin_and_instagram_and_lints_flags():
@@ -335,7 +366,7 @@ def test_preview_post_golden_folds_on_linkedin_and_instagram_and_lints_flags():
     no_image = fixture("preview-post", "edge-no-image")
     assert "image" not in no_image and "instagram" in no_image["platforms"]
     found = [flag for flag in no_image["flag"] if flag in no_image["text"]]
-    assert found == ["—"], "exactly one flag occurs, so one badge shows"
+    assert found == ["—"], "exactly one flag occurs, so the style note names one"
 
 
 def test_preview_post_expect_generator_reproduces_committed_files(tmp_path):

@@ -447,6 +447,10 @@
       }
       var over = limit > 0 && value > limit;
       var n = over ? value - limit : 0;
+      /* X: a standard post reads against its fold (280); only a long post
+         shows the long-post limit. `result` keeps the real limit. */
+      var cfg = platform && kind === 'chars' && window.RS_COUNT ? (RS_COUNT.platforms.platforms || {})[platform] : null;
+      if (cfg && cfg.unit === 'weighted' && cfg.fold && value <= cfg.fold) limit = cfg.fold;
       this._num.textContent = t('counter_value', { value: nf(value), limit: nf(limit) });
       this._over.textContent = over ? t('counter_over', { n: nf(n) }) : '';
       this._over.hidden = !over;
@@ -458,7 +462,7 @@
   }
 
   // ======================================================== rs-post-frame ==
-  // Attributes: skin (x|linkedin|instagram|facebook), ratio (1:1|4:5|1.91:1|16:9),
+  // Attributes: skin (x|linkedin|instagram|facebook), ratio (1:1|4:5|3:4|9:16|1.91:1|16:9),
   // no-chrome (hide the logo + platform name row, e.g. when tabs name it).
   // Child slots (any element with slot="…"): avatar (img), name, handle,
   // headline, text, image (img), video (video), link-title, link-domain,
@@ -468,7 +472,7 @@
   // post or reply parent (not shown; it becomes the card's link when
   // RS.externalLink exists). Method refresh().
   var SKIN_ABBR = { x: 'x', linkedin: 'li', instagram: 'ig', facebook: 'fb' };
-  var RATIOS = { '1:1': '1 / 1', '4:5': '4 / 5', '1.91:1': '1.91 / 1', '16:9': '16 / 9' };
+  var RATIOS = { '1:1': '1 / 1', '4:5': '4 / 5', '3:4': '3 / 4', '9:16': '9 / 16', '1.91:1': '1.91 / 1', '16:9': '16 / 9' };
   var TAG_RE = /(^|[^\p{L}\p{M}\p{N}_&#])(#+[\p{L}\p{M}\p{N}_]+)|(https?:\/\/\S+[^\s.,;:!?'")\]}>])/gu;
   var HL = {};
 
@@ -1124,11 +1128,16 @@
       var R = window.RS;
       var res = R && R.count ? R.count(full, this.skin) : null;
       if (!res || !res.fold || res.count <= res.fold) return this._watchText(textEl);
-      // UTF-16 index after `fold` code points
+      // UTF-16 index of the fold: after `fold` code points, or on X after the
+      // longest prefix that weighs at most `fold` (count.js foldIndex)
       var at = 0;
-      for (var left = res.fold; left > 0 && at < full.length; left--) {
-        var c = full.charCodeAt(at);
-        at += c >= 0xD800 && c <= 0xDBFF && at + 1 < full.length ? 2 : 1;
+      if (window.RS_COUNT && RS_COUNT.foldIndex) {
+        at = Math.max(0, RS_COUNT.foldIndex(full, this.skin));
+      } else {
+        for (var left = res.fold; left > 0 && at < full.length; left--) {
+          var c = full.charCodeAt(at);
+          at += c >= 0xD800 && c <= 0xDBFF && at + 1 < full.length ? 2 : 1;
+        }
       }
       if (at > 0) {
         // never split a grapheme (emoji + modifier, ZWJ sequence): fold after it
@@ -1136,7 +1145,20 @@
           var seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(full).containing(at);
           if (seg && seg.index < at) at = seg.index + seg.segment.length;
         }
-        if (at < full.length) this._showFold(nodes, at, abbr, res.fold);
+        // X cuts at a word: back to the last whitespace at or before the fold
+        // (a URL holds no whitespace, so the cut never lands inside one)
+        var gapEnd = at;
+        if (this.skin === 'x') {
+          var ws = at;
+          while (ws > 0 && !/\s/.test(full.charAt(ws)) ) ws--;
+          if (/\s/.test(full.charAt(ws)) && ws > 0) {
+            while (ws > 0 && /\s/.test(full.charAt(ws - 1))) ws--;
+            at = ws;
+            gapEnd = ws;
+            while (gapEnd < full.length && /\s/.test(full.charAt(gapEnd))) gapEnd++;
+          }
+        }
+        if (at < full.length) this._showFold(nodes, at, abbr, res.fold, gapEnd);
       }
       this._watchText(textEl);
     }
@@ -1150,7 +1172,10 @@
     // text, the rest stays readable but greyed. The label is a decorative,
     // non-interactive span whose words are CSS generated content, so the text
     // slot's textContent (and a mouse selection) is still the full post.
-    _showFold(nodes, at, abbr, fold) {
+    // X: the visible text ends with an ellipsis and "Show more" stands on its
+    // own line in the link colour; the whitespace at the cut is folded away
+    // (wrapped, still in textContent).
+    _showFold(nodes, at, abbr, fold, gapEnd) {
       var node = null;
       var off = at;
       for (var i = 0; i < nodes.length; i++) {
@@ -1160,12 +1185,35 @@
       if (!node) return;
       if (off > 0) node = node.splitText(off);
       var more = t('fold_more_' + this.skin);
-      // mid-word folds need a gap after the label; a fold before a space has one
-      var label = h('span', 'rs-pf__see-more' + (/^\s/.test(node.data) ? '' : ' rs-pf__see-more--gap'));
-      label.setAttribute('aria-hidden', 'true');
-      label.setAttribute('data-label', more);
-      node.parentNode.insertBefore(label, node);
-      this._foldLabel = label;
+      this._foldLabel = [];
+      if (this.skin === 'x') {
+        var ellipsis = h('span', 'rs-pf__ellipsis');
+        ellipsis.setAttribute('aria-hidden', 'true');
+        ellipsis.setAttribute('data-label', '…');
+        node.parentNode.insertBefore(ellipsis, node);
+        this._foldLabel.push(ellipsis);
+        var block = h('span', 'rs-pf__see-more rs-pf__see-more--x');
+        block.setAttribute('aria-hidden', 'true');
+        block.setAttribute('data-label', more);
+        node.parentNode.insertBefore(block, node);
+        this._foldLabel.push(block);
+        var gap = (gapEnd || at) - at;
+        if (gap > 0 && gap < node.data.length) {
+          var rest = node.splitText(gap);
+          var hide = h('span', 'rs-pf__fold-gap');
+          node.parentNode.insertBefore(hide, node);
+          hide.appendChild(node);
+          this._foldGap = hide;
+          node = rest;
+        }
+      } else {
+        // mid-word folds need a gap after the label; a fold before a space has one
+        var label = h('span', 'rs-pf__see-more' + (/^\s/.test(node.data) ? '' : ' rs-pf__see-more--gap'));
+        label.setAttribute('aria-hidden', 'true');
+        label.setAttribute('data-label', more);
+        node.parentNode.insertBefore(label, node);
+        this._foldLabel.push(label);
+      }
       var after = document.createRange();
       after.setStart(node, 0);
       var last = nodes[nodes.length - 1];
@@ -1177,12 +1225,22 @@
     }
 
     _dropFoldLabel() {
-      var label = this._foldLabel;
+      var labels = this._foldLabel || [];
+      var gap = this._foldGap;
       this._foldLabel = null;
-      if (!label || !label.parentNode) return;
-      var parent = label.parentNode;
-      parent.removeChild(label);
-      parent.normalize();
+      this._foldGap = null;
+      var parent = null;
+      if (gap && gap.parentNode) {
+        parent = gap.parentNode;
+        while (gap.firstChild) parent.insertBefore(gap.firstChild, gap);
+        parent.removeChild(gap);
+      }
+      labels.forEach(function (label) {
+        if (!label.parentNode) return;
+        parent = label.parentNode;
+        parent.removeChild(label);
+      });
+      if (parent) parent.normalize();
     }
   }
 

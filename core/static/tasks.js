@@ -27,7 +27,7 @@
          value is the posting default. request_changes is the optional third
          choice when the payload allows it. */
       labels: { done: 'posted', skipped: 'skip', later: 'later', request_changes: 'request_changes' },
-      secondary: ['skipped'],
+      secondary: ['skipped', 'request_changes'],
       items: { done: 'posted', skipped: 'skip', later: 'later' },
       discard: true,
       variants: ['footer_done', 'done_mark', 'sent_mark', 'request_changes', 'send_request']

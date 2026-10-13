@@ -613,9 +613,9 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
 
         await page.uncheck('#approve-linkedin');
         await page.click('#tab-x');
-        /* the X tab: the copies (text, hashtags, image, folder) and the Posted ✓ tick */
+        /* the X tab: the copies (text, hashtags, image) and the Posted ✓ tick; the folder is in the menu */
         const side = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
-        assert.deepEqual(side, ['x-text', 'x-hashtags', 'x-image', 'reveal-x', 'approve-x']);
+        assert.deepEqual(side, ['x-text', 'x-hashtags', 'x-image', 'approve-x']);
         assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), tl('posted'));
         assert.equal(await page.textContent('#panel-x [data-pp="manual-note"]'), tl('manual_note'));
         await page.check('#approve-x');
@@ -794,16 +794,16 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         assert.deepEqual(noImage.errors, []);
       } finally { await noImage.ctx.close(); }
 
+      /* X (auto) is past the long-post limit; a manual platform is never blocked */
       const limitData = fixture('preview-post', 'edge-x-limit');
-      limitData.platforms = [{ platform: 'x', mode: 'manual' }, { platform: 'linkedin', mode: 'auto' }];
+      limitData.platforms = [{ platform: 'x', mode: 'auto' }, { platform: 'linkedin', mode: 'manual' }];
       const limited = srv.show(limitData, meta);
       const over = await open(`&run=${limited.run_id}`, { server: srv });
       try {
         const view = await banner(over.page);
-        assert.equal(view.actors[0][1], tl('task_you_none_post'));
-        assert.match(view.actors[1][1], /LinkedIn/);
+        assert.match(view.actors[0][1], /LinkedIn/);
         assert.equal(`${view.actors[0][1]} ${view.actors[1][1]} ${view.steps}`.includes('X'), false);
-        assert.equal(await over.page.textContent('#rs-submit-label'), tl('approve_post'));
+        assert.equal(await over.page.textContent('#rs-submit-label'), tl('posted'));
         assert.deepEqual(over.errors, []);
       } finally { await over.ctx.close(); }
     });
