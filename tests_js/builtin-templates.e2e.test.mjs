@@ -1105,7 +1105,8 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     const { ctx, page, log, run } = await open('decide-list', 'edge-replies');
     try {
       assert.equal(await page.textContent('#rs-submit-label'), de.footer_done);
-      assert.equal(await page.textContent('.rs-task__steps'), de.task_steps_replies);
+      // the steps name the footer as it reads
+      assert.equal(await page.textContent('.rs-task__steps'), de.task_steps_replies.replace('{button}', de.footer_done));
       const labels = await page.$$eval('[data-current] rs-action-row button', (buttons) => buttons.map((b) => b.textContent));
       assert.deepEqual(labels, [de.posted, de.skip, de.later]);
       const href = await page.getAttribute('[data-current] .dl-url a.rs-ext', 'href');

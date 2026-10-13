@@ -125,7 +125,7 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
     }));
 
   for (const theme of ['light', 'dark']) {
-    test(`${theme}: only core-set shapes, in their named fill, at 32 px in strip and header`, async () => {
+    test(`${theme}: only core-set shapes, in their named fill, at 32 px in the strip and 24 px in the byline`, async () => {
       const { ctx, page, errors } = await open(shapeRuns.teardrop.run_id, theme);
       try {
         const all = await avatars(page);
@@ -147,9 +147,13 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
           assert.equal(item.initials, null);
           const expected = token(theme, `--rs-avatar-${item.color}`);
           assert.equal(hex(item.svg.fill), expected, `${item.where} ${item.color}`);
-          if (item.where !== 'menu') {
+          /* 32 px in the strip; 24 px in the header byline and the menu */
+          if (item.where.startsWith('strip:')) {
             assert.equal(item.width, 32, item.where);
             assert.equal(item.height, 32, item.where);
+          } else if (item.where === 'header') {
+            assert.equal(item.width, 24, item.where);
+            assert.equal(item.height, 24, item.where);
           }
         }
         for (const [shape, run] of Object.entries(shapeRuns)) {
@@ -275,14 +279,18 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
         const header = await page.evaluate(() => ({
           name: document.querySelector('#rs-bot-name').textContent,
           weight: getComputedStyle(document.querySelector('#rs-bot-name')).fontWeight,
+          nameColor: getComputedStyle(document.querySelector('#rs-bot-name')).color,
           line: document.querySelector('#rs-title').textContent,
           lineColor: getComputedStyle(document.querySelector('#rs-title')).color,
           muted: getComputedStyle(document.documentElement).getPropertyValue('--rs-muted').trim(),
+          ink: getComputedStyle(document.documentElement).getPropertyValue('--rs-ink').trim(),
         }));
         assert.equal(header.name, 'Registry Agent');
-        assert.equal(header.weight, '600');
+        // a quiet byline: the name muted and regular, the report title in ink
+        assert.equal(header.weight, '400');
+        assert.equal(hex(header.nameColor), header.muted.toLowerCase());
         assert.equal(header.line, 'Registry shape');   // the report title, never a time (K11)
-        assert.equal(hex(header.lineColor), header.muted.toLowerCase());
+        assert.equal(hex(header.lineColor), header.ink.toLowerCase());
         await page.click('#rs-more-btn');
         const menu = (await avatars(page)).find((item) => item.where === 'menu');
         assert.deepEqual([menu.shape, menu.color, menu.width, menu.height], ['tablet', 'green', 24, 24]);
@@ -317,7 +325,7 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
     });
   }
 
-  test('crisp at 2x: the shape stays a 32 px vector in a 2x window', async () => {
+  test('crisp at 2x: the byline shape stays a 24 px vector in a 2x window', async () => {
     const { ctx, page } = await open(shapeRuns.squircle.run_id, 'dark', 2);
     try {
       const facts = await page.evaluate(() => {
@@ -326,7 +334,7 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
         const rect = svg.getBoundingClientRect();
         return { w: rect.width, h: rect.height, dpr: devicePixelRatio, raster: box.querySelectorAll('img,canvas,image').length };
       });
-      assert.deepEqual(facts, { w: 32, h: 32, dpr: 2, raster: 0 });
+      assert.deepEqual(facts, { w: 24, h: 24, dpr: 2, raster: 0 });
     } finally { await ctx.close(); }
   });
 });

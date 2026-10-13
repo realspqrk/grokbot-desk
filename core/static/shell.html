@@ -23,41 +23,42 @@
       <nav class="rs-strip" id="rs-strip-nav" data-rs-strip data-rs-t-aria-label="strip_label" hidden>
         <div class="rs-column rs-strip__inner">
           <div class="rs-strip__list" id="rs-strip" role="toolbar" aria-orientation="horizontal" data-rs-t-aria-label="strip_label"></div>
-          <p class="rs-strip__count" id="rs-strip-count"></p>
         </div>
       </nav>
+
+      <header class="rs-header">
+        <div class="rs-column rs-header__inner">
+          <div class="rs-byline">
+            <div class="rs-bot" id="rs-bot" hidden>
+              <span class="rs-avatar" id="rs-bot-avatar" data-rs-avatar aria-hidden="true"></span>
+              <p class="rs-bot__name" id="rs-bot-name"></p>
+            </div>
+            <p class="rs-byline__count" id="rs-strip-count"></p>
+            <div class="rs-more" id="rs-more">
+              <button type="button" class="rs-icon-btn" id="rs-more-btn" aria-expanded="false" aria-controls="rs-more-panel" data-rs-t-aria-label="more" data-rs-t-title="more" data-rs-icon="more"></button>
+              <div class="rs-more__panel" id="rs-more-panel" hidden>
+                <p class="rs-more__meta" id="rs-meta"></p>
+                <button type="button" class="rs-more__item" id="rs-theme" aria-pressed="false"><span data-rs-t="theme_dark"></span></button>
+                <div class="rs-more__extra" id="rs-more-extra"></div>
+                <button type="button" class="rs-more__item rs-more__discard" id="rs-discard"><span data-rs-t="discard_report"></span></button>
+              </div>
+            </div>
+          </div>
+          <h1 class="rs-header__title" id="rs-title" tabindex="-1"></h1>
+        </div>
+      </header>
 
       <section class="rs-task" id="rs-task" data-rs-task data-rs-t-aria-label="task_label" hidden>
         <div class="rs-column rs-task__inner" id="rs-task-inner"></div>
       </section>
-
-      <header class="rs-header">
-        <div class="rs-column rs-header__inner">
-          <div class="rs-bot" id="rs-bot" hidden>
-            <span class="rs-avatar rs-avatar--md" id="rs-bot-avatar" data-rs-avatar aria-hidden="true"></span>
-            <div class="rs-bot__text">
-              <p class="rs-bot__name" id="rs-bot-name"></p>
-              <h1 class="rs-header__title" id="rs-title" tabindex="-1"></h1>
-            </div>
-          </div>
-          <div class="rs-more" id="rs-more">
-            <button type="button" class="rs-icon-btn" id="rs-more-btn" aria-expanded="false" aria-controls="rs-more-panel" data-rs-t-aria-label="more" data-rs-t-title="more" data-rs-icon="more"></button>
-            <div class="rs-more__panel" id="rs-more-panel" hidden>
-              <p class="rs-more__meta" id="rs-meta"></p>
-              <button type="button" class="rs-more__item" id="rs-theme" aria-pressed="false"><span data-rs-t="theme_dark"></span></button>
-              <div class="rs-more__extra" id="rs-more-extra"></div>
-            </div>
-          </div>
-        </div>
-      </header>
 
       <div class="rs-mount" id="rs-mount"></div>
 
       <div class="rs-submitbar" id="rs-submitbar">
         <div class="rs-column rs-submitbar__inner">
           <div class="rs-submitbar__status" id="rs-status" aria-live="polite"></div>
-          <button type="button" class="rs-btn rs-btn--quiet rs-submitbar__discard" id="rs-discard"><span data-rs-t="discard"></span></button>
           <button type="button" class="rs-btn rs-btn--quiet" id="rs-alt" hidden></button>
+          <button type="button" class="rs-btn rs-btn--quiet" id="rs-alt-2" hidden></button>
           <button type="button" class="rs-btn rs-btn--primary" id="rs-submit" data-rs-primary aria-keyshortcuts="Control+Enter Meta+Enter" disabled><span id="rs-submit-label" data-rs-t="submit"></span></button>
         </div>
       </div>

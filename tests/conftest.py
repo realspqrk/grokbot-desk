@@ -16,6 +16,10 @@ from core.product import RUNNER_ID
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Timestamps follow the machine's time zone; the suite pins one zone so its
+# expectations hold on every runner. Servers the tests start inherit it.
+os.environ["RS_TZ"] = "Europe/Vienna"
+
 
 def install_minimal_template(repo_root, template_id="_starter"):
     target = Path(repo_root) / "templates" / "global" / template_id

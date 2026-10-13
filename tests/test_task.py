@@ -7,7 +7,7 @@ import pytest
 
 from core.envelope import EnvelopeError, validate_payload
 from core.registry import scan_registry
-from core.tasks import KINDS, derive_kind, split_why, task_view
+from core.tasks import KINDS, derive_kind, present_why, sentences, split_why, task_view
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,6 +185,50 @@ def test_split_why_keeps_three_sentences_and_folds_the_rest():
     assert split_why("") == ("", "")
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Wir buchen z. B. den Saal am Fluss.",
+        "Das kostet ca. 5 Minuten.",
+        "Siehe Nr. 3 der Liste.",
+        "Dr. Müller hat zugestimmt.",
+        "Das heißt d. h. weniger Aufwand.",
+        "Es geht u. a. um die Preise.",
+        "Morgen bzw. übermorgen passt.",
+        "Der 1. Schritt ist erledigt.",
+        "Version 2.5 ist live.",
+        "Wir nehmen z.B. den zweiten Raum.",
+        "We pick e.g. the second room.",
+        "Signed by Mr. Smith today.",
+    ],
+)
+def test_a_german_abbreviation_or_ordinal_never_ends_a_sentence(text):
+    assert sentences(text) == [text]
+
+
+def test_sentences_still_split_after_a_real_end_and_keep_closing_quotes():
+    assert sentences("Er sagte „ja.“ Dann ging er.") == ["Er sagte „ja.“", "Dann ging er."]
+    assert sentences("Äpfel, Birnen usw. Danach kam der Rest.") == ["Äpfel, Birnen usw.", "Danach kam der Rest."]
+    assert sentences("Eins. Zwei! Drei?") == ["Eins.", "Zwei!", "Drei?"]
+
+
+def test_a_why_keeps_its_line_breaks():
+    shown, more = split_why("Erste Zeile.\nZweite Zeile.\n\nDritte Zeile.\nVierte Zeile.")
+    assert shown == "Erste Zeile.\nZweite Zeile.\n\nDritte Zeile."
+    assert more == "Vierte Zeile."
+    assert split_why("Punkt eins\nPunkt zwei") == ("Punkt eins\nPunkt zwei", "")
+
+
+def test_a_long_run_is_cut_at_a_word_boundary_with_an_ellipsis():
+    text = ("Wort" + "x" * 6 + " ") * 40  # one sentence, 440 characters
+    shown, more = present_why(text)
+    assert len(shown) <= 361
+    assert shown.endswith("…")
+    head = shown[:-1]
+    assert text.startswith(head) and text[len(head)] == " ", "cut between two words"
+    assert more and (head + " " + more).split() == text.split()
+
+
 def test_task_view_defaults_why_to_the_template_summary_and_says_where_it_came_from():
     approve = task_view(envelope("approve-one", fixture("approve-one", "golden")), REGISTRY)
     assert approve["kind"] == "approve_bot_acts"
@@ -201,12 +245,29 @@ def test_task_view_defaults_why_to_the_template_summary_and_says_where_it_came_f
     assert (starter["kind"], starter["why"], starter["why_from"]) == ("review", "", None)
 
 
-def test_task_view_prefers_the_payload_why_and_folds_a_long_default():
-    data = dict(fixture("approve-one", "golden"), summary="One. Two. Three. Four is folded.")
+def test_task_view_prefers_the_payload_why_and_leaves_a_long_default_in_the_body():
+    """A template text is promoted only when it fits the banner whole: three
+    sentences and 360 characters. Otherwise it stays in the template, so a
+    question or a summary is never folded away."""
+    data = dict(fixture("approve-one", "golden"), summary="One. Two. Three. Four stays in the body.")
     view = task_view(envelope("approve-one", data), REGISTRY)
-    assert (view["why"], view["why_more"]) == ("One. Two. Three.", "Four is folded.")
+    assert (view["why"], view["why_more"], view["why_from"]) == ("", "", None)
+    wide = dict(fixture("approve-one", "golden"), summary="Word " * 80)
+    assert task_view(envelope("approve-one", wide), REGISTRY)["why_from"] is None
+    fits = dict(fixture("approve-one", "golden"), summary="One. Two. Three.")
+    assert task_view(envelope("approve-one", fits), REGISTRY)["why_from"] == "summary"
     own = task_view(envelope("approve-one", data, task={"kind": "approve_bot_acts", "why": "Because."}), REGISTRY)
     assert (own["why"], own["why_more"], own["why_from"]) == ("Because.", "", None)
+
+
+def test_the_banner_carries_the_approve_label_of_the_payload():
+    data = dict(fixture("approve-one", "golden"), approve_label="Deploy freigeben")
+    assert task_view(envelope("approve-one", data), REGISTRY)["label"] == "Deploy freigeben"
+    plain = dict(fixture("approve-one", "golden"))
+    plain.pop("approve_label", None)
+    assert "label" not in task_view(envelope("approve-one", plain), REGISTRY)
+    user = dict(data, actor="user")
+    assert "label" not in task_view(envelope("approve-one", user), REGISTRY)
 
 
 def test_a_default_why_with_a_link_stays_in_the_template():
@@ -239,9 +300,9 @@ def test_a_long_why_is_kept_folded_and_warned():
         warnings=warnings,
     )
     view = task_view(validated, REGISTRY)
-    assert len(view["why"]) <= 360
+    assert len(view["why"]) <= 361
+    assert view["why"].endswith("…")
     assert view["why_more"]
-    assert view["why"] + view["why_more"]
     assert any("360" in item for item in warnings)
     assert why_warnings("Short.") == []
 

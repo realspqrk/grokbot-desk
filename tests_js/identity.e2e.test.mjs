@@ -145,8 +145,8 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
         assert.equal(await accentOf(page), expectedAccent);
         const h = await header(page);
         assert.equal(h.name, 'Research Agent');
-        assert.equal(h.width, 32);
-        assert.equal(h.height, 32);
+        assert.equal(h.width, 24, 'a small byline avatar');
+        assert.equal(h.height, 24);
         assert.equal(h.radius, '50%');
         assert.equal(h.hidden, 'true');
         assert.equal(h.img.alt, '');
@@ -246,7 +246,7 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
           assert.equal(h.name, name);
           assert.equal(h.initials, initials);
           assert.equal(h.initialsText, `"${initials}"`);
-          assert.equal(h.width, 32);
+          assert.equal(h.width, 24);
           const ratio = await page.evaluate(([fg, bg]) => {
             const lum = (c) => {
               const [r, g, b] = c.match(/\d+/g).slice(0, 3).map((v) => {

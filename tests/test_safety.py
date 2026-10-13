@@ -31,7 +31,7 @@ from core.registry import scan_registry
 from core.results import ResultExists, write_result
 from core.runs import RunStore
 from core.server import Handler, ReportHTTPServer
-from core.timeutil import to_vienna
+from core.timeutil import to_local
 from core.webhook import deliver, webhook_enabled, validate_webhook_url
 
 
@@ -1363,8 +1363,8 @@ def test_finding_1_killed_writer_recovers_orphan_and_maintenance_continues(
         target=server_module._maintenance, args=(server,), daemon=True
     )
     with patch(
-        "core.runs.vienna_now",
-        return_value=to_vienna("2026-10-08T14:00:00+02:00"),
+        "core.runs.local_now",
+        return_value=to_local("2026-10-08T14:00:00+02:00"),
     ):
         maintenance.start()
         first_result = data_dir / "results" / f"{run_id}.json"
@@ -1425,8 +1425,8 @@ def test_finding_1_expiry_failure_is_sanitized_and_does_not_skip_later_run(
     with (
         patch.object(store, "decide", side_effect=fail_one),
         patch(
-            "core.runs.vienna_now",
-            return_value=to_vienna("2026-10-08T14:00:00+02:00"),
+            "core.runs.local_now",
+            return_value=to_local("2026-10-08T14:00:00+02:00"),
         ),
     ):
         assert store.expire_due() == [later_id]
@@ -1675,8 +1675,8 @@ def test_finding_3_max_depth_run_reloads_for_detail_submit_and_expiry(
     )
     assert json.loads(submitted.read_text(encoding="utf-8"))["status"] == "submitted"
     with patch(
-        "core.runs.vienna_now",
-        return_value=to_vienna("2026-10-08T14:00:00+02:00"),
+        "core.runs.local_now",
+        return_value=to_local("2026-10-08T14:00:00+02:00"),
     ):
         assert reloaded.expire_due() == [run_ids[1]]
     expired = data_dir / "results" / f"{run_ids[1]}.json"

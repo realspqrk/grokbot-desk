@@ -170,7 +170,7 @@ describe('external decision hydrates once (served, headless Edge)', { skip }, ()
       await page.goto(server.url('?client=test&run=' + run.run_id));
       await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
       await spec.draft(page);
-      await page.click('#rs-discard');
+      await page.click('#rs-more-btn'); await page.click('#rs-discard');
       const details = holdDetails(page, run.run_id);
       assert.equal(await submitElsewhere(run.run_id, sent), 200);
       // both SSE messages ask for the run detail before either answer arrives

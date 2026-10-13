@@ -2,9 +2,12 @@
  * Only var(--rs-*) colours (literals live in tokens.css) and only
  * var(--space-*) spacing (0 and 1px hairlines allowed).
  * Layout (pop-up): an optional avatar strip on top (2+ open reports),
- * then one centred column shared by the header (the bot's avatar, its name
- * over the report title + one overflow control), the template and the
- * footer (status + optional quiet alternative + the one primary action).
+ * then one centred column shared by the header (a quiet byline: the bot's
+ * avatar and name, the open count and one overflow control; under it the
+ * report title, the strongest line), the task banner, the template and the
+ * footer (status + up to two quiet alternatives + the one primary action).
+ * The footer follows short content and stays at the bottom once the
+ * report scrolls.
  */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -56,18 +59,22 @@ button, input, textarea, select { font: inherit; color: inherit; }
   overflow: hidden;
 }
 
-/* strip, task banner, header, report, footer: fixed rows, so a hidden strip
-   leaves an empty first row and the fold fade below keeps its row */
+/* strip, header, task banner, report, footer: fixed rows, so a hidden strip
+   leaves an empty first row and the fold fade below keeps its row. The
+   report row is as tall as its content and never taller than the space
+   left, so a short report keeps its footer right under it and a long one
+   scrolls inside the row with the footer at the window bottom. */
 .rs-main {
   position: relative;
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, auto) auto;
+  align-content: start;
 }
 .rs-strip { grid-row: 1; }
-.rs-task { grid-row: 2; }
-.rs-header { grid-row: 3; }
+.rs-header { grid-row: 2; }
+.rs-task { grid-row: 3; }
 .rs-mount { grid-row: 4; }
 .rs-submitbar { grid-row: 5; }
 
@@ -101,14 +108,15 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-column { min-width: 0; }
 
 /* -------------------------------------------------------- task banner -- */
-/* What to do and who acts next, above the title of every report. The tint
+/* What to do and who acts next, under the title of every report: one line
+   (what, then effort and due date), the why, and steps only where they add
+   something the line and the buttons do not say. The tint
    is a status colour, one per kind (tokens.css --rs-task-*), not the accent:
    it is the only large non-accent colour on the page (the C16 exception,
    checked by tools/calm.mjs). Red only for blocking or a due date that is
    today or past. It holds no buttons, at most the details toggle of a long
    why. A decided report keeps it, neutral and muted. */
-.rs-task { padding: var(--space-3) var(--space-6) 0; }
-.rs-task:not([hidden]) + .rs-header { padding-top: var(--space-2); }
+.rs-task { padding: 0 var(--space-6) var(--space-4); }
 
 .rs-task {
   --rs-task-bg: var(--rs-task-fyi-bg);
@@ -147,6 +155,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-task__actor { min-width: 0; }
 .rs-task__meta { color: var(--rs-muted); font-size: var(--rs-fs-sm); white-space: nowrap; }
 .rs-task__steps { max-width: var(--rs-measure); min-width: 0; font-size: var(--rs-fs-sm); }
+.rs-task__why,
+.rs-task__more > p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .rs-task__more > summary {
   width: fit-content;
   color: var(--rs-muted);
@@ -165,39 +175,55 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ------------------------------------------------------------- header -- */
 
-.rs-header { padding: var(--space-5) var(--space-6) var(--space-4); }
+.rs-header { padding: var(--space-3) var(--space-6) var(--space-3); }
+.rs-app[data-strip="on"] .rs-header { padding-top: var(--space-2); }
 
 .rs-header__inner {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
 }
 
-/* Who asks and what about, as in the bot app's list: the avatar, the
-   bot's name in bold over one quiet line, the report title (the h1) */
+/* who asks, as a quiet byline: a small avatar, the bot's name, the open
+   count while several reports wait, and the one overflow control */
+.rs-byline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--rs-muted);
+  font-size: var(--rs-fs-sm);
+  line-height: var(--rs-lh-tight);
+}
 .rs-bot {
-  flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  line-height: var(--rs-lh-tight);
+  gap: var(--space-2);
 }
-.rs-bot__text { min-width: 0; display: flex; flex-direction: column; gap: var(--space-0-5); }
 .rs-bot__name {
   min-width: 0;
-  color: var(--rs-ink);
-  font-weight: var(--rs-fw-strong);
+  color: var(--rs-muted);
+  font-weight: var(--rs-fw-normal);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.rs-byline__count { flex: none; white-space: nowrap; }
+.rs-bot:not([hidden]) + .rs-byline__count::before { content: "\00B7" / ""; padding-right: var(--space-2); }
+.rs-byline__count:empty { display: none; }
+.rs-byline > .rs-more { margin-left: auto; }
+
+/* what the report is about: the strongest line on the page (the h1) */
 .rs-header__title {
   min-width: 0;
-  color: var(--rs-muted);
-  font-weight: var(--rs-fw-normal);
+  max-width: var(--rs-measure);
+  color: var(--rs-ink);
+  font-size: var(--rs-fs-lg);
+  font-weight: var(--rs-fw-strong);
+  line-height: var(--rs-lh-tight);
   overflow-wrap: anywhere;
 }
+.rs-header__title:empty { display: none; }
 
 /* avatar: a fixed circle; the image covers it, or neutral initials (no bot
    colour on the initials, so the strip stays calm) */
@@ -238,7 +264,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-avatar[data-color="green"] { --rs-avatar-fill: var(--rs-avatar-green); }
 .rs-avatar[data-color="gray"] { --rs-avatar-fill: var(--rs-avatar-gray); }
 
-/* the one overflow control: theme, details, discard, template extras */
+/* the one overflow control: details, theme, template extras and, last,
+   Discard report (behind its confirmation) */
 .rs-more { position: relative; flex: none; }
 .rs-more__panel {
   position: absolute;
@@ -277,6 +304,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
   cursor: pointer;
 }
 .rs-more__item:hover { background: var(--rs-hover); }
+.rs-more__item:disabled { cursor: not-allowed; }
+.rs-more__item:disabled:hover { background: transparent; }
+.rs-more__discard { margin-top: var(--space-1); }
 .rs-more__item[aria-pressed="true"]::after {
   content: "";
   width: var(--rs-dot);
@@ -365,13 +395,6 @@ button, input, textarea, select { font: inherit; color: inherit; }
   box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper);
 }
 
-.rs-strip__count {
-  flex: none;
-  padding-bottom: var(--space-2);
-  color: var(--rs-muted);
-  font-size: var(--rs-fs-sm);
-  white-space: nowrap;
-}
 
 /* Badge sits beside the avatar, not over it. The unread dot stays on the
    avatar's edge. The current underline is the avatar width (32px). */
@@ -401,7 +424,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-mount {
   min-height: 0;
   overflow-y: auto;
-  padding: 0 var(--space-6) var(--space-5);
+  padding: 0 var(--space-6) var(--space-6);
 }
 
 .rs-mount { align-content: start; }
@@ -480,10 +503,16 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------- submit bar -- */
 
+/* right under a short report (the mount's bottom padding is the gap);
+   at the window bottom, over a hairline, once the report scrolls */
 .rs-submitbar {
-  padding: var(--space-4) var(--space-6);
-  border-top: var(--rs-border) solid var(--rs-line);
+  padding: 0 var(--space-6) var(--space-4);
+  border-top: var(--rs-border) solid transparent;
   background: var(--rs-paper);
+}
+.rs-main:has(> .rs-mount[data-rs-scrolls]) > .rs-submitbar {
+  padding-top: var(--space-4);
+  border-top-color: var(--rs-line);
 }
 
 .rs-submitbar__inner {
@@ -513,8 +542,6 @@ button, input, textarea, select { font: inherit; color: inherit; }
   border-radius: 50%;
   background: var(--rs-status-danger);
 }
-.rs-submitbar__discard { color: var(--rs-muted); }
-.rs-submitbar__discard:hover { color: var(--rs-ink); }
 
 /* ------------------------------------------------------------- buttons -- */
 

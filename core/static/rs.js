@@ -103,17 +103,21 @@
 
   // ------------------------------------------------- locale formats --
   // Dates and numbers follow the selected string table (de default, en):
-  // German "15.10." / "99.999", English "Oct 15" / "99,999". Timestamps are
-  // always Europe/Vienna, whatever the machine's time zone:
+  // German "15.10." / "99.999", English "Oct 15" / "99,999". Timestamps use
+  // the machine's time zone, or the one the server pins (boot.tz, RS_TZ):
   // German "Do 08.10.2026 · 10:39", English "Thu, Oct 8, 2026 · 10:39".
   var LOCALE = boot.lang === 'en' ? 'en-US' : 'de-DE';
+  var ZONE = (function () {
+    if (typeof boot.tz !== 'string' || !boot.tz) return undefined;
+    try { new Intl.DateTimeFormat('en', { timeZone: boot.tz }); return boot.tz; } catch (e) { return undefined; }
+  })();
   var numberFmt = new Intl.NumberFormat(LOCALE);
   var dayFmt = new Intl.DateTimeFormat(LOCALE, boot.lang === 'en'
     ? { month: 'short', day: 'numeric', timeZone: 'UTC' }
     : { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
   var timeFmt = new Intl.DateTimeFormat(LOCALE, boot.lang === 'en'
-    ? { timeZone: 'Europe/Vienna', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
-    : { timeZone: 'Europe/Vienna', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    ? { timeZone: ZONE, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+    : { timeZone: ZONE, weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   function toDate(iso) {
     if (iso instanceof Date) return iso;
     /* a plain calendar date ("2026-10-15") is the same day everywhere */
@@ -124,7 +128,7 @@
     var d = toDate(iso);
     return isNaN(d.getTime()) ? '' : dayFmt.format(d);
   }
-  /** Vienna timestamp: "Do 08.10.2026 · 10:39" (de) / "Thu, Oct 8, 2026 · 10:39" (en). */
+  /** Local timestamp: "Do 08.10.2026 · 10:39" (de) / "Thu, Oct 8, 2026 · 10:39" (en). */
   function time(iso) {
     var d = toDate(iso);
     if (isNaN(d.getTime())) return '';
@@ -163,7 +167,8 @@
     status: null,
     submitLabel: null,
     operations: {},    // run id -> { token, kind }; completions clear only their own token
-    alternative: null,
+    alternatives: [],  // up to two quiet footer actions { label, run }, in render order
+    taskSteps: null,   // { key, button }: a banner steps line that names the footer's primary
     pending: null,     // run id being loaded
     discardTarget: null, // run id the open Verwerfen confirmation is about
     reading: {},       // run id -> true while POST /read is in flight
@@ -467,6 +472,10 @@
     var last = m.lastElementChild;
     var more = !!last && last.getBoundingClientRect().bottom - m.getBoundingClientRect().bottom > 1;
     if (more !== m.hasAttribute('data-rs-more')) m.toggleAttribute('data-rs-more', more);
+    /* a report that scrolls keeps the footer at the window bottom over a
+       hairline; a short one has it right under the content */
+    var scrolls = m.scrollHeight - m.clientHeight > 1;
+    if (scrolls !== m.hasAttribute('data-rs-scrolls')) m.toggleAttribute('data-rs-scrolls', scrolls);
   }
   /* A resize (an opened disclosure, the window) can switch the fade on over
      keyboard focus that is already held: scroll its ring clear by the same
@@ -627,7 +636,7 @@
     return box;
   }
 
-  /* "Erstellt Do 08.10.2026 · 10:39": German uses the server's display (Vienna) */
+  /* "Erstellt Do 08.10.2026 · 10:39": German uses the server's display (same zone) */
   function createdText(run) {
     return t('created_at', { time: boot.lang === 'en' || !run.created_display ? time(run.created) : run.created_display });
   }
@@ -693,8 +702,8 @@
      3 buttons per item still hold (K1, K2, K6 in tools/calm.mjs). A decided
      report keeps the banner, neutral, saying what happened. */
   var TASKS = window.RS_TASKS;
-  var viennaDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit' });
-  var viennaClock = new Intl.DateTimeFormat(LOCALE, { timeZone: 'Europe/Vienna', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  var localDay = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
+  var localClock = new Intl.DateTimeFormat(LOCALE, { timeZone: ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
   function taskOf(run) {
     var task = run && run.task;
@@ -702,15 +711,15 @@
   }
 
   /* "due today 15:00", "due Oct 15 15:00", "overdue since 09:00"; urgent
-     when the day is today (Vienna) or the moment has passed */
+     when the day is today (local time) or the moment has passed */
   function dueInfo(due, now) {
     if (typeof due !== 'string' || !due) return null;
     var dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(due);
     var moment = toDate(due);
     if (isNaN(moment.getTime())) return null;
-    var today = viennaDay.format(now);
-    var day = dateOnly ? due : viennaDay.format(moment);
-    var clock = dateOnly ? '' : viennaClock.format(moment);
+    var today = localDay.format(now);
+    var day = dateOnly ? due : localDay.format(moment);
+    var clock = dateOnly ? '' : localClock.format(moment);
     var past = dateOnly ? day < today : moment.getTime() < now.getTime();
     var text;
     if (past) text = t('task_overdue', { when: [day === today ? '' : date(day), clock].filter(Boolean).join(' ') });
@@ -728,6 +737,34 @@
     node.className = cls;
     node.textContent = text;
     return node;
+  }
+
+  /* the banner's steps line, right under the task line; empty removes it */
+  function setSteps(text) {
+    var box = el.taskInner;
+    var node = box.querySelector('.rs-task__steps');
+    if (!text) {
+      if (node) node.remove();
+      return;
+    }
+    if (!node) {
+      node = textNode('p', 'rs-task__steps', '');
+      var line = box.querySelector('.rs-task__line');
+      box.insertBefore(node, line ? line.nextSibling : box.firstChild);
+    }
+    node.textContent = String(text);
+  }
+
+  /* "An Release Bot senden": the bot by its display name while it fits;
+     a bare bot id or a long name reads "An Bot senden" */
+  var SUBMIT_NAME_MAX = 24;
+  function defaultSubmitLabel(run) {
+    var name = run ? identityOf(run).name : '';
+    var named = name && name !== run.bot && Array.from(name).length <= SUBMIT_NAME_MAX;
+    return named ? t('submit_to', { bot: name }) : t('submit');
+  }
+  function currentSubmitLabel(run) {
+    return state.submitLabel || defaultSubmitLabel(run || state.active);
   }
 
   function renderTask(run) {
@@ -748,24 +785,30 @@
     var line = document.createElement('p');
     line.className = 'rs-task__line';
     var whatKey = TASKS.lineKey(task, run.state);
-    var what = textNode('span', 'rs-task__what', whatKey ? t(whatKey) : '');
+    var what = textNode('span', 'rs-task__what', whatKey ? t(whatKey, { label: task.label || '' }) : '');
     if (!whatKey) {
       fillActors(what, run);
       line.setAttribute('data-actors', '');
     }
     line.appendChild(what);
-    if (!decided) {
-      var stepsText = task.steps
-        || (task.steps_for === 'mixed_platforms' ? mixedStepsText(task.parties || [], t('submit_mixed'))
-          : t(TASKS.stepsKey(task), { button: t(TASKS.primaryKey('approve_bot_acts', { verb: task.verb })) }));
-      line.appendChild(textNode('span', 'rs-task__steps', stepsText));
-    }
     var meta = [];
     if (!whatKey && !decided && task.kind === 'blocking') meta.push(t('task_kind_blocking'));
     if (!decided && task.eta_min) meta.push(t('task_eta', { n: number(task.eta_min) }));
     if (due) meta.push(due.text);
     if (meta.length) line.appendChild(textNode('span', 'rs-task__meta', meta.join(' ' + t('sep') + ' ')));
     box.appendChild(line);
+    /* steps only where they add something: the payload's own, a mixed
+       report's plan per actor, a list's "decide each, then <button>". The
+       button is the footer as it reads now (renderBar keeps it current). */
+    state.taskSteps = null;
+    if (!decided) {
+      if (task.steps) setSteps(task.steps);
+      else if (task.steps_for === 'mixed_platforms') setSteps(mixedStepsText(task.parties || [], t('submit_mixed')));
+      else if (TASKS.stepsKey(task)) {
+        state.taskSteps = { key: TASKS.stepsKey(task), button: null };
+        setSteps(t(state.taskSteps.key, { button: currentSubmitLabel(run) }));
+      }
+    }
     if (task.why) box.appendChild(textNode('p', 'rs-task__why', task.why));
     if (task.why_more) {
       var more = document.createElement('details');
@@ -846,16 +889,24 @@
     var task = taskOf(run);
     var decided = run.state !== 'open';
     var what = el.taskInner.querySelector('.rs-task__what');
-    var steps = el.taskInner.querySelector('.rs-task__steps');
     if (patch.parties) {
       state.taskLive = { runId: run.run_id, parties: patch.parties, changes: !!patch.changes };
       if (what && what.hasAttribute('data-actors')) fillActors(what, run);
     } else if (patch.what != null && what) what.textContent = String(patch.what);
-    var button = patch.stepsButton != null ? String(patch.stepsButton) : t(TASKS.primaryKey('approve_bot_acts', { verb: task.verb }));
-    if (!task.steps) {
-      if (patch.stepsFor === 'mixed_platforms' && patch.parties && steps) steps.textContent = mixedStepsText(patch.parties, button);
-      else if (patch.stepsKey && steps) steps.textContent = t(patch.stepsKey, { button: button });
-      else if (patch.steps != null && steps) steps.textContent = String(patch.steps);
+    /* without stepsButton the steps name the footer as it reads now */
+    var fixed = patch.stepsButton != null ? String(patch.stepsButton) : null;
+    var button = fixed !== null ? fixed : currentSubmitLabel(run);
+    if (!task.steps && !decided) {
+      if (patch.stepsKey) {
+        state.taskSteps = { key: patch.stepsKey, button: fixed };
+        setSteps(t(patch.stepsKey, { button: button }));
+      } else if (patch.stepsFor === 'mixed_platforms' && patch.parties) {
+        state.taskSteps = null;
+        setSteps(mixedStepsText(patch.parties, button));
+      } else if (patch.steps != null) {
+        state.taskSteps = null;
+        setSteps(String(patch.steps));
+      }
     }
     var blocking = taskOf(run).kind === 'blocking';
     if (patch.tone && !decided && el.task.getAttribute('data-due-urgent') !== 'true' && !blocking) {
@@ -1022,10 +1073,11 @@
       });
       el.strip.appendChild(b);
     });
-    el.stripCount.textContent = position >= 0
-      ? t('strip_count', { n: position + 1, m: all.length })
-      : t('strip_count_all', { m: all.length });
     var on = all.length >= 2;
+    /* the open count sits in the header's byline, only while several wait */
+    el.stripCount.textContent = !on ? ''
+      : position >= 0 ? t('strip_count', { n: position + 1, m: all.length })
+        : t('strip_count_all', { m: all.length });
     el.stripNav.hidden = !on;
     el.app.setAttribute('data-strip', on ? 'on' : 'off');
     if (held) {
@@ -1196,22 +1248,37 @@
     var busy = activeBusy();
     var task = a ? taskOf(a) : null;
     el.submit.disabled = !open || state.result === null || busy;
-    el.discard.disabled = !open || busy;
-    /* the CTA table per kind (tasks.js): information only offers just its
+    /* Discard report lives in the "…" menu, behind its confirmation. The
+       CTA table per kind (tasks.js): information only offers just its
        primary; blocking emphasises the underlying kind's primary */
-    el.discard.hidden = !!(task && !TASKS.CTA[TASKS.baseOf(task)].discard);
+    el.discard.disabled = !open || busy;
+    el.discard.hidden = !open || !!(task && !TASKS.CTA[TASKS.baseOf(task)].discard);
     el.submit.toggleAttribute('data-rs-emphasis', !!(open && task && task.kind === 'blocking'));
-    el.submitLabel.textContent = state.submitLabel || t('submit');
-    /* the alternative button exists only while a template offers one */
-    var alt = state.alternative;
-    if (open && alt) {
-      el.alt.textContent = alt.label;
-      el.alt.hidden = false;
-      if (!el.alt.isConnected) el.submit.parentNode.insertBefore(el.alt, el.submit);
-    } else if (el.alt.isConnected) {
-      el.alt.remove();
+    var label = currentSubmitLabel(a);
+    el.submitLabel.textContent = label;
+    if (open && state.taskSteps && state.taskSteps.button === null) {
+      setSteps(t(state.taskSteps.key, { button: label }));
     }
-    el.alt.disabled = busy;
+    /* the alternatives exist only while a template offers them, in the
+       given order, before the primary */
+    var shown = [];
+    el.alts.forEach(function (button, i) {
+      var alt = open ? state.alternatives[i] : null;
+      if (alt) {
+        button.textContent = alt.label;
+        button.hidden = false;
+        shown.push(button);
+      } else if (button.isConnected) {
+        button.remove();
+      }
+      button.disabled = busy;
+    });
+    /* moved only when out of place, so a focused alternative keeps focus */
+    var after = el.submit;
+    for (var i = shown.length - 1; i >= 0; i--) {
+      if (shown[i].nextElementSibling !== after) after.parentNode.insertBefore(shown[i], after);
+      after = shown[i];
+    }
     var s = state.status;
     el.status.textContent = s ? s.text : '';
     if (s && s.label) el.status.setAttribute('aria-label', s.label);
@@ -1535,13 +1602,24 @@
         state.submitLabel = text ? String(text) : null;
         renderBar();
       },
-      /* One quiet alternative next to the primary (e.g. "Request changes"); null removes it. */
-      setAlternative: function (label, onClick) {
+      /* Up to two quiet alternatives before the primary, in the given
+         order: [{label, run}]. An empty list (or null) removes them. */
+      setAlternatives: function (list) {
         if (!live()) return;
-        state.alternative = label ? { label: String(label), run: onClick } : null;
+        state.alternatives = (Array.isArray(list) ? list : []).filter(function (item) {
+          return item && item.label;
+        }).slice(0, 2).map(function (item) {
+          return { label: String(item.label), run: item.run };
+        });
         renderBar();
       },
-      /* Move focus to the footer alternative (e.g. after leaving a sub-mode). */
+      /* One quiet alternative (e.g. "Request changes"); null removes it. */
+      setAlternative: function (label, onClick) {
+        if (!live()) return;
+        state.alternatives = label ? [{ label: String(label), run: onClick }] : [];
+        renderBar();
+      },
+      /* Move focus to the first footer alternative (e.g. after leaving a sub-mode). */
       focusAlternative: function () {
         if (!live() || !el.alt.isConnected || el.alt.hidden) return false;
         el.alt.focus();
@@ -1592,7 +1670,8 @@
     nextUrl.searchParams.set('run', run.run_id);
     history.replaceState(history.state, '', nextUrl.pathname + nextUrl.search + nextUrl.hash);
     query.set('run', run.run_id);
-    state.alternative = null;
+    state.alternatives = [];
+    state.taskSteps = null;
     el.moreExtra.textContent = '';
     closeMore();
 
@@ -1948,7 +2027,9 @@
   function discard() {
     var a = state.active;
     if (!a || a.state !== 'open' || activeBusy()) return;
+    /* the menu closes; the confirmation returns focus to its button */
     closeMore();
+    el.moreBtn.focus({ preventScroll: true });
     var dlg = el.discardDialog;
     state.discardTarget = a.run_id;
     dlg.returnValue = '';
@@ -1969,9 +2050,10 @@
     state.discardTarget = null;
     var a = state.active;
     if (el.discardDialog.returnValue !== 'discard' || !id || !a || a.run_id !== id || a.state !== 'open') {
+      /* the menu closed when the confirmation opened: back to its button */
       var focused = document.activeElement;
-      if (!el.discard.disabled && (!focused || focused === document.body || el.discardDialog.contains(focused))) {
-        el.discard.focus();
+      if (!focused || focused === document.body || el.discardDialog.contains(focused) || focused === el.discard) {
+        el.moreBtn.focus();
       }
       return;
     }
@@ -2079,6 +2161,7 @@
       morePanel: document.getElementById('rs-more-panel'),
       moreExtra: document.getElementById('rs-more-extra'),
       alt: document.getElementById('rs-alt'),
+      alts: [document.getElementById('rs-alt'), document.getElementById('rs-alt-2')],
       title: document.getElementById('rs-title'),
       meta: document.getElementById('rs-meta'),
       bot: document.getElementById('rs-bot'),
@@ -2104,8 +2187,11 @@
     document.addEventListener('pointerdown', function (e) {
       if (!el.morePanel.hidden && !e.target.closest('#rs-more')) closeMore();
     });
-    el.alt.addEventListener('click', function () {
-      if (state.alternative && typeof state.alternative.run === 'function') state.alternative.run();
+    el.alts.forEach(function (button, i) {
+      button.addEventListener('click', function () {
+        var alt = state.alternatives[i];
+        if (alt && typeof alt.run === 'function') alt.run();
+      });
     });
 
     el.theme.setAttribute('aria-pressed', effectiveTheme() === 'dark' ? 'true' : 'false');

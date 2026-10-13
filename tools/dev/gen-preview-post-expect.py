@@ -18,7 +18,8 @@ INSTAGRAM_HASHTAGS = 5
 # One platform tab at a time: overflow menu, then per tab. Auto: approve, the
 # panel's three copy icons, back to the tablist, ArrowRight to the next tab.
 # Manual (copies first): the three copy icons and copy image, then "Posted"
-# and back ("Show in folder" is in the overflow menu). On the last (auto) tab on through discard and the
+# and back ("Show in folder" is in the overflow menu). On the last (auto) tab
+# on through the copies and the
 # alternative to the submit button.
 AUTO_TAB = (
     {"press": "Tab"}, {"press": "Space"}, {"repeat": 3, "press": "Tab"},
@@ -48,7 +49,7 @@ def keyboard_path(data):
     return [
         {"repeat": 2, "press": "Tab"},
         *[step for _, mode in tabs[:-1] for step in (MANUAL_TAB if mode == "manual" else AUTO_TAB)],
-        {"press": "Tab"}, {"press": "Space"}, {"repeat": 6, "press": "Tab"}, {"press": "Enter"},
+        {"press": "Tab"}, {"press": "Space"}, {"repeat": 5, "press": "Tab"}, {"press": "Enter"},
     ]
 
 

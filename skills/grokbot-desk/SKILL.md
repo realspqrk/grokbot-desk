@@ -96,14 +96,14 @@ If `show` fails, read its error. Correct the payload field named in the error; `
 
 Rule: set `task.kind` and write a short `task.why` (<=3 sentences); labels say who acts next.
 
-Every report opens with a task banner above its title: what to do, the steps, why, and optional effort and due date. Add a top-level `task` to the payload:
+Every report shows a task banner under its title: one line on what to do, why, and optional effort and due date. Steps show only when they add something (your own `steps`, a mixed list or preview). Add a top-level `task` to the payload:
 
 ```json
 "task": {"kind": "approve_bot_acts", "why": "The hosting invoice is due Friday. The toner can wait a week.", "eta_min": 2, "due": "2026-10-14"}
 ```
 
 - `kind`: `post_yourself` (the user posts it, then marks it posted), `approve_bot_acts` (you act after approval), `pick` (choose one option), `fyi` (information only, just Got it), `review` (read and give a verdict), `blocking` (you are stuck until the user answers; the banner turns red).
-- `why`: aim for at most 3 sentences and 360 characters. Longer text is a warning on `show` (exit 0), not a rejection: the banner shows the first three sentences, or the first 360 characters, and folds the rest. `steps`: one line, at most 140 characters, only when the default steps do not fit. When you set it, that line stays for the whole open report; ticks and choices do not replace it. `eta_min`: 1-120 minutes. `due`: `YYYY-MM-DD`, or `YYYY-MM-DDTHH:MM[:SS[.fff]]Z` or with a `±HH:MM` offset. Other ISO forms are rejected. Today or past turns the banner red.
+- `why`: aim for at most 3 sentences and 360 characters. Longer text is a warning on `show` (exit 0), not a rejection: the banner shows the first three sentences, or up to 360 characters cut at a word, and folds the rest. Without `why`, your `summary` (or `intro`, `context`, `notes`) becomes the why only when it fits whole; otherwise it stays in the report body. `steps`: one line, at most 140 characters, only when the default steps do not fit. When you set it, that line stays for the whole open report; ticks and choices do not replace it. `eta_min`: 1-120 minutes. `due`: `YYYY-MM-DD`, or `YYYY-MM-DDTHH:MM[:SS[.fff]]Z` or with a `±HH:MM` offset. Other ISO forms are rejected. Today or past turns the banner red.
 - Without `task` the kind is derived from the template and `actor` (see `docs/GUIDE.md`, *Task banner*). A `kind` that contradicts `data` is rejected with a pointer, for example `fyi` with `"actor": "bot"`.
 
 Set `actor` from who actually does the next step (or let `task.kind` set it). `bot` means you act after the result. `user` means the person does it (posts it, sends it, finishes it). `none` means the report is information only.

@@ -1083,7 +1083,7 @@ export function calmEvaluator(options) {
     'color', 'backgroundColor', 'borderTopColor', 'borderRightColor',
     'borderBottomColor', 'borderLeftColor', 'outlineColor',
   ];
-  /* C16 exception: the one task banner above the title may carry a status
+  /* C16 exception: the one task banner under the title may carry a status
      tint per task kind (its own background and edge, and the inner tinted
      box). Neutral text on that tint is ordinary text. Any other chromatic
      colour, including inside the banner, is still off-accent. The banner
@@ -1104,8 +1104,8 @@ export function calmEvaluator(options) {
     0,
   );
   const taskTitle = document.querySelector('#rs-title');
-  const taskBannerAboveTitle = taskBanner && taskTitle
-    ? rectOf(taskBanner).bottom <= rectOf(taskTitle).top + 1
+  const taskBannerUnderTitle = taskBanner && taskTitle
+    ? rectOf(taskBanner).top >= rectOf(taskTitle).bottom - 1
     : null;
   const offAccent = [];
   for (const element of elements.filter((item) => visible(item) && outsideMockupText(item))) {
@@ -1406,7 +1406,7 @@ export function calmEvaluator(options) {
       task_banners: taskBanners.length,
       task_banner_controls: taskBannerControls,
       task_banner_summaries: taskBannerSummaries,
-      task_banner_above_title: taskBannerAboveTitle,
+      task_banner_under_title: taskBannerUnderTitle,
     },
     K7: {
       item_gaps: itemGaps,
@@ -1495,8 +1495,8 @@ export function judgeCalmFacts(facts, options = {}) {
       ? [`K6 the task banner holds controls: ${facts.K6.task_banner_controls.join(', ')}`] : []),
     ...((facts.K6.task_banner_summaries ?? 0) <= 1
       ? [] : [`K6 the task banner holds ${facts.K6.task_banner_summaries} summaries`]),
-    ...(facts.K6.task_banner_above_title === false
-      ? ['K6 the task banner must sit above the title'] : []),
+    ...(facts.K6.task_banner_under_title === false
+      ? ['K6 the task banner must sit under the title'] : []),
   ]);
 
   const k7Reasons = [];
