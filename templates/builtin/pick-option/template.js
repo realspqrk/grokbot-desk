@@ -167,7 +167,9 @@ function setNone(on) {
 }
 
 /* Restore a half-done pick (window closed or reloaded), or show what was
-   sent when a submitted report is reopened. */
+   sent when a submitted report is reopened. A draft in none mode keeps the
+   pick it set aside, so Cancel still brings it back. Focus stays where the
+   window opens: only the person's own mode switches move it. */
 var sent = RS.run.state === 'submitted' ? RS.run.result : null;
 var draft = sent || (RS.run.state === 'open' ? RS.draft.get() : null);
 if (draft && typeof draft === 'object') {
@@ -178,12 +180,8 @@ if (draft && typeof draft === 'object') {
     showNote(false);
   }
   if (none) showNote(false);
-  if (!sent) {
-    if (none) note.focus();
-    else {
-      var checked = row.buttons.filter(function (b) { return b.getAttribute('aria-checked') === 'true'; })[0];
-      if (checked) checked.focus();
-    }
+  if (none && !sent && typeof draft.before === 'string' && Object.prototype.hasOwnProperty.call(byId, draft.before)) {
+    before = draft.before;
   }
 }
 render();
@@ -196,7 +194,7 @@ function update(save) {
   }
   if (none) {
     var has = /\S/.test(note.value);
-    if (save) RS.draft.set({ choice: '', note: note.value, none: true });
+    if (save) RS.draft.set({ choice: '', note: note.value, none: true, before: before });
     RS.setSubmitLabel(RS.t('request_send'));
     RS.setAlternatives([{ label: RS.t('cancel'), run: function () { setNone(false); } }]);
     RS.setResult(has ? { decision: 'request_changes', note: note.value } : null);

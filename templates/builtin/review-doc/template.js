@@ -459,7 +459,8 @@ function blockCopy(kind, text, describedId) {
   copy.text = text;
   return copy;
 }
-function renderBlock(b) {
+/* quiet: inside a callout, where code and quotes get no copy button */
+function renderBlock(b, quiet) {
   if (b.type === 'p') {
     var nodes = parseInline(b.text);
     if (nodes.length === 1 && nodes[0].t === 'img') {
@@ -479,8 +480,9 @@ function renderBlock(b) {
   }
   if (b.type === 'code') {
     var pre = make('pre', 'rd__pre');
-    pre.id = 'rd-code-' + (blockCopies.code + 1);
     pre.appendChild(make('code', null, b.text));
+    if (quiet) return pre;
+    pre.id = 'rd-code-' + (blockCopies.code + 1);
     var codeWrap = make('div', 'rd__copyblock');
     codeWrap.appendChild(blockCopy('code', b.text, pre.id));
     codeWrap.appendChild(pre);
@@ -489,13 +491,14 @@ function renderBlock(b) {
   if (b.type === 'hr') return make('hr', 'rd__hr');
   if (b.type === 'quote') {
     var q = make('blockquote', 'rd__quote');
-    q.id = 'rd-quote-' + (blockCopies.quote + 1);
     b.paras.forEach(function (text) {
       if (!text.trim()) return;
       var qp = make('p', 'rd__p');
       renderInline(parseInline(text), qp);
       q.appendChild(qp);
     });
+    if (quiet) return q;
+    q.id = 'rd-quote-' + (blockCopies.quote + 1);
     var quoteWrap = make('div', 'rd__copyblock');
     quoteWrap.appendChild(blockCopy('quote', b.paras.join('\n\n'), q.id));
     quoteWrap.appendChild(q);
@@ -506,7 +509,7 @@ function renderBlock(b) {
     var note = make('div', 'rd__callout rd__callout--' + b.kind);
     note.setAttribute('role', 'note');
     note.appendChild(make('p', 'rd__callout-title', RS.t(CALLOUT_TITLES[b.kind])));
-    b.blocks.forEach(function (inner) { note.appendChild(renderBlock(inner)); });
+    b.blocks.forEach(function (inner) { note.appendChild(renderBlock(inner, true)); });
     return note;
   }
   if (b.type === 'list') {
@@ -690,7 +693,12 @@ if (base === 'fyi') {
   fyiNote.appendChild(fyiBody);
   /* a closed note keeps its field out of the layout, not just out of view */
   fyiBody.hidden = true;
-  fyiNote.addEventListener('toggle', function () { fyiBody.hidden = !fyiNote.open; });
+  /* what is visible is what is sent: a closed note keeps its text but is
+     not part of the result */
+  fyiNote.addEventListener('toggle', function () {
+    fyiBody.hidden = !fyiNote.open;
+    update(true);
+  });
   part('request').hidden = true;
   part('request').parentNode.insertBefore(fyiNote, part('request'));
 }
@@ -710,7 +718,9 @@ function update(save) {
   if (save) {
     var saved = {};
     sections.forEach(function (s) { if (s.input.value) saved[s.index] = s.input.value; });
-    RS.draft.set({ requesting: requesting, comment: overall.value, comments: saved });
+    var value = { requesting: requesting, comment: overall.value, comments: saved };
+    if (base === 'fyi') value.note = fyiNote.open;
+    RS.draft.set(value);
   }
   if (requesting) {
     var ready = !!overall.value.trim() || list.length > 0;
@@ -722,15 +732,17 @@ function update(save) {
   }
   if (base === 'post_yourself') {
     RS.setSubmitLabel(RS.cta('done'));
+    /* Skip sends at once; should the send not go through, the footer goes
+       back to the primary's own result */
     RS.setAlternative(RS.cta('skipped'), function () {
       RS.setResult({ decision: 'skipped', comment: '', comments: sectionComments() });
-      RS.submit();
+      RS.submit().then(function (ok) { if (!ok) update(false); });
     });
     RS.setResult({ decision: 'done', comment: '', comments: list });
   } else if (base === 'fyi') {
     RS.setSubmitLabel(RS.cta('acknowledged'));
     RS.setAlternative(null);
-    var noted = overall.value.trim() ? overall.value : '';
+    var noted = fyiNote.open && overall.value.trim() ? overall.value : '';
     RS.setResult({ decision: 'acknowledged', comment: noted, comments: [] });
     RS.setStatus(null);
     return;
@@ -749,11 +761,14 @@ function setRequesting(on, focus) {
   requesting = on;
   part('request').hidden = !on;
   update(true);
-  if (focus) {
-    if (on) overall.focus();
-    else RS.focusAlternative();
-  }
+  if (!focus) return;
+  if (!on) { RS.focusAlternative(); return; }
+  /* with section comments the request can go as it is: the overall comment
+     is there to add to, so focus goes to the request, not into the field */
+  if (sectionComments().length) part('request').focus();
+  else overall.focus();
 }
+part('request').tabIndex = -1;
 part('request-cancel').addEventListener('click', function () { setRequesting(false, true); });
 overall.addEventListener('input', function () { update(true); });
 
@@ -762,14 +777,14 @@ overall.addEventListener('input', function () { update(true); });
 var sent = RS.run.state === 'submitted' ? RS.run.result : null;
 var restore = null;
 if (sent) {
-  restore = { requesting: sent.decision === 'request_changes', comment: sent.comment || '', comments: {} };
+  restore = { requesting: sent.decision === 'request_changes', comment: sent.comment || '', comments: {}, note: !!sent.comment };
   (sent.comments || []).forEach(function (c) { restore.comments[c.section] = c.comment; });
 } else if (RS.run.state === 'open') {
   restore = RS.draft.get();
 }
 if (restore && typeof restore === 'object' && base === 'fyi') {
   if (typeof restore.comment === 'string') overall.value = restore.comment;
-  if (overall.value) {
+  if (overall.value && restore.note !== false) {
     fyiNote.open = true;
     fyiBody.hidden = false;
   }
@@ -786,4 +801,3 @@ if (restore && typeof restore === 'object' && base === 'fyi') {
   });
 }
 update(false);
-if (!sent && requesting) overall.focus();
