@@ -1,37 +1,24 @@
-// German string table.
+// The UI string tables: German (default) and English.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const de = JSON.parse(readFileSync(new URL('../core/i18n/de.json', import.meta.url), 'utf8'));
+const en = JSON.parse(readFileSync(new URL('../core/i18n/en.json', import.meta.url), 'utf8'));
 
-test('core set, exact wording', () => {
-  const core = {
-    submit: 'An Bot senden', discard: 'Verwerfen', seen: 'Gesehen', copy: 'Kopieren',
-    copied: 'Kopiert ✓', copy_text: 'Text kopieren', copy_hashtags: 'Hashtags kopieren',
-    copy_comment: 'Kommentar kopieren', reveal: 'Im Ordner zeigen' /* calm UI: cross-platform wording */, approve: 'Freigeben',
-    request_changes: 'Änderungen anfordern', comment: 'Kommentar', note: 'Notiz',
-    sent: 'An Bot übermittelt ✓', expired: 'Abgelaufen',
-    clipboard_busy: 'Zwischenablage belegt – bitte nochmal klicken', new: 'neu',
-    theme: 'Hell/Dunkel', confirm_type: 'Zum Bestätigen „{word}“ eintippen',
-    no_runs: 'keine offenen Berichte',
+test('a few anchor keys keep their German wording', () => {
+  const anchors = {
+    approve: 'Freigeben', request_changes: 'Änderungen anfordern', copy: 'Kopieren', copied: 'Kopiert ✓',
+    confirm_type: 'Zum Bestätigen „{word}“ eintippen', lint_em_dash: 'Gedankenstrich (—) gefunden',
+    platform_x: 'X',
   };
-  for (const [k, v] of Object.entries(core)) assert.equal(de[k], v, k);
+  for (const [k, v] of Object.entries(anchors)) assert.equal(de[k], v, k);
 });
 
-test('template strings', () => {
-  const want = {
-    section_todo: 'Wartet auf dich' /* calm UI: no icon, no count */, section_done: 'Erledigt', section_feed: 'Feed', section_keep: 'Behalten',
-    verb_pay: 'Zahlen', verb_sign: 'Unterschreiben', verb_reply: 'Antworten', verb_shop: 'Neuer Shop',
-    verb_unsub: 'Abmelden?', verb_check: 'Prüfen', verb_other: 'Sonstiges',
-    choice_erledigt: 'Erledigt', choice_spaeter: 'Später', choice_ignorieren: 'Ignorieren',
-    choice_ja: 'Ja', choice_nein: 'Nein',
-    approve_for: 'Freigeben für {platform}',
-    lint_em_dash: 'Gedankenstrich (—) gefunden', lint_registered: '® gefunden',
-    lint_ig_needs_image: 'Instagram braucht ein Bild oder ein Video',
-    platform_x: 'X', platform_linkedin: 'LinkedIn', platform_instagram: 'Instagram', platform_facebook: 'Facebook',
-  };
-  for (const [k, v] of Object.entries(want)) assert.equal(de[k], v, k);
+test('German and English have the same keys and the same placeholders in every string', () => {
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(de).sort());
+  const placeholders = (v) => [...v.matchAll(/\{([^}]*)\}/g)].map((m) => m[1]).sort();
+  for (const k of Object.keys(de)) assert.deepEqual(placeholders(en[k]), placeholders(de[k]), k);
 });
 
 test('no em dash except the lint badge that names it', () => {

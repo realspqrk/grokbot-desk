@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"id": "hosting", "title": "Hosting invoice for October, 48.00 EUR", "due": "2026-10-31"},
+    {"id": "supplies", "title": "Office supplies order, 61.20 EUR", "due": "2026-02-31"}
+  ]
+}

@@ -107,9 +107,9 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   }
 
   for (const [id, valid] of [
-    ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies', 'edge-many']],
+    ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies', 'edge-many', 'edge-de']],
     ['approve-one', ['golden', 'edge-access', 'edge-de', 'edge-minimal', 'edge-max', 'edge-no-summary']],
-    ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-max']],
+    ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-x-cjk', 'edge-de', 'edge-max']],
   ]) {
     test(`${id}: expect.flow (mouse) and expect.keyboard (keys only) write expect.result`, async () => {
       const expect = expectFor(id, 'golden');
@@ -664,7 +664,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       });
       /* posting everything yourself: the banner says it once; the panel does not repeat it */
       assert.equal(await page.textContent('#tab-x'), `${de.platform_x}${de.not_posted}`);
-      assert.equal(await page.$('#panel-x [data-pp="manual-note"]'), null);
+      assert.equal(await page.$('#panel-x .pp__manual'), null);
       assert.equal(await page.textContent('#rs-status'), de.select_posted);
       assert.equal(await page.textContent('#rs-alt'), de.request_changes);
       assert.equal(await page.isEnabled('#approve-x'), true);
@@ -673,6 +673,41 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.deepEqual(await submitted(page, run), {
         decision: 'approve', platforms: [], comment: '', per_platform: { x: { mode: 'manual', decision: 'done' } },
       });
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('preview-post: CJK, emoji and a URL weigh as X counts them; the fold falls before a URL that would cross 280', async () => {
+    const expect = expectFor('preview-post', 'edge-x-cjk');
+    const { ctx, page, log, run } = await open('preview-post', 'edge-x-cjk');
+    try {
+      const composed = expect.copies['x-text'];
+      assert.notEqual(expect.counters.x.count, [...composed].length, 'the X weight is not the length');
+      const view = await page.evaluate(() => {
+        const ellipsis = document.querySelector('#panel-x .rs-pf__ellipsis');
+        const range = document.createRange();
+        range.setStart(document.querySelector('#panel-x [slot="text"]'), 0);
+        range.setEndBefore(ellipsis);
+        return {
+          counted: document.querySelector('[data-counter-id="x"]').result.count,
+          counter: document.querySelector('[data-counter-id="x"] .rs-counter__num').textContent,
+          before: range.toString(),
+          long: !document.querySelector('#panel-x [data-pp="long-note"]').hidden,
+          blocked: !document.querySelector('#blocked-x').hidden,
+        };
+      });
+      assert.equal(view.counted, expect.counters.x.count);
+      assert.equal(view.counter, t('counter_value', { value: String(expect.counters.x.count), limit: '25.000' }));
+      const url = composed.indexOf(' https://');
+      assert.equal(view.before, composed.slice(0, url), 'the visible part ends right before the URL');
+      assert.ok(RS_COUNT.count(composed.slice(0, url), 'x').count + 23 > 280, 'the URL would cross 280');
+      assert.deepEqual([view.long, view.blocked], [true, false], 'a long post, still approvable');
+      await page.check('#approve-x');
+      await page.click('#tab-linkedin');
+      assert.equal(await page.$eval('[data-counter-id="linkedin"]', (el) => el.result.count), expect.counters.linkedin.count);
+      await page.check('#approve-linkedin');
+      await page.keyboard.press('Control+Enter');
+      assert.deepEqual((await submitted(page, run)).platforms, ['x', 'linkedin']);
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
   });
@@ -751,6 +786,30 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     } finally { await max.ctx.close(); }
   });
 
+  test('preview-post: with hashtag_mode none the hashtag list still counts toward the Instagram limit', async () => {
+    const data = fixture('preview-post', 'golden');
+    const tags = ['AutumnMenu', 'Sourdough', 'LocalBakery', 'Pumpkin', 'Crumb', 'Soup'];
+    const listed = await open('preview-post', 'golden', {
+      data: { ...data, hashtag_mode: 'none', hashtags: tags, text: data.text + ' #Sourdough', platforms: ['instagram'] },
+    });
+    try {
+      assert.equal(await listed.page.$eval('[data-counter-id="instagram-hashtags"]', (el) => el.result.count), 6,
+        'the five listed tags the text lacks plus the one it carries');
+      assert.equal(await listed.page.isDisabled('#approve-instagram'), true);
+      assert.equal(await listed.page.textContent('#blocked-instagram [data-pp="blocked-text"]'), t('hashtags_to_approve', { limit: 5 }));
+    } finally { await listed.ctx.close(); }
+    const five = await open('preview-post', 'golden', {
+      data: { ...data, hashtag_mode: 'none', hashtags: tags.slice(0, 5), platforms: ['instagram'] },
+    });
+    try {
+      assert.equal(await five.page.$eval('[data-counter-id="instagram-hashtags"]', (el) => el.result.count), 5);
+      assert.equal(await five.page.$eval('[data-counter-id="instagram"]', (el) => el.result.count),
+        RS_COUNT.count(data.text, 'instagram').count, 'the characters count the text only');
+      assert.equal(await five.page.isHidden('#blocked-instagram'), true);
+      assert.deepEqual(five.log.errors, []);
+    } finally { await five.ctx.close(); }
+  });
+
   test('preview-post: edge-no-image blocks Instagram and names the payload flags in one quiet style note', async () => {
     const noImage = await open('preview-post', 'edge-no-image');
     try {
@@ -777,6 +836,11 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await reload(page);
       assert.equal(await page.isVisible('[data-pp="request"]'), true);
       assert.equal(await page.inputValue('#pp-comment'), 'Use the shop front photo instead');
+      await page.click('[data-pp="request-cancel"]');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), de.request_changes,
+        'Cancel returns focus to the button that opened the request');
+      await page.click('#rs-alt');
+      assert.equal(await page.inputValue('#pp-comment'), 'Use the shop front photo instead', 'the text is kept');
       await page.keyboard.press('Control+Enter');
       const note = 'Use the shop front photo instead';
       assert.deepEqual(await submitted(page, run), {
@@ -806,7 +870,21 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     try {
       assert.equal(await page.textContent('#tab-x'), `${de.platform_x} · ${de.mode_manual}${de.not_posted}`, 'in a mix the mode is named');
       assert.equal(await page.textContent('#tab-linkedin'), `${de.platform_linkedin}${de.not_approved}`, 'auto is the quiet default');
-      assert.equal(await page.textContent('#panel-x [data-pp="manual-note"]'), de.manual_note);
+      assert.equal(await page.$('#panel-x .pp__manual'), null, 'the banner and the tab already say who posts');
+      const comment = await page.$eval('#panel-x [data-copy-id="x-comment"]', (el) => {
+        const box = (n) => n.getBoundingClientRect();
+        const icon = box(el.querySelector('.rs-copy__btn'));
+        const caption = box(el.querySelector('.rs-copy__caption'));
+        const value = box(el.querySelector('.rs-copy__value'));
+        const text = box(document.querySelector('#panel-x [data-copy-id="x-text"] .rs-copy__btn'));
+        return {
+          iconFirst: icon.right <= caption.left + 1,
+          oneRow: Math.abs((icon.top + icon.bottom) / 2 - (caption.top + caption.bottom) / 2) < 4,
+          previewBelow: value.top >= icon.bottom - 1,
+          sameStart: Math.abs(icon.left - text.left) < 2,
+        };
+      });
+      assert.deepEqual(comment, { iconFirst: true, oneRow: true, previewBelow: true, sameStart: true }, 'Copy comment starts like the other copies');
       assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), de.posted);
       /* Tab order on the manual panel: the copies, then "Mark as posted" */
       const order = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
@@ -827,7 +905,6 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await label(page), de.posted);
       assert.equal(await page.textContent('#rs-status'), t('mixed_posted_count', { n: 1 }));
       await page.click('#tab-linkedin');
-      assert.equal(await page.$('#panel-linkedin [data-pp="manual-note"]'), null, 'auto keeps today\'s panel');
       assert.equal(await page.$('#panel-linkedin [data-copy-id="linkedin-image"]'), null);
       await page.check('#approve-linkedin');
       assert.equal(await label(page), de.submit_mixed, 'you posted X and the bot posts LinkedIn');
@@ -1195,7 +1272,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     const plain = await open('preview-post', 'golden', { data: legacy });
     try {
       assert.equal(await plain.page.$('.pp__mode'), null);
-      assert.equal(await plain.page.$('[data-pp="manual-note"]'), null);
+      assert.equal(await plain.page.$('.pp__manual'), null);
       assert.equal(await plain.page.textContent('#panel-x [data-pp="approve-label"]'), t('approve_for', { platform: de.platform_x }));
       await plain.page.check('#approve-x');
       assert.equal(await label(plain.page), de.approve_post);
@@ -1211,7 +1288,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await label(handOnly.page), de.posted);
       assert.equal(await handOnly.page.textContent('#rs-status'), de.select_posted);
       assert.equal(await handOnly.page.$('.pp__mode'), null, 'posting everything yourself: no mode in the tab');
-      assert.equal(await handOnly.page.$('[data-pp="manual-note"]'), null);
+      assert.equal(await handOnly.page.$('.pp__manual'), null);
       assert.equal(await handOnly.page.isDisabled('#rs-submit'), true);
       await handOnly.page.check('#approve-x');
       assert.equal(await label(handOnly.page), de.posted);

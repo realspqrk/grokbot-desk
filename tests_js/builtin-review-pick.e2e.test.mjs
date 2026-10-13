@@ -57,6 +57,13 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
     await page.goto(server.url(`?client=test&run=${runId}`));
     await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
   }
+  async function tabTo(page, selector) {
+    for (let i = 0; i < 60; i++) {
+      await page.keyboard.press('Tab');
+      if (await page.evaluate((s) => document.activeElement.matches(s), selector)) return;
+    }
+    throw new Error('cannot Tab to ' + selector);
+  }
   async function waitResult(runId) {
     const deadline = Date.now() + 5000;
     while (!server.result(runId) && Date.now() < deadline) await sleep(20);
@@ -162,6 +169,65 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
         requestVisible: !document.querySelector('[data-rd="request"]').hidden,
       }));
       assert.deepEqual(view, { section: 'Per season, please.', sectionReadOnly: true, overall: 'Fix the fee note.', requestVisible: true });
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('review-doc: a failed Skip goes back to Done, so the primary never sends skipped', async () => {
+    const run = show('review-doc', { ...fixture('review-doc', 'golden'), actor: 'user' });
+    const { ctx, page } = await open(run.run_id);
+    try {
+      const done = await page.textContent('#rs-submit-label');
+      let failed = 0;
+      await page.route('**/submit', async (route) => {
+        failed += 1;
+        await route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"test"}' });
+      });
+      await page.click('#rs-alt');
+      await page.waitForSelector('.rs-toast');
+      await page.waitForFunction(() => !document.querySelector('[data-rs-pending]') && !document.querySelector('#rs-submit').disabled);
+      assert.equal(failed, 1);
+      await page.unroute('**/submit');
+      assert.equal(await page.textContent('#rs-submit-label'), done);
+      await page.click('#rs-submit');
+      const result = await waitResult(run.run_id);
+      assert.equal(result.data.decision, 'done');
+    } finally { await ctx.close(); }
+  });
+
+  test('review-doc: information only sends its note only while the note is open', async () => {
+    const run = show('review-doc', { ...fixture('review-doc', 'golden'), actor: 'none' });
+    const { ctx, page, errors } = await open(run.run_id);
+    try {
+      const summary = page.locator('#rs-mount summary');
+      await summary.click();
+      await page.fill('#rd-comment', 'Second thoughts');
+      await summary.click();
+      assert.equal(await summary.evaluate((el) => el.parentElement.open), false);
+      await reload(page);
+      assert.equal(await summary.evaluate((el) => el.parentElement.open), false, 'a closed note stays closed');
+      await page.click('#rs-submit');
+      const result = await waitResult(run.run_id);
+      assert.deepEqual(result.data, { decision: 'acknowledged', comment: '', comments: [] });
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('review-doc: with section comments, Request changes can send at once and does not jump into the blank comment', async () => {
+    const run = show('review-doc', fixture('review-doc', 'golden'));
+    const { ctx, page, errors } = await open(run.run_id);
+    try {
+      await page.click('[data-section="2"] .rd__comment-open');
+      await page.keyboard.type('Name the tested limits.');
+      await page.click('#rs-alt');
+      assert.equal(await page.textContent('#rs-submit-label'), de.send_request);
+      assert.equal(await page.isDisabled('#rs-submit'), false, 'the section comment is the request');
+      assert.notEqual(await page.evaluate(() => document.activeElement.id), 'rd-comment');
+      await page.click('#rs-submit');
+      const result = await waitResult(run.run_id);
+      assert.equal(result.data.decision, 'request_changes');
+      assert.equal(result.data.comment, '');
+      assert.equal(result.data.comments.length, 1);
       assert.deepEqual(errors, []);
     } finally { await ctx.close(); }
   });
@@ -290,7 +356,10 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       assert.equal(await page.textContent('#rs-submit-label'), de.po_choose.replace('{name}', 'Old Mill Studio'));
       await reload(page);
       assert.equal(await page.getAttribute('.po__card[value="old-mill"]', 'aria-checked'), 'true');
-      assert.equal(await page.evaluate(() => document.activeElement.value), 'old-mill');
+      assert.equal(await page.evaluate(() => !!document.activeElement.closest('.po__options')), false,
+        'a restored draft does not pull focus into the cards');
+      await tabTo(page, '.po__card');
+      assert.equal(await page.evaluate(() => document.activeElement.value), 'old-mill', 'Tab enters the group at the pick');
       await page.keyboard.press('ArrowRight');
       await page.keyboard.press('Control+Enter');
       const result = await waitResult(run.run_id);
@@ -329,6 +398,10 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       await reload(page);
       assert.equal(await page.inputValue('#po-note'), 'All three are too far for the night shift.');
       assert.equal(await page.textContent('#rs-submit-label'), de.request_send);
+      await page.click('#rs-alt');
+      assert.equal(await page.getAttribute('.po__card[value="hilltop"]', 'aria-checked'), 'true', 'after a reload Cancel still brings the pick back');
+      await page.click('#rs-alt');
+      assert.equal(await page.inputValue('#po-note'), 'All three are too far for the night shift.');
       await page.keyboard.press('Control+Enter');
       const result = await waitResult(run.run_id);
       assert.deepEqual(result.data, { decision: 'request_changes', note: 'All three are too far for the night shift.' });
@@ -375,6 +448,7 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       '> [!IMPORTANT]', '> Important.', '',
       '> [!WARNING]', '> Careful.', '',
       '> [!CAUTION]', '> Stop.', '',
+      '> [!NOTE]', '> ```', '> inside a callout', '> ```', '> > nested quote', '',
       '> [!NOTE] with text', '', '> A plain quote.', '',
       '```', 'code', '```',
     ].join('\n');
@@ -389,7 +463,9 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
         listInTip: document.querySelectorAll('.rd__callout--tip li').length,
         quoteCopies: document.querySelectorAll('rs-copy[data-copy-id^="quote-"]').length,
         codeCopies: document.querySelectorAll('rs-copy[data-copy-id^="code-"]').length,
-        literal: [...document.querySelectorAll('.rd__quote')].map((q) => q.textContent.trim()),
+        literal: [...document.querySelectorAll('.rd__doc > * > .rd__copyblock .rd__quote')].map((q) => q.textContent.trim()),
+        ids: [...document.querySelectorAll('rs-copy')].map((c) => c.dataset.copyId),
+        inner: document.querySelectorAll('.rd__callout pre, .rd__callout blockquote').length,
       }));
       assert.deepEqual(view.callouts, [
         ['note', 'note', de.rd_callout_note, false],
@@ -397,9 +473,12 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
         ['important', 'note', de.rd_callout_important, false],
         ['warning', 'note', de.rd_callout_warning, false],
         ['caution', 'note', de.rd_callout_caution, false],
+        ['note', 'note', de.rd_callout_note, false],
       ]);
       assert.equal(view.listInTip, 2);
       assert.deepEqual([view.quoteCopies, view.codeCopies], [2, 1]);
+      assert.deepEqual(view.ids, ['quote-1', 'quote-2', 'code-1'], 'code and quotes inside a callout take no copy id');
+      assert.equal(view.inner, 2, 'the callout still shows its code block and nested quote');
       assert.deepEqual(view.literal, ['[!NOTE] with text', 'A plain quote.'], 'a marker with text after it stays a quote');
       assert.deepEqual(errors, []);
     } finally { await ctx.close(); }

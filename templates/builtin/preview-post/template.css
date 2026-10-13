@@ -77,8 +77,13 @@
 .pp__copies { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 .pp__copies:empty { display: none; }
 .pp__comment .rs-copy__value { font-size: var(--rs-fs-sm); }
+/* the comment starts like the other copies (icon, then its label); the
+   text it copies follows below as a quoted preview */
+.pp__copies rs-copy.pp__comment { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+.pp__comment .rs-copy__btn { grid-column: 1; grid-row: 1; }
+.pp__comment .rs-copy__caption { grid-column: 2; grid-row: 1; color: var(--rs-ink); }
+.pp__comment .rs-copy__value { grid-column: 1 / -1; grid-row: 2; }
 
 /* ---- mode: in a mix a manual platform is named quietly in its tab and its
-   panel starts with the note and the copies (the reviewer posts by hand) ---- */
+   panel starts with the copies (the reviewer posts by hand) ---- */
 .pp__mode { color: var(--rs-muted); font-weight: var(--rs-fw-normal); }
-.pp__manual { color: var(--rs-muted); }

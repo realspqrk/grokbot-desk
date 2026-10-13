@@ -345,8 +345,8 @@ if (draft && typeof draft === 'object') {
     showOverall(false);
   }
 }
-/* a restored draft puts focus back on the item being decided */
-setCurrent(firstOpen(-1), !!(draft && !sent));
+/* the first open item is current; focus stays where the window opens */
+setCurrent(firstOpen(-1), false);
 
 /* A mixed list (your items and the bot's) gets one banner line per actor,
    counted: an undecided item is still planned, a skipped, deferred or

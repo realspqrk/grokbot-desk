@@ -598,6 +598,10 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       assert.equal(await summary.evaluate((el) => el.parentElement.open), false);
       assert.equal(await page.locator('#rs-mount rs-action-row').count(), 0);
       assert.equal(await page.isHidden('#rs-discard'), true);
+      await summary.click();
+      await page.fill('#ao-comment', 'Second thoughts');
+      await summary.click();
+      assert.equal(await summary.evaluate((el) => el.parentElement.open), false, 'a closed note is not sent');
       await page.click('#rs-submit');
       const deadline = Date.now() + 5000;
       while (!server.result(run.run_id) && Date.now() < deadline) await sleep(20);
@@ -681,7 +685,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         const side = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
         assert.deepEqual(side, ['x-text', 'x-hashtags', 'x-image', 'approve-x']);
         assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), tl('posted'));
-        assert.equal(await page.textContent('#panel-x [data-pp="manual-note"]'), tl('manual_note'));
+        assert.equal(await page.$('#panel-x .pp__manual'), null, 'the lines and the tab say who posts');
         await page.check('#approve-x');
         assert.deepEqual(await lines(), [
           ['user', you], ['bot', tl('task_unticked', { line: tl('task_bot_none_post', { bot }), names: 'LinkedIn' })],
