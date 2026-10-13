@@ -443,6 +443,7 @@ def command_wait(args, base):
     """Block until the run has a result. Exit 5 at --timeout; exit 7 once the
     run's expiry plus grace has passed with no result written (nothing will
     answer it any more), so a waiter never blocks forever."""
+    base = follow_migration(base)
     run_path = Path(base) / "runs" / f"{args.run_id}.json"
     result_path = Path(base) / "results" / f"{args.run_id}.json"
     if not run_path.exists() and not result_path.exists():
@@ -473,7 +474,17 @@ def command_wait(args, base):
                 f"run expired without a result: {args.run_id} (data dir {Path(base)})", 7
             )
         time.sleep(.2)
-    value = json_loads(result_path.read_text(encoding="utf-8"))
+    try:
+        text = result_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # `migrate` moved the folder between seeing the result and reading it
+        moved = follow_migration(base)
+        if moved == Path(base):
+            raise
+        base = moved
+        result_path = base / "results" / f"{args.run_id}.json"
+        text = result_path.read_text(encoding="utf-8")
+    value = json_loads(text)
     output({"status": value["status"], "result_path": str(result_path), "data_dir": str(Path(base))})
     return 0
 
@@ -608,6 +619,10 @@ def command_results(args, base):
     while True:
         base = follow_migration(base)
         every = _results_since(base, since, args.bot)
+        if follow_migration(base) != Path(base):
+            # `migrate` moved the folder while the results were read
+            base = follow_migration(base)
+            every = _results_since(base, since, args.bot)
         items = [item for item in every if item["run_id"] not in skip]
         if items or time.monotonic() >= deadline:
             break
@@ -920,7 +935,8 @@ def main(argv=None):
         return command_new(args)
     if args.command == "migrate":
         return command_migrate()
-    base = ensure_layout(data_dir())
+    # serve checks and lays out its folder itself (it refuses a migrated one)
+    base = data_dir() if args.command == "serve" else ensure_layout(data_dir())
     try:
         config = load_config(base)
     except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:

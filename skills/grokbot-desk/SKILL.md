@@ -119,7 +119,7 @@ Exit 2: the payload is invalid. Fix the field the error names, then send it once
 
 ## Data directory, dedupe, time
 
-`paths` prints the directory and why (`source` is `RS_DATA_DIR`, `legacy` or `default`), plus any unused older directory. On Windows, an older folder under `%LOCALAPPDATA%` stays in use until `python report_shell.py migrate` runs while the desk is closed. `paths` says so (`warning`). Close a running desk with `python report_shell.py stop` first. `migrate` refuses while a desk runs, while another migrate runs, or when the new folder already holds files. macOS has nothing to migrate. `RS_DATA_DIR` is never moved.
+`paths` prints the directory and why (`source` is `RS_DATA_DIR`, `legacy` or `default`), plus any unused older directory. On Windows, an older folder under `%LOCALAPPDATA%` stays in use until `python report_shell.py migrate` runs while the desk is closed. `paths` says so (`warning`). Let the person decide or discard every open report, then close the desk with `python report_shell.py stop`. `migrate` refuses while a desk runs, while a report is still open, while another migrate runs, or when the new folder already holds files. macOS has nothing to migrate. `RS_DATA_DIR` is never moved.
 
 The webhook stays off unless enabled with `GROKBOT_DESK_WEBHOOK_KEY` and an allow-listed `https` URL. Bots use `wait`. Startup drops `runs`, `results` and `log` files older than 30 days.
 

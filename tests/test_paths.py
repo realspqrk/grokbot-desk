@@ -33,7 +33,7 @@ def test_data_dir_override_wins_over_default_and_legacy(tmp_path, monkeypatch):
 
 def test_windows_data_dir_falls_back_to_existing_legacy_dir(tmp_path, monkeypatch):
     legacy = tmp_path / "spqrk-report-shell"
-    legacy.mkdir()
+    (legacy / "runs").mkdir(parents=True)
     monkeypatch.delenv("RS_DATA_DIR", raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
@@ -49,10 +49,13 @@ def test_macos_data_dir_uses_application_support(tmp_path, monkeypatch):
     )
 
 
-def _legacy_with_run(local):
+def _legacy_with_run(local, decided=True):
     runs = local / "spqrk-report-shell" / "runs"
     runs.mkdir(parents=True)
     (runs / "20261011-093000-bot-0123456789ab.json").write_text("{}")
+    if decided:
+        (local / "spqrk-report-shell" / "results").mkdir()
+        (local / "spqrk-report-shell" / "results" / "20261011-093000-bot-0123456789ab.json").write_text("{}")
     (local / "spqrk-report-shell" / "config.json").write_text('{"port": 18930}')
 
 
@@ -74,7 +77,9 @@ def _preview_with_legacy_media(local):
     config.json naming that folder as a media root."""
     from core.envelope import validate_payload
 
-    legacy = paths.ensure_layout(local / "spqrk-report-shell")
+    legacy = local / "spqrk-report-shell"
+    (legacy / "runs").mkdir(parents=True)
+    paths.ensure_layout(legacy)
     image = legacy / "media" / "photo.png"
     image.write_bytes(PNG_1PX)
     (legacy / "config.json").write_text(json.dumps({"media_roots": [str(legacy / "media")]}))
@@ -99,34 +104,32 @@ def _preview_with_legacy_media(local):
     return detail["run_id"], media_id
 
 
-def test_migrate_moves_the_folder_and_a_reloaded_run_keeps_its_media(tmp_path):
-    run_id, media_id = _preview_with_legacy_media(tmp_path)
-    current = tmp_path / "grokbot-desk"
+def _decide(base, run_id):
+    from core.actionlog import ActionLog
+    from core.runs import RunStore
 
+    RunStore(base, _scan(base), paths.load_config(base), ActionLog(base)).decide(run_id, "cancelled")
+
+
+def test_migrate_refuses_while_a_run_is_open_and_moves_once_decided(tmp_path):
+    run_id, _ = _preview_with_legacy_media(tmp_path)
+    legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
+    config = (legacy / "config.json").read_bytes()
+
+    with pytest.raises(migrate.MigrationRefused) as refused:
+        migrate.migrate(tmp_path)
+    assert refused.value.code == 4 and "decide or discard open desks first" in str(refused.value)
+    assert (legacy / "config.json").read_bytes() == config
+    assert not current.exists() and not (legacy / "migrate.pending").exists()
+
+    _decide(legacy, run_id)
     summary = migrate.migrate(tmp_path)
 
-    assert summary["migrated"] is True and summary["runs_rewritten"] == 1
-    assert summary["config_rewritten"] is True
-    assert not (tmp_path / "spqrk-report-shell").exists()
-    config = json.loads((current / "config.json").read_text())
-    assert config["media_roots"] == [str(current / "media")]
-    record = (current / "runs" / f"{run_id}.json").read_text(encoding="utf-8")
-    assert "spqrk-report-shell" not in record
-    reloaded = _reload(current)
-    assert media_id in reloaded.media
-    assert reloaded.media[media_id].path == current / "media" / "photo.png"
-
-
-def test_migrate_is_idempotent(tmp_path):
-    _preview_with_legacy_media(tmp_path)
-    assert migrate.migrate(tmp_path)["migrated"] is True
-    runs = tmp_path / "grokbot-desk" / "runs"
-    before = sorted(path.read_bytes() for path in runs.glob("*.json"))
-
-    again = migrate.migrate(tmp_path)
-
-    assert again["migrated"] is False and again["runs_rewritten"] == 0
-    assert sorted(path.read_bytes() for path in runs.glob("*.json")) == before
+    assert summary["migrated"] is True and summary["config_rewritten"] is True
+    assert not legacy.exists()
+    assert json.loads((current / "config.json").read_text())["media_roots"] == [str(current / "media")]
+    assert json.loads((current / "results" / f"{run_id}.json").read_text())["status"] == "cancelled"
+    assert migrate.migrate(tmp_path)["migrated"] is False
 
 
 def test_migrate_replaces_an_empty_new_dir_but_never_one_with_files(tmp_path):
@@ -185,19 +188,23 @@ def test_a_server_does_not_start_while_migrate_runs(tmp_path):
     assert not moved.exists()
 
 
-def test_failed_move_leaves_the_old_folder_untouched(tmp_path, monkeypatch):
+def test_failed_move_puts_the_old_config_back(tmp_path, monkeypatch):
     run_id, _ = _preview_with_legacy_media(tmp_path)
     legacy = tmp_path / "spqrk-report-shell"
-    before = (legacy / "runs" / f"{run_id}.json").read_bytes()
+    _decide(legacy, run_id)
+    before = (legacy / "config.json").read_bytes()
+    real_replace = migrate.os.replace
 
-    def refuse(*args):
-        raise PermissionError(13, "in use")
+    def refuse(source, target):
+        if Path(source) == legacy:
+            raise PermissionError(13, "in use")
+        return real_replace(source, target)
 
     monkeypatch.setattr(migrate.os, "replace", refuse)
     with pytest.raises(OSError):
         migrate.migrate(tmp_path)
 
-    assert (legacy / "runs" / f"{run_id}.json").read_bytes() == before
+    assert (legacy / "config.json").read_bytes() == before
     assert not (legacy / "migrate.pending").exists()
     assert not (tmp_path / "grokbot-desk").exists()
 
@@ -230,8 +237,52 @@ def test_wait_follows_a_migrated_default_folder(tmp_path, monkeypatch):
     assert paths.follow_migration(legacy) == legacy
     current.mkdir()
     assert paths.follow_migration(legacy) == current
+    (legacy / "log").mkdir(parents=True)  # a stray write after the move
+    assert paths.follow_migration(legacy) == current
     monkeypatch.setenv("RS_DATA_DIR", str(legacy))
     assert paths.follow_migration(legacy) == legacy
+
+
+def test_a_migrated_old_folder_is_never_created_again(tmp_path, monkeypatch):
+    from core import cli
+    from core.server import run_server
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
+    assert paths.ensure_layout(legacy) == current
+    assert not legacy.exists() and (current / "runs").is_dir()
+
+    # a server spawned for the old folder just before migrate moved it
+    monkeypatch.setenv("RS_DATA_DIR", str(legacy))
+    assert cli.main(["--port", "18923", "serve"]) == 4
+    assert not legacy.exists()
+    (legacy / "log").mkdir(parents=True)  # a stray write after the move
+    with pytest.raises(migrate.DataDirBusy):
+        run_server(legacy, 18923, paths.ROOT)
+    assert not (legacy / "runs").exists()
+
+
+def test_wait_reads_a_result_moved_by_migrate_after_it_was_seen(tmp_path, monkeypatch, capsys):
+    from core import cli
+
+    monkeypatch.delenv("RS_DATA_DIR", raising=False)
+    _legacy_with_run(tmp_path)
+    legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
+    run_id = "20261011-093000-bot-0123456789ab"
+    (legacy / "results" / f"{run_id}.json").write_text('{"status": "approve"}')
+    real_read = Path.read_text
+
+    def move_first(path, *args, **kwargs):
+        if path == legacy / "results" / f"{run_id}.json" and legacy.exists():
+            os.replace(legacy, current)
+        return real_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", move_first)
+    args = cli.build_parser().parse_args(["wait", run_id, "--timeout", "2"])
+
+    assert cli.command_wait(args, legacy) == 0
+    answer = json.loads(capsys.readouterr().out)
+    assert answer["status"] == "approve" and answer["data_dir"] == str(current)
 
 
 def test_default_media_dir_follows_selected_data_dir(tmp_path, monkeypatch):

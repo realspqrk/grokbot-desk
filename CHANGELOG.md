@@ -34,10 +34,12 @@
   Europe/Vienna. `RS_TZ` pins a zone (tests and screenshots).
 - New `migrate` command: on Windows it moves the older data folder
   `%LOCALAPPDATA%\spqrk-report-shell` to `%LOCALAPPDATA%\grokbot-desk`
-  while the desk is closed, and updates the media paths stored in open
-  reports and `config.json`. It refuses while a desk runs or starts. Until
-  then the older folder stays in use, and `paths`, `doctor` and `show` say
-  to run `python report_shell.py migrate`. `RS_DATA_DIR` is never moved.
+  while the desk is closed and no report in it is still open, and updates
+  `config.json` media folders under the old path. It refuses while a desk
+  runs or starts, or while a report waits for a decision. Until then the
+  older folder stays in use, and `paths`, `doctor` and `show` say to run
+  `python report_shell.py migrate`. A moved folder is never created again.
+  `RS_DATA_DIR` is never moved.
 - Breaking: the old webhook key variable `SPQRK_REPORT_SHELL_WEBHOOK_KEY` is
   gone. Use `GROKBOT_DESK_WEBHOOK_KEY`.
 

@@ -326,7 +326,7 @@ def test_windows_data_dir_selection(
     if current_exists:
         (tmp_path / "grokbot-desk").mkdir()
     if legacy_exists:
-        (tmp_path / "spqrk-report-shell").mkdir()
+        (tmp_path / "spqrk-report-shell" / "runs").mkdir(parents=True)
 
     assert platform_windows.default_data_dir("grokbot-desk") == (
         tmp_path / expected_name
