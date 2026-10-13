@@ -104,7 +104,8 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await page.textContent('[data-copy-id="starter-copy"] .rs-copy__value'), expect.copies['starter-copy']);
       // calm UI: no visible item heading; it names the decision group instead
       assert.equal(await page.getAttribute('rs-action-row', 'aria-label'), de.choice_group_label.replace('{what}', de.starter_heading));
-      assert.equal(await page.textContent('#rs-submit-label'), de.submit);
+      // the default primary names the bot it sends to
+      assert.equal(await page.textContent('#rs-submit-label'), de.submit_to.replace('{bot}', 'Operations Agent'));
       assert.equal(await page.isDisabled('#rs-submit'), true);
       assert.equal(await page.textContent('#rs-status'), de.starter_pick_choice);
       assert.equal(await page.textContent('#rs-theme'), de.theme_dark);
@@ -535,9 +536,10 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       }
       const order = seen.filter((f) => f.tag !== 'BODY').map((f) => f.id || f.cls.split(' ')[0] || f.tag);
       // the disabled submit button is not a tab stop until a choice is made
-      // calm UI: one run = no strip; theme lives behind the overflow button,
-      // the copy is an icon button and the note opens from a text button
-      assert.deepEqual(order.slice(0, 5), ['rs-more-btn', 'rs-icon-btn', 'rs-choice', 'rs-link', 'rs-discard']);
+      // calm UI: one run = no strip; theme and Discard report live behind the
+      // overflow button, the copy is an icon button and the note opens from a
+      // text button
+      assert.deepEqual(order, ['rs-more-btn', 'rs-icon-btn', 'rs-choice', 'rs-link']);
     } finally { await ctx.close(); }
   });
 
@@ -546,12 +548,26 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     const run = server.show(golden, { title: 'Verwerfen' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
+      // Discard report is the last "…" menu item, never a footer button
+      const where = await page.evaluate(() => {
+        const item = document.getElementById('rs-discard');
+        return {
+          menu: !!item.closest('#rs-more-panel'),
+          footer: !!item.closest('#rs-submitbar'),
+          last: item.parentElement.lastElementChild === item,
+          visible: item.getClientRects().length > 0,
+        };
+      });
+      assert.deepEqual(where, { menu: true, footer: false, last: true, visible: false });
+      await page.click('#rs-more-btn');
+      assert.equal(await page.textContent('#rs-discard'), de.discard_report);
       await page.click('#rs-discard');
+      assert.equal(await page.isHidden('#rs-more-panel'), true, 'the menu closes behind the confirmation');
       assert.equal(await page.evaluate(() => document.getElementById('rs-discard-dialog').open), true);
       assert.equal(await page.textContent('#rs-discard-h'), de.discard_confirm_title);
       await page.click('#rs-discard-dialog button[value="cancel"]');
       assert.equal(server.result(run.run_id), null);
-      await page.click('#rs-discard');
+      await page.click('#rs-more-btn'); await page.click('#rs-discard');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await page.waitForSelector('.rs-banner[data-banner="cancelled"]');
       assert.equal(server.result(run.run_id).status, 'cancelled');
@@ -565,14 +581,22 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       await page.click('rs-action-row button[value="erledigt"]');
+      const focused = () => page.evaluate(() => {
+        const a = document.activeElement;
+        return a.id || a.className.split(' ')[0] || a.tagName;
+      });
       for (let i = 0; i < 20; i++) {
+        await page.click('#rs-more-btn');
         await page.focus('#rs-discard');
         await page.keyboard.press('Enter');
         await page.keyboard.press('Escape');
+        // the menu closed with the confirmation: focus is back on its button
+        await page.waitForFunction(() => document.activeElement.id === 'rs-more-btn', null, { timeout: 2000 });
         await page.keyboard.press('Tab');
-        assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-submit');
+        const next = await focused();
+        assert.notEqual(next, 'rs-more-btn');
         await page.waitForTimeout(100);
-        assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-submit');
+        assert.equal(await focused(), next);
       }
     } finally { await ctx.close(); }
     await server.clearRuns();
@@ -587,7 +611,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       if (request.url() === ORIGIN + '/cancel') cancels.push(request.postDataJSON());
     });
     try {
-      await page.click('#rs-discard');
+      await page.click('#rs-more-btn'); await page.click('#rs-discard');
       await page.evaluate(() => {
         const dialog = document.getElementById('rs-discard-dialog');
         dialog.close('');
@@ -612,7 +636,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     const a = server.show(golden, { title: 'Ziel A', created: isoAt(Date.now() - 60000) });
     const { ctx, page, log } = await open('run=' + a.run_id);
     try {
-      await page.click('#rs-discard'); // A untouched, confirmation open
+      await page.click('#rs-more-btn'); await page.click('#rs-discard'); // A untouched, confirmation open
       const b = server.show(golden, { bot: SECOND_BOT, title: 'Neu B', created: isoAt(Date.now()) });
       await page.waitForSelector(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await page.waitForTimeout(300); // a switch would have started by now
@@ -642,7 +666,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       const cancels = [];
       page.on('request', (r) => { if (r.url() === ORIGIN + '/cancel') cancels.push(r); });
       try {
-        await page.click('#rs-discard');
+        await page.click('#rs-more-btn'); await page.click('#rs-discard');
         assert.equal(await dialogOpen(page), true);
         await server.clearRuns(); // cancels A through POST /cancel
         await page.waitForSelector('.rs-banner[data-banner="cancelled"]');
@@ -657,7 +681,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       const cancels = [];
       page.on('request', (r) => { if (r.url() === ORIGIN + '/cancel') cancels.push(r); });
       try {
-        await page.click('#rs-discard');
+        await page.click('#rs-more-btn'); await page.click('#rs-discard');
         assert.equal(await dialogOpen(page), true);
         await page.waitForSelector('.rs-banner[data-banner="expired"]', { timeout: 8000 });
         await page.waitForFunction(() => !document.getElementById('rs-discard-dialog').open, null, { timeout: 3000 });
@@ -679,7 +703,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.click('rs-action-row button[value="erledigt"]');
       await fillNote(page, 'bleibt');
       await page.route('**/cancel', (route) => { held = route; });
-      await page.click('#rs-discard');
+      await page.click('#rs-more-btn'); await page.click('#rs-discard');
       const requested = page.waitForRequest((request) => request.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await requested;
@@ -697,7 +721,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await page.inputValue('#starter-note'), 'bleibt');
       assert.ok(await page.evaluate((id) => localStorage.getItem('rs-draft:' + id), run.run_id), 'draft kept');
       await page.unroute('**/cancel');
-      await page.click('#rs-discard');
+      await page.click('#rs-more-btn'); await page.click('#rs-discard');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await page.waitForSelector('.rs-banner[data-banner="cancelled"]');
       assert.equal(server.result(run.run_id).status, 'cancelled');
@@ -747,13 +771,13 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     const held = [];
     try {
       await page.route('**/cancel', (route) => { held.push(route); });
-      await page.click('#rs-discard');
+      await page.click('#rs-more-btn'); await page.click('#rs-discard');
       const requestA = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await requestA;
       await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
       await ready(page);
-      await page.click('#rs-discard');
+      await page.click('#rs-more-btn'); await page.click('#rs-discard');
       const requestB = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await requestB;
@@ -1114,6 +1138,83 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await page.isDisabled('#rs-discard'), true);
       // P8d: a decided report is not in the strip of open reports
       assert.equal(await page.$(`.rs-strip__run[data-run-id="${run.run_id}"]`), null);
+    } finally { await ctx.close(); }
+  });
+
+  test('footer: up to two quiet alternatives before the primary, in the given order; setAlternative is the one-item form', async () => {
+    await server.clearRuns();
+    const a = server.show(golden, { title: 'Alternativen A', created: isoAt(Date.now() - 60000) });
+    const b = server.show(golden, { bot: SECOND_BOT, title: 'Alternativen B', created: isoAt(Date.now()) });
+    const { ctx, page, log } = await open('run=' + a.run_id);
+    try {
+      await page.evaluate(() => {
+        window.__clicks = [];
+        window.RS._define('_starter', function (api) {
+          window.__api = api;
+          api.setResult({ choice: 'erledigt', note: '' });
+          api.setAlternatives([
+            { label: 'Erste', run: () => window.__clicks.push('first') },
+            { label: 'Zweite', run: () => window.__clicks.push('second') },
+            { label: 'Dritte', run: () => window.__clicks.push('third') },
+          ]);
+        });
+      });
+      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await ready(page);
+      const footer = () => page.$$eval('#rs-submitbar button', (buttons) => buttons
+        .filter((button) => button.getClientRects().length > 0)
+        .map((button) => [button.id, button.textContent]));
+      assert.deepEqual(await footer(), [['rs-alt', 'Erste'], ['rs-alt-2', 'Zweite'], ['rs-submit', de.submit]]);
+      await page.click('#rs-alt-2');
+      await page.click('#rs-alt');
+      assert.deepEqual(await page.evaluate(() => window.__clicks), ['second', 'first']);
+      await page.evaluate(() => window.__api.setAlternatives([{ label: 'Zweite', run: () => {} }, { label: 'Erste', run: () => {} }]));
+      assert.deepEqual((await footer()).map(([, text]) => text), ['Zweite', 'Erste', de.submit], 'the given order');
+      await page.focus('#rs-alt');
+      await page.evaluate(() => window.__api.setAlternative('Nur eine', () => window.__clicks.push('only')));
+      assert.deepEqual(await footer(), [['rs-alt', 'Nur eine'], ['rs-submit', de.submit]]);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-alt', 'a kept alternative keeps focus');
+      await page.click('#rs-alt');
+      assert.deepEqual(await page.evaluate(() => window.__clicks.slice(-1)), ['only']);
+      await page.evaluate(() => window.__api.setAlternatives([]));
+      assert.deepEqual(await footer(), [['rs-submit', de.submit]]);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+    await server.clearRuns();
+  });
+
+  test('footer: right under a short report; at the window bottom over a hairline once the report scrolls', async () => {
+    await server.clearRuns();
+    const run = server.show(golden, { title: 'Kurzer Bericht' });
+    const { ctx, page } = await open('run=' + run.run_id);
+    const layout = () => page.evaluate(() => {
+      const mount = document.getElementById('rs-mount');
+      const bar = document.getElementById('rs-submitbar');
+      const content = mount.querySelector('.rs-tpl').getBoundingClientRect();
+      const submit = document.getElementById('rs-submit').getBoundingClientRect();
+      const space6 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-6'));
+      return {
+        scrolls: mount.hasAttribute('data-rs-scrolls'),
+        gap: submit.top - content.bottom,
+        space6,
+        barBottom: bar.getBoundingClientRect().bottom,
+        windowBottom: innerHeight,
+        line: getComputedStyle(bar).borderTopColor,
+      };
+    });
+    try {
+      const short = await layout();
+      assert.equal(short.scrolls, false);
+      assert.ok(Math.abs(short.gap - short.space6) <= 1, `the primary sits --space-6 under the content (${JSON.stringify(short)})`);
+      assert.ok(short.barBottom < short.windowBottom - 200, 'not pinned to the window bottom');
+      assert.equal(short.line, 'rgba(0, 0, 0, 0)', 'no hairline under a short report');
+      await page.setViewportSize({ width: 1500, height: 300 });
+      await page.waitForFunction(() => document.getElementById('rs-mount').hasAttribute('data-rs-scrolls'), null, { timeout: 3000 });
+      const long = await layout();
+      assert.ok(Math.abs(long.barBottom - long.windowBottom) <= 1, `at the window bottom (${JSON.stringify(long)})`);
+      assert.notEqual(long.line, 'rgba(0, 0, 0, 0)', 'a hairline over the footer');
+      await page.setViewportSize({ width: 1500, height: 1000 });
+      await page.waitForFunction(() => !document.getElementById('rs-mount').hasAttribute('data-rs-scrolls'), null, { timeout: 3000 });
     } finally { await ctx.close(); }
   });
 

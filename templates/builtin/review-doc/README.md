@@ -84,4 +84,4 @@ English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `rd_doc_la
 
 ## Keyboard path (golden, one report open)
 
-Tab ×5 reaches *Comment* on section 4 (after the `…` menu and the actions of sections 1–3). Space opens the comment and focuses it; type. Tab ×3 passes section 5 and *Discard* and reaches *Request changes*; Space opens the overall comment and focuses it; type. Ctrl+Enter sends. Arrow keys are not needed anywhere.
+Tab ×5 reaches *Comment* on section 4 (after the `…` menu and the actions of sections 1–3). Space opens the comment and focuses it; type. Tab ×3 passes section 5 and reaches *Request changes*; Space opens the overall comment and focuses it; type. Ctrl+Enter sends. Arrow keys are not needed anywhere.

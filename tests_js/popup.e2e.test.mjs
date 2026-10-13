@@ -139,7 +139,7 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
     } catch (e) { await ctx.close().catch(() => {}); throw e; }
   }
 
-  test('1 open: compact pop-up without a strip; header = avatar, bold name, quiet report title', async () => {
+  test('1 open: compact pop-up without a strip; header = quiet byline, strong report title', async () => {
     const [run] = showRuns(1);
     const { ctx, page, errors } = await open(run.run_id);
     try {
@@ -151,32 +151,46 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
         const name = document.getElementById('rs-bot-name');
         const title = document.getElementById('rs-title');
         const avatar = document.getElementById('rs-bot-avatar');
-        const ink = getComputedStyle(document.documentElement).getPropertyValue('--rs-ink').trim();
+        const more = document.getElementById('rs-more-btn');
+        const task = document.getElementById('rs-task');
+        const root = getComputedStyle(document.documentElement);
+        const px = (el) => parseFloat(getComputedStyle(el).fontSize);
         return {
           name: name.textContent,
           title: title.textContent,
           titleTag: title.tagName,
+          count: document.getElementById('rs-strip-count').textContent,
           nameWeight: Number(getComputedStyle(name).fontWeight),
           titleWeight: Number(getComputedStyle(title).fontWeight),
           nameColor: getComputedStyle(name).color,
           titleColor: getComputedStyle(title).color,
-          ink,
+          bigger: px(title) > px(name),
+          ink: root.getPropertyValue('--rs-ink').trim(),
+          muted: root.getPropertyValue('--rs-muted').trim(),
           shape: avatar.getAttribute('data-shape'),
           avatarSize: avatar.getBoundingClientRect().width,
-          order: avatar.getBoundingClientRect().right <= name.getBoundingClientRect().left
-            && name.getBoundingClientRect().bottom <= title.getBoundingClientRect().top + 1,
+          byline: avatar.getBoundingClientRect().right <= name.getBoundingClientRect().left
+            && Math.abs(more.getBoundingClientRect().top + more.getBoundingClientRect().height / 2
+              - (name.getBoundingClientRect().top + name.getBoundingClientRect().height / 2)) < 2,
+          order: name.getBoundingClientRect().bottom <= title.getBoundingClientRect().top + 1
+            && title.getBoundingClientRect().bottom <= task.getBoundingClientRect().top + 1,
           inHeader: !!title.closest('header') && !!name.closest('header'),
         };
       });
+      const hex = (rgb) => '#' + rgb.match(/\d+/g).slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join('');
       assert.equal(head.name, 'Backup Agent');
       assert.equal(head.title, BOTS[0].title);
       assert.equal(head.titleTag, 'H1', 'the report title stays the page heading');
-      assert.ok(head.nameWeight >= 600, 'bold name');
-      assert.ok(head.titleWeight < 600, 'quiet title');
-      assert.notEqual(head.titleColor, head.nameColor, 'the title line is quieter than the name');
+      assert.equal(head.count, '', 'no open count with one report');
+      assert.ok(head.titleWeight >= 600, 'strong title');
+      assert.ok(head.nameWeight < 600, 'quiet name');
+      assert.ok(head.bigger, 'the title is larger than the byline');
+      assert.equal(hex(head.titleColor), head.ink.toLowerCase(), 'the title in ink');
+      assert.equal(hex(head.nameColor), head.muted.toLowerCase(), 'the name muted');
       assert.equal(head.shape, 'squircle');
-      assert.equal(head.avatarSize, 32);
-      assert.ok(head.order, 'avatar left, name over title');
+      assert.equal(head.avatarSize, 24, 'a small byline avatar');
+      assert.ok(head.byline, 'avatar, name and the "…" menu share the byline');
+      assert.ok(head.order, 'byline, then the title, then the task banner');
       assert.ok(head.inHeader);
       // the first Tab stop is the header's overflow button: nothing above it
       await page.evaluate(() => document.activeElement && document.activeElement.blur());
@@ -237,7 +251,7 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
       assert.equal(await page.isEnabled('rs-action-row button[value="erledigt"]'), true, 'the next report is live');
 
       // a discard is a decision too
-      await page.click('#rs-discard');
+      await page.click('#rs-more-btn'); await page.click('#rs-discard');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await activeIs(page, runs[2].run_id);
       assert.equal(server.result(runs[1].run_id).status, 'cancelled');
@@ -542,7 +556,7 @@ describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headles
         await page.waitForFunction(() => document.querySelectorAll('#rs-strip .rs-strip__run').length === 3);
         if (kind === 'submit') await decide(page);
         else {
-          await page.click('#rs-discard');
+          await page.click('#rs-more-btn'); await page.click('#rs-discard');
           await page.click('#rs-discard-dialog button[value="discard"]');
         }
         await page.waitForFunction((id) => window.RS.activeRun !== id

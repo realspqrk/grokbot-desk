@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- The report title leads: it is the strongest line. The bot's name, a small
+  avatar and, while several reports wait, the open count (`1 von 2 offen`)
+  form a quiet line above it, next to the `…` menu. The task banner sits
+  under the title.
+- The banner is one line (what to do, effort, due date) and the why. Steps
+  show only when they add something: your own `task.steps`, a mixed
+  report's plan per side, a list's "decide each, then <button>" with the
+  footer's current label. An `approve_label` leads the banner line.
+- A template's summary, intro, context or notes becomes the banner's why only
+  when it fits whole (three sentences, 360 characters); otherwise it stays in
+  the report. Line breaks are kept, German abbreviations (`z. B.`, `ca.`,
+  `Nr.`) and ordinals no longer end a sentence, and a cut falls between words.
+- Discard report moves from the footer into the `…` menu, behind the same
+  confirmation. The footer holds the status, up to two quiet alternatives
+  (`RS.setAlternatives`) and the one primary.
+- A short report keeps its footer right under the content; a long one keeps
+  it at the window bottom.
+- One German verb, `Freigeben`, everywhere. English says bot, not agent. The
+  default primary names the bot (`An Release Bot senden`).
+- Times, due dates and "today" use the machine's time zone instead of
+  Europe/Vienna. `RS_TZ` pins a zone (tests and screenshots).
+
 ## 1.0.0-beta.2 (2026-10-12)
 
 - macOS is supported: its CI jobs are blocking like the Windows ones.

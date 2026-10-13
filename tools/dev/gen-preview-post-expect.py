@@ -16,7 +16,7 @@ LIMITS = {"x": 280, "linkedin": 3000, "instagram": 2200, "facebook": 63206}
 # One platform tab at a time: overflow menu, then per tab. Auto: approve, the
 # panel's three copy icons, back to the tablist, ArrowRight to the next tab.
 # Manual (copies first): the three copy icons, copy image and its folder, then
-# "Posted" and back. On the last (auto) tab on through discard and the
+# "Posted" and back. On the last (auto) tab on through the copies and the
 # alternative to the submit button.
 AUTO_TAB = (
     {"press": "Tab"}, {"press": "Space"}, {"repeat": 3, "press": "Tab"},
@@ -46,7 +46,7 @@ def keyboard_path(data):
     return [
         {"repeat": 2, "press": "Tab"},
         *[step for _, mode in tabs[:-1] for step in (MANUAL_TAB if mode == "manual" else AUTO_TAB)],
-        {"press": "Tab"}, {"press": "Space"}, {"repeat": 6, "press": "Tab"}, {"press": "Enter"},
+        {"press": "Tab"}, {"press": "Space"}, {"repeat": 5, "press": "Tab"}, {"press": "Enter"},
     ]
 
 

@@ -145,16 +145,22 @@
     if (task && task.kind === 'blocking') return 'task_line_blocking';
     if (task && task.mark === 'done') return 'task_line_do';
     if (task && task.mark === 'sent') return 'task_line_send';
-    if (base === 'approve_bot_acts') return 'task_line_approve_' + (APPROVE[task && task.verb] ? task.verb : 'continue');
+    if (base === 'approve_bot_acts') {
+      var verb = APPROVE[task && task.verb] ? task.verb : 'continue';
+      /* the payload's own approve label ({label}) leads the line */
+      return (task && task.label ? 'task_line_label_' : 'task_line_approve_') + verb;
+    }
     return 'task_line_' + base;
   }
 
+  /* The default steps line, or null. Steps show only where they add what
+     the task line and the buttons do not say: a list of replies or a mixed
+     list, each to decide before the footer's {button}. A mixed preview's
+     steps come from mixedSteps; a payload's task.steps always shows. */
   function stepsKey(task) {
     if (task && task.steps_for === 'replies') return 'task_steps_replies';
     if (task && task.steps_for === 'mixed_items') return 'task_steps_mixed_items';
-    if (task && task.mark === 'done') return 'task_steps_do';
-    if (task && task.mark === 'sent') return 'task_steps_send';
-    return 'task_steps_' + baseOf(task);
+    return null;
   }
 
   function kindKey(task) {

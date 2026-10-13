@@ -1212,27 +1212,27 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   });
 
-  test('the banner must sit above the title, hold one summary, and reject a semantic control', async () => {
+  test('the banner must sit under the title, hold one summary, and reject a semantic control', async () => {
     const placed = await judgeHtml(calmPage().replace(
-      '<header>',
-      '<section id="placed" data-rs-task style="padding:12px 16px;border-left:4px solid #1b7340;background:#e2f3e7"><p>Approve, then the bot posts</p></section><header>',
+      '</header>',
+      '</header><section id="placed" data-rs-task style="padding:12px 16px;border-left:4px solid #1b7340;background:#e2f3e7"><p>Approve, then the bot posts</p></section>',
     ).replace('<h1>Review report</h1>', '<h1 id="rs-title">Review report</h1>'));
     try {
-      assert.equal(placed.facts.K6.task_banner_above_title, true);
+      assert.equal(placed.facts.K6.task_banner_under_title, true);
       assert.equal(placed.judged.items.K6.pass, true, placed.judged.items.K6.reasons.join('; '));
     } finally {
       await placed.context.close();
     }
-    const below = await judgeHtml(calmPage().replace(
-      '<main>',
-      '<main><h1 id="rs-title">Review report</h1><section data-rs-task style="padding:12px;background:#e2f3e7"><p>Late banner</p></section>',
-    ));
+    const above = await judgeHtml(calmPage().replace(
+      '<header>',
+      '<section data-rs-task style="padding:12px;background:#e2f3e7"><p>Early banner</p></section><header>',
+    ).replace('<h1>Review report</h1>', '<h1 id="rs-title">Review report</h1>'));
     try {
-      assert.equal(below.facts.K6.task_banner_above_title, false);
-      assert.equal(below.judged.items.K6.pass, false);
-      assert.match(below.judged.items.K6.reasons.join(' '), /above the title/u);
+      assert.equal(above.facts.K6.task_banner_under_title, false);
+      assert.equal(above.judged.items.K6.pass, false);
+      assert.match(above.judged.items.K6.reasons.join(' '), /under the title/u);
     } finally {
-      await below.context.close();
+      await above.context.close();
     }
     const two = await judgeHtml(calmPage().replace(
       '<main>',

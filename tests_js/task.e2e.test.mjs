@@ -1,5 +1,5 @@
 // The task banner and the buttons per task kind, in the served shell
-// (headless Edge, isolated server): the banner sits above the title of every
+// (headless Edge, isolated server): the banner sits under the title of every
 // report and says what to do and who acts next; the footer and per-item
 // controls of every built-in follow the one CTA table in core/static/tasks.js.
 import { test, describe, before, after } from 'node:test';
@@ -58,9 +58,20 @@ test('the CTA table: every label key exists in English and German; information o
     for (const key of [...a.primary, ...a.secondary, ...a.items, ...a.variants]) {
       assert.ok(en[key] && de[key], `${kind}: ${key}`);
     }
-    for (const key of [TASKS.lineKey({ kind }), TASKS.stepsKey({ kind }), TASKS.kindKey({ kind }), 'task_done_' + kind]) {
+    for (const key of [TASKS.lineKey({ kind }), TASKS.kindKey({ kind }), 'task_done_' + kind]) {
       assert.ok(en[key] && de[key], `${kind}: ${key}`);
     }
+    /* a one-step task says it in its line and its buttons: no steps line */
+    assert.equal(TASKS.stepsKey({ kind }), null, kind);
+  }
+  for (const verb of ['post', 'send', 'continue']) {
+    const key = TASKS.lineKey({ kind: 'approve_bot_acts', base: 'approve_bot_acts', verb, label: 'Deploy' });
+    assert.equal(key, 'task_line_label_' + verb);
+    assert.ok(en[key].includes('{label}') && de[key].includes('{label}'), key);
+  }
+  for (const steps of ['replies', 'mixed_items']) {
+    const key = TASKS.stepsKey({ kind: 'post_yourself', steps_for: steps });
+    assert.ok(en[key].includes('{button}') && de[key].includes('{button}'), `${key} names the live button`);
   }
   assert.equal(TASKS.CTA.fyi.discard, false);
   assert.equal(TASKS.labelKey('approve_bot_acts', 'approve', { verb: 'send' }), 'approve_send');
@@ -224,7 +235,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       steps: text('.rs-task__steps'),
       why: text('.rs-task__why'),
       more: text('.rs-task__more > p'),
-      above: rect.bottom <= title.top + 0.5,
+      below: rect.top >= title.bottom - 0.5,
       controls: [...box.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')].length,
       summaries: box.querySelectorAll('summary').length,
       edge: getComputedStyle(box.querySelector('.rs-task__inner')).borderLeftColor,
@@ -246,18 +257,20 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
     const submit = document.getElementById('rs-submit');
     const alt = document.getElementById('rs-alt');
     const discard = document.getElementById('rs-discard');
+    const alts = [...document.querySelectorAll('#rs-submitbar .rs-btn--quiet')].filter(shown);
     return {
       primary: document.getElementById('rs-submit-label').textContent,
       disabled: submit.disabled,
       emphasis: submit.hasAttribute('data-rs-emphasis'),
       alt: shown(alt) ? alt.textContent : null,
-      discard: shown(discard),
+      discard: !discard.hidden && !!discard.closest('#rs-more-panel'),
+      quiet: alts.length,
       rows: [...document.querySelectorAll('#rs-mount rs-action-row button')].filter(shown).map((b) => b.textContent),
       sectionComments: [...document.querySelectorAll('#rs-mount .rd__comment-open')].filter(shown).length,
     };
   });
 
-  test('every built-in golden: the banner sits above the title with the line, steps and tone of its kind', async () => {
+  test('every built-in golden: the banner sits under the title with the line and tone of its kind, steps only when they add something', async () => {
     for (const [template, want] of Object.entries(GOLDENS)) {
       await server.clearRuns();
       const run = show(template, fixture(template, 'golden'));
@@ -266,7 +279,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         const view = await banner(page);
         const task = { kind: want.kind, base: want.kind, verb: want.verb };
         assert.equal(view.hidden, false, template);
-        assert.equal(view.above, true, `${template}: above the title`);
+        assert.equal(view.below, true, `${template}: under the title`);
         assert.equal(view.kind, want.kind, template);
         assert.equal(view.tone, want.kind, template);
         assert.equal(view.state, 'open', template);
@@ -278,9 +291,13 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
             t('task_steps_tail_then', { button: t('submit_mixed') }),
           ].join(' · '), template);
         } else {
-          assert.equal(view.what, t(TASKS.lineKey(task)), template);
-          assert.equal(view.steps, t(TASKS.stepsKey(task)), template);
+          const data = fixture(template, 'golden');
+          const label = template === 'approve-one' && data.approve_label ? data.approve_label : '';
+          assert.equal(view.what, t(TASKS.lineKey({ ...task, label }), { label }), template);
+          assert.equal(view.steps, null, `${template}: no steps that repeat the line`);
         }
+        const bar = await footer(page);
+        assert.equal(bar.quiet <= 2, true, `${template}: at most two quiet alternatives`);
         assert.equal(view.controls, 0, `${template}: no buttons in the banner`);
         assert.ok(view.summaries <= 1, template);
         assert.deepEqual(errors, [], template);
@@ -370,12 +387,13 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       await page.waitForFunction(() => document.getElementById('rs-task').getAttribute('data-state') === 'decided');
       const done = await banner(page);
       assert.deepEqual([done.tone, done.what, done.steps, done.meta, done.hidden], ['quiet', t('task_done_fyi'), null, null, false]);
-      assert.equal(done.above, true);
+      assert.equal(done.below, true);
       assert.deepEqual(errors, []);
     } finally { await ctx.close(); }
   });
 
   test('red only for blocking or a due date that is today or past', async () => {
+    /* the test server pins Europe/Vienna (RS_TZ) */
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     const cases = [
       { task: { kind: 'review', due: today }, tone: 'urgent', meta: t('task_due_today_date') },
@@ -403,17 +421,28 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
     assert.equal(new Set([...edges].filter((e) => e.startsWith('urgent:'))).size, 1, 'one red');
   });
 
-  test('a long why keeps three sentences in view and folds the rest; the payload why replaces the template text', async () => {
+  test('a long why keeps three sentences in view and folds the rest; a long template text stays in the body', async () => {
     await server.clearRuns();
     const data = fixture('decide-list', 'golden');
-    data.intro = 'One. Two. Three. Four is folded. Five too.';
+    data.intro = 'One. Two. Three. Four stays. Five too.';
     const long = show('decide-list', data);
     const opened = await openRun(long);
     try {
       const view = await banner(opened.page);
-      assert.deepEqual([view.why, view.more, view.summaries, view.controls], ['One. Two. Three.', 'Four is folded. Five too.', 1, 0]);
-      assert.equal(await opened.page.locator('[data-dl="intro"]').count(), 0);
+      assert.deepEqual([view.why, view.more, view.summaries], [null, null, 0]);
+      assert.equal(await opened.page.textContent('[data-dl="intro"]'), data.intro, 'never folded away');
     } finally { await opened.ctx.close(); }
+    await server.clearRuns();
+    const why = 'Wir nehmen z. B. den Saal am Fluss.\nDer 1. Termin ist fix. Zwei. Drei folgt. Vier.';
+    const folding = show('decide-list', fixture('decide-list', 'golden'), { task: { kind: 'approve_bot_acts', why } });
+    const folded = await openRun(folding);
+    try {
+      const view = await banner(folded.page);
+      assert.deepEqual([view.why, view.more, view.summaries, view.controls],
+        ['Wir nehmen z. B. den Saal am Fluss.\nDer 1. Termin ist fix. Zwei.', 'Drei folgt. Vier.', 1, 0]);
+      const lines = await folded.page.$eval('.rs-task__why', (el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+      assert.equal(lines, 2, 'the line break shows');
+    } finally { await folded.ctx.close(); }
     await server.clearRuns();
     const own = show('decide-list', fixture('decide-list', 'golden'), { task: { kind: 'approve_bot_acts', why: 'The budget closes Friday.' } });
     const second = await openRun(own);
@@ -512,7 +541,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
     try {
       const view = await banner(page);
       assert.equal(view.what, t('task_line_do'));
-      assert.equal(view.steps, t('task_steps_do'));
+      assert.equal(view.steps, null, 'the line and the Done button say it all');
       assert.equal(await page.textContent('#rs-status'), t('decision_pick_user', {
         choice: de.done_mark.replace(/ ✓$/, ''), skip: de.skip,
       }));

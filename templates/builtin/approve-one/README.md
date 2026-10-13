@@ -70,9 +70,9 @@ Empty sections are not rendered.
 
 | Key | English | German |
 |---|---|---|
-| `choice_approve`, `choice_reject`, `request_changes` | Approve, Reject, Request changes | Genehmigen, Ablehnen, Änderungen anfordern |
+| `choice_approve`, `choice_reject`, `request_changes` | Approve, Reject, Request changes | Freigeben, Ablehnen, Änderungen anfordern |
 | `decision_label` | Decision (name of the choice row) | Entscheidung |
-| `decision_pick` | Please approve or reject | Bitte genehmigen oder ablehnen |
+| `decision_pick` | Please approve or reject | Bitte freigeben oder ablehnen |
 | `decision_pick_user` | Choose {choice} or {skip} (Done, Sent or Posted, matching the choices) | Wähle {choice} oder {skip} |
 | `add_note`, `note` | Add note, Note | Notiz hinzufügen, Notiz |
 | `request_changes_label`, `comment_required` | What should change?; Please write a comment to request changes | Was soll sich ändern?; Für Änderungen bitte einen Kommentar schreiben |

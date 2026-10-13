@@ -285,7 +285,7 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
   }
 
   async function discard(page) {
-    await page.click('#rs-discard');
+    await page.click('#rs-more-btn'); await page.click('#rs-discard');
     await page.click('#rs-discard-dialog button[value="discard"]');
   }
 
