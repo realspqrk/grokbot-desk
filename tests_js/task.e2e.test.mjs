@@ -83,7 +83,7 @@ test('the CTA table: every label key exists in English and German; information o
   assert.equal(TASKS.labelKey('post_yourself', 'approve', { item: true, actor: 'bot' }), 'choice_approve');
   assert.equal(TASKS.lineKey({ kind: 'post_yourself', base: 'post_yourself', mark: 'done' }), 'task_line_do');
   assert.equal(TASKS.stepsKey({ kind: 'post_yourself', steps_for: 'replies' }), 'task_steps_replies');
-  assert.equal(TASKS.labelKey('review', 'request_changes'), 'changes');
+  assert.equal(TASKS.labelKey('review', 'request_changes'), 'request_changes', 'the alternative says what it does');
   assert.equal(TASKS.baseOf({ kind: 'blocking', base: 'pick' }), 'pick');
   assert.equal(TASKS.lineKey({ kind: 'blocking', base: 'pick' }), 'task_line_blocking');
   assert.ok(TASKS.allowed('post_yourself').variants.includes('send_request'),
@@ -319,7 +319,8 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
            the preview golden is mixed (you post X, the bot the rest) */
         const expected = template === '_starter' ? de.submit
           : template === 'approve-one' && data.approve_label ? data.approve_label
-            : template === 'preview-post' ? t('submit_mixed') : t(key);
+            : template === 'preview-post' ? t('submit_mixed')
+              : template === 'decide-list' ? t('send_decisions') : t(key);
         if (template === 'preview-post') assert.ok(TASKS.allowed(want.kind, { verb: want.verb }).variants.includes('submit_mixed'));
         assert.equal(bar.primary, expected, `${template} (${want.kind})`);
       } finally { await ctx.close(); }
@@ -347,10 +348,12 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
           assert.equal(view.kind, kind, label);
           assert.equal(view.tone, kind === 'blocking' ? 'urgent' : kind, label);
           const userFooter = template === 'decide-list' && base === 'post_yourself' && bar.primary === t('footer_done');
+          /* a list sends every decision at once, never a blanket approve */
+          const listFooter = template === 'decide-list' && base === 'approve_bot_acts' && bar.primary === t('send_decisions');
           /* a mixed preview at rest plans both actors: the neutral send */
           const mixedFooter = template === 'preview-post' && base === 'approve_bot_acts' && bar.primary === t('submit_mixed');
           assert.ok(
-            primaries.includes(bar.primary) || (base === 'pick' && bar.primary === t('po_choose_idle')) || userFooter || mixedFooter,
+            primaries.includes(bar.primary) || (base === 'pick' && bar.primary === t('po_choose_idle')) || userFooter || listFooter || mixedFooter,
             `${label}: primary ${bar.primary} (allowed ${primaries.join(' | ')})`,
           );
           assert.equal(bar.emphasis, kind === 'blocking', `${label}: emphasis`);
@@ -712,8 +715,8 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
           ['user', tl('task_you_post', { names: tl('task_noun_reply', { n: 2 }) })],
           ['bot', tl('task_bot_send', { bot, names: tl('task_noun_item', { n: 3 }) })],
         ], 'initial');
-        assert.equal((await banner(page)).steps, tl('task_steps_mixed_items', { button: tl('approve_send') }));
-        assert.equal(await page.textContent('#rs-submit-label'), tl('approve_send'));
+        assert.equal((await banner(page)).steps, tl('task_steps_mixed_items', { button: tl('send_decisions') }));
+        assert.equal(await page.textContent('#rs-submit-label'), tl('send_decisions'));
         await pick('done');
         await pick('skipped');
         assert.deepEqual(await lines(), [
@@ -727,7 +730,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
           ['user', tl('task_you_post', { names: tl('task_noun_reply_one') })],
           ['bot', tl('task_bot_none_send', { bot })],
         ], 'every bot item rejected');
-        assert.equal((await banner(page)).steps, tl('task_steps_mixed_items', { button: tl('submit') }));
+        assert.equal((await banner(page)).steps, tl('task_steps_mixed_items', { button: tl('send_decisions') }));
         await page.click('[data-item-id="flour"] .dl-row');
         await pick('approve');
         assert.deepEqual((await lines())[1], ['bot', tl('task_bot_send', { bot, names: tl('task_noun_item_one') })], 'one approved');
@@ -789,7 +792,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         const chosen = await banner(listed.page);
         assert.equal(chosen.steps, listSteps, 'list chosen');
         assert.equal(chosen.actors[0][1], tl('task_you_post', { names: tl('task_noun_reply_one') }));
-        assert.equal(await listed.page.textContent('#rs-submit-label'), tl('submit'));
+        assert.equal(await listed.page.textContent('#rs-submit-label'), tl('send_decisions'));
         await listed.page.reload();
         await listed.page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
         assert.equal((await banner(listed.page)).steps, listSteps, 'list reloaded');

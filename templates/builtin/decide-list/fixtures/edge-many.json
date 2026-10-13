@@ -1,0 +1,18 @@
+{
+  "intro": "Twelve supplier invoices are due this month. Pay, dispute, or hold each one for next week.",
+  "labels": {"approve": "Pay", "reject": "Dispute", "defer": "Next week"},
+  "items": [
+    {"id": "inv-paper", "kind": "Office", "source": "Example Paper Co.", "title": "Printer paper and toner for October, 186.40 EUR", "due": "2026-10-15", "copy": [{"label": "Copy invoice no.", "text": "EP-2026-1184"}]},
+    {"id": "inv-cloud", "kind": "Software", "source": "Example Cloud", "title": "Hosting for October, 1,240.00 EUR, 18 percent above September because of the new staging servers", "detail": "The staging servers were approved in September. The rate per server is unchanged.", "copy": [{"label": "Copy invoice no.", "text": "EC-88412"}, {"label": "Copy amount", "text": "1240.00"}]},
+    {"id": "inv-cleaning", "kind": "Facilities", "source": "Northwind Facilities", "title": "Office cleaning for October, 920.00 EUR", "due": "2026-10-31"},
+    {"id": "inv-coffee", "kind": "Office", "source": "Example Roasters", "title": "Coffee beans and milk for the kitchen, 74.90 EUR", "choices": ["approve", "defer"]},
+    {"id": "inv-legal", "kind": "Advice", "source": "Example Law Partners", "title": "Contract review for the new office lease, 2,600.00 EUR, 6 hours more than quoted", "detail": "The quote was 10 hours. The invoice lists 16 hours with no note on the extra work.", "labels": {"reject": "Ask for details"}},
+    {"id": "inv-travel", "kind": "Travel", "source": "Example Rail", "title": "Train tickets for the client workshop in Lisbon, 412.80 EUR", "due": "2026-10-14"},
+    {"id": "inv-licences", "kind": "Software", "source": "Example Design Tools", "title": "Twelve design licences for one year, 3,168.00 EUR"},
+    {"id": "inv-repair", "kind": "Facilities", "source": "Example Lift Service", "title": "Lift repair on the second floor, 640.00 EUR", "choices": ["approve", "reject"]},
+    {"id": "inv-catering", "kind": "Event", "source": "Example Kitchen", "title": "Catering for the team offsite, 1,050.00 EUR"},
+    {"id": "inv-phones", "kind": "Telecom", "source": "Example Mobile", "title": "Mobile contracts for October, 388.00 EUR", "due": "2026-10-20"},
+    {"id": "inv-print", "kind": "Marketing", "source": "Example Print Shop", "title": "Brochures for the spring fair, 720.00 EUR"},
+    {"id": "inv-courier", "kind": "Logistics", "source": "Example Courier", "title": "Courier deliveries in September, 96.30 EUR"}
+  ]
+}

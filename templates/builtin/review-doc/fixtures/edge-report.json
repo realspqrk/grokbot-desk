@@ -1,0 +1,5 @@
+{
+  "summary": "Week 41 across the three sites.",
+  "actor": "none",
+  "doc": "**All three sites ran normally this week; one supplier delivery is late.**\n\n## Key figures\n\n| Measure | This week | Last week | Change |\n|---|--:|--:|--:|\n| Orders shipped | 1,284 | 1,197 | +7 % |\n| On-time delivery | 96.2 % | 97.0 % | −0.8 pt |\n| Open support tickets | 41 | 58 | −17 |\n| Returns | 23 | 25 | −2 |\n\n## Checks\n\n- [x] Backups finished every night\n- [x] Payroll file sent to the bank on Thursday\n- [x] Fire doors inspected in the north warehouse\n- [ ] Packaging supplier confirms the new delivery date\n\n> [!WARNING]\n> The packaging delivery planned for Wednesday has not arrived. Stock lasts until next Friday. I will ask the supplier again on Monday morning.\n\n## Details\n\nThe rise in shipped orders comes from the autumn promotion, which ends on Sunday. On-time delivery dropped because two courier routes were cancelled on Tuesday; both ran again from Wednesday.\n\nSupport cleared the backlog from the billing change. The remaining tickets are ordinary questions with no common cause."
+}

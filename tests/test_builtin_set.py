@@ -20,9 +20,9 @@ BUILTIN = ROOT / "templates" / "builtin"
 IDS = ("decide-list", "approve-one", "preview-post")
 FIXTURES = {
     "decide-list": {
-        "valid": ("golden", "edge-single", "edge-unicode", "edge-max", "edge-replies"),
+        "valid": ("golden", "edge-single", "edge-unicode", "edge-max", "edge-replies", "edge-many"),
         "invalid": {
-            "invalid-six-items": "/items",
+            "invalid-too-many-items": "/items",
             "invalid-bad-choice": "/items/1/choices/0",
             "invalid-duplicate-ids": "/items/1/id",
         },
@@ -190,7 +190,9 @@ def _strings(value):
 
 def test_decide_list_edges_cover_maxima_and_unicode():
     big = fixture("decide-list", "edge-max")
-    assert len(big["items"]) == 5 and len(big["done"]) == 12 and len(big["intro"]) == 300
+    assert len(big["items"]) == 12 and len(big["done"]) == 12 and len(big["intro"]) == 300
+    assert [len(label) for label in big["labels"].values()] == [24, 24, 24]
+    assert any(len(item.get("labels", {}).get("approve", "")) == 24 for item in big["items"])
     assert max(len(c["text"]) for item in big["items"] for c in item["copy"]) == 5000
     for item in big["items"]:
         assert (len(item["kind"]), len(item["source"]), len(item["title"]), len(item["detail"])) == (24, 60, 140, 600)

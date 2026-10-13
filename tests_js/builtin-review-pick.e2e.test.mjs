@@ -128,6 +128,8 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
     try {
       assert.equal(await page.locator('.rd__comment-open').count(), 5);
       assert.equal(await page.textContent('#rs-submit-label'), de.looks_good);
+      assert.equal(await page.textContent('#rs-alt'), de.request_changes, 'the alternative says what it does');
+      assert.equal((await page.textContent('#rs-status')).trim(), '', 'no status while it only repeats the banner');
       await page.click('[data-section="4"] .rd__comment-open');
       assert.equal(await page.evaluate(() => document.activeElement.id), 'rd-c-4');
       await page.keyboard.type('Per season, please.');
@@ -305,6 +307,61 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
         const lefts = await opened.page.evaluate(() => [...new Set([...document.querySelectorAll('.po__card')].map((c) => Math.round(c.getBoundingClientRect().left)))]);
         assert.equal(lefts.length, columns, `${viewport.width}px`);
       } finally { await opened.ctx.close(); }
+    }
+  });
+
+  test('review-doc: callouts are quiet notes with a title and no copy; quotes and code keep copy', async () => {
+    const doc = [
+      'Lead text.', '',
+      '> [!NOTE]', '> Read this first.', '',
+      '> [!tip]', '> - one', '> - two', '',
+      '> [!IMPORTANT]', '> Important.', '',
+      '> [!WARNING]', '> Careful.', '',
+      '> [!CAUTION]', '> Stop.', '',
+      '> [!NOTE] with text', '', '> A plain quote.', '',
+      '```', 'code', '```',
+    ].join('\n');
+    const run = show('review-doc', { doc });
+    const { ctx, page, errors } = await open(run.run_id);
+    try {
+      const view = await page.evaluate(() => ({
+        callouts: [...document.querySelectorAll('.rd__callout')].map((c) => [
+          c.className.replace('rd__callout rd__callout--', ''), c.getAttribute('role'),
+          c.querySelector('.rd__callout-title').textContent, !!c.querySelector('rs-copy'),
+        ]),
+        listInTip: document.querySelectorAll('.rd__callout--tip li').length,
+        quoteCopies: document.querySelectorAll('rs-copy[data-copy-id^="quote-"]').length,
+        codeCopies: document.querySelectorAll('rs-copy[data-copy-id^="code-"]').length,
+        literal: [...document.querySelectorAll('.rd__quote')].map((q) => q.textContent.trim()),
+      }));
+      assert.deepEqual(view.callouts, [
+        ['note', 'note', de.rd_callout_note, false],
+        ['tip', 'note', de.rd_callout_tip, false],
+        ['important', 'note', de.rd_callout_important, false],
+        ['warning', 'note', de.rd_callout_warning, false],
+        ['caution', 'note', de.rd_callout_caution, false],
+      ]);
+      assert.equal(view.listInTip, 2);
+      assert.deepEqual([view.quoteCopies, view.codeCopies], [2, 1]);
+      assert.deepEqual(view.literal, ['[!NOTE] with text', 'A plain quote.'], 'a marker with text after it stays a quote');
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('review-doc: with copy texts only a bold lead paragraph moves to the top', async () => {
+    const copy = [{ label: 'Copy reply', text: 'Thanks, see you Friday.' }];
+    for (const [doc, lifted] of [
+      ['# Reply draft\n\n**Send it as is.**\n\n## Notes\n\nPlain.', 'Send it as is.'],
+      ['# Reply draft\n\nNo verdict here.\n\n## Notes\n\nA **bold** word further down.', null],
+    ]) {
+      await server.clearRuns();
+      const run = show('review-doc', { doc, copy });
+      const { ctx, page, errors } = await open(run.run_id);
+      try {
+        const strong = await page.evaluate(() => document.querySelector('.rd__lead strong')?.textContent ?? null);
+        assert.equal(strong, lifted, doc);
+        assert.deepEqual(errors, []);
+      } finally { await ctx.close(); }
     }
   });
 

@@ -3,21 +3,29 @@
    Every visible string comes from RS.t or from the payload.
 
    One thing at a time: exactly one item is "current" (a card with its
-   choices); the others are one-line rows: open rows carry a ring and a
-   chevron, decided rows a check, muted text and the chosen outcome. Picking
-   a choice by click, Enter or Space moves on to the first undecided item;
-   arrow keys only change the choice. The card's copy icons are visible;
+   choices); the others are quiet rows: the request in ink (up to two
+   lines), the source and category as a muted line below; open rows carry a
+   ring, the due date and a chevron, decided rows a check, muted text and the
+   chosen outcome. Picking a choice by click, Enter or Space moves on to the
+   first undecided item; arrow keys only change the choice. The card's copy icons are visible;
    "Add note" shows on hover and keyboard focus. Only the current card is in
    the document, so every copy control on screen is reachable by Tab. */
 var data = RS.data;
 var source = data.items || [];
 var USER_CHOICES = ['done', 'skipped', 'later'];
 var DEFAULT_CHOICES = ['approve', 'reject', 'defer'];
+var LABELS = data.labels || {};
 function isUser(w) { return w.actor === 'user'; }
-function choiceValues(w) { return isUser(w) ? USER_CHOICES : (w.choices || DEFAULT_CHOICES); }
-/* Item labels come from the shared table: a bot item's approve/reject/defer,
-   a post or reply's Posted, otherwise Done. */
+function choiceValues(w) { return w.choices || (isUser(w) ? USER_CHOICES : DEFAULT_CHOICES); }
+/* Item labels: a bot item's own labels, then the payload's labels, then
+   the shared table (approve/reject/defer); a user item's Posted for a post
+   or reply, otherwise Done, Skip and Later. */
 function choiceLabel(w, value) {
+  if (!isUser(w)) {
+    var own = w.labels || {};
+    if (own[value]) return own[value];
+    if (LABELS[value]) return LABELS[value];
+  }
   return RS.cta(value, { item: true, actor: isUser(w) ? 'user' : 'bot', content: w.content || null });
 }
 /* A copy value wider than this, or with a line break, gets its own quoted line. */
@@ -56,15 +64,9 @@ function buildCopy(entry, id) {
   return copy;
 }
 
-function sourceTitle(box, w, titleCls, linkify) {
-  if (w.source) {
-    box.appendChild(make('span', 'dl-source', w.source));
-    box.appendChild(document.createTextNode(RS.t('sep_list')));
-  }
-  var title = make('span', titleCls);
-  if (linkify) RS.fillText(title, w.title);
-  else title.textContent = w.title;
-  box.appendChild(title);
+/* The quiet line under a request: who asks and what kind of thing it is. */
+function metaText(w) {
+  return [w.source, w.kind].filter(Boolean).join(RS.t('sep_list'));
 }
 
 function dueBadge(w) {
@@ -116,7 +118,6 @@ function bindLinkToolbar(prose) {
 /* ---------------------------------------------------------------- intro -- */
 if (data.intro && RS.task.why_from !== 'intro') RS.fillText(part('intro'), data.intro);
 else part('intro').remove();
-if (source.some(function (w) { return !!w.kind; })) root.querySelector('.dl').setAttribute('data-dl-kinds', '');
 
 /* ---------------------------------------------------------------- items -- */
 var items = [];
@@ -135,9 +136,9 @@ source.forEach(function (w, i) {
   row.setAttribute('aria-expanded', 'false');
   var mark = make('span', 'dl-row__mark');
   row.appendChild(mark);
-  if (root.querySelector('.dl').hasAttribute('data-dl-kinds')) row.appendChild(make('span', 'dl-row__kind', w.kind || ''));
   var text = make('span', 'dl-row__text');
-  sourceTitle(text, w, 'dl-row__title');
+  text.appendChild(make('span', 'dl-row__title', w.title));
+  if (metaText(w)) text.appendChild(make('span', 'dl-row__meta', metaText(w)));
   row.appendChild(text);
   var rowState = make('span', 'dl-row__state');
   row.appendChild(rowState);
@@ -149,7 +150,7 @@ source.forEach(function (w, i) {
   card.setAttribute('role', 'group');
   card.tabIndex = -1;
   var eyebrow = make('p', 'dl-card__eyebrow');
-  if (w.kind) eyebrow.appendChild(make('span', null, w.kind));
+  if (metaText(w)) eyebrow.appendChild(make('span', 'dl-card__meta', metaText(w)));
   if (w.due) {
     var due = dueBadge(w);
     due.classList.add('dl-card__due');
@@ -160,7 +161,7 @@ source.forEach(function (w, i) {
   var title = make('p', 'dl-card__title');
   title.id = bodyId + '-title';
   card.setAttribute('aria-labelledby', title.id);
-  sourceTitle(title, w, 'dl-card__what', true);
+  RS.fillText(title, w.title);
   prose.appendChild(title);
   if (w.detail) {
     var detail = make('p', 'dl-card__detail');
@@ -299,6 +300,8 @@ if (done.length) {
   part('handled-summary').textContent = RS.t('handled_summary', { parts: RS.t('handled_done', { n: RS.number(done.length) }) });
 } else {
   part('handled').remove();
+  /* the one group left needs no visible heading; it still names the list */
+  root.querySelector('#dl-todo-h').classList.add('rs-vh');
 }
 
 /* -------------------------------------------------------- overall note -- */
@@ -363,32 +366,55 @@ function refreshBanner(label) {
   });
 }
 
+/* The footer sends every decision at once, so it says so; it never reads
+   as a blanket approval. A list of only your own items reports back (Done). */
+function footerLabel() {
+  if (items.every(function (it) { return isUser(it.w); })) return RS.t('footer_done');
+  return items.length === 1 ? RS.t('send_decision_one') : RS.t('send_decisions');
+}
+
+/* "2 Approve · 1 Reject · 2 open": the picks counted by their labels (a
+   custom label counts on its own), in choice order, then what is open. */
+var ORDER = ['approve', 'reject', 'defer', 'done', 'skipped', 'later'];
+function counts(openItems) {
+  var groups = [];
+  var byLabel = Object.create(null);
+  ORDER.forEach(function (value) {
+    items.forEach(function (it) {
+      if (it.choice.value !== value) return;
+      var label = labelOf(it).replace(/\s*\u2713$/, '');
+      if (!byLabel[label]) {
+        byLabel[label] = { label: label, n: 0 };
+        groups.push(byLabel[label]);
+      }
+      byLabel[label].n += 1;
+    });
+  });
+  var parts = groups.map(function (g) { return RS.t('dl_count', { n: RS.number(g.n), label: g.label }); });
+  if (openItems.length) parts.push(RS.t('items_open_short', { n: RS.number(openItems.length) }));
+  return parts.join(RS.t('sep_list'));
+}
+
 function update(save) {
   var value = collect();
   if (save) RS.draft.set(value);
   var openItems = items.filter(function (it) { return !it.choice.value; });
-  /* All user items: the footer is Done / Fertig (the report back). Approve &
-     continue only when a bot item is on the main path. */
-  var allUser = items.every(function (it) { return isUser(it.w); });
-  var picked = items.filter(function (it) { return it.choice.value; });
-  var botApproves = picked.some(function (it) { return !isUser(it.w) && it.choice.value === 'approve'; });
-  var label = allUser ? RS.t('footer_done')
-    : (!picked.length || botApproves ? RS.cta('approve') : RS.t('submit'));
+  var label = footerLabel();
   RS.setSubmitLabel(label);
   refreshBanner(label);
+  var status = counts(openItems);
   if (openItems.length) {
     RS.setResult(null);
-    var shortStatus = RS.t('items_open_short', { n: RS.number(openItems.length) });
     var fullStatus = RS.t('items_open_named', {
       n: RS.number(openItems.length), total: RS.number(items.length),
       names: openItems.map(function (it) { return it.name; }).join(RS.t('sep_names'))
     });
     /* The visible line is the count. The accessible name starts with that
        same text and then the names, so the full list is not painted. */
-    RS.setStatus(shortStatus, null, shortStatus + RS.t('sep_list') + fullStatus);
+    RS.setStatus(status, null, status + RS.t('sep_list') + fullStatus);
   } else {
     RS.setResult(value);
-    RS.setStatus(RS.t('items_all_decided'));
+    RS.setStatus(status);
   }
 }
 

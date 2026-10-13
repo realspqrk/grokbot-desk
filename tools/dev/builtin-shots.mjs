@@ -24,6 +24,8 @@ const SHOTS = {
     fixtures: {
       golden: '5 requests waiting for you',
       'edge-single': '2027 holiday calendar',
+      'edge-many': '12 invoices due this month',
+      'edge-replies': 'Four replies to post',
     },
   },
   'approve-one': {
@@ -51,7 +53,7 @@ const SHOTS = {
   'review-doc': {
     bot: 'example-writer-bot',
     identity: { name: 'Writer Agent', avatar_shape: 'squircle', avatar_color: 'violet' },
-    fixtures: { golden: 'Spring opening announcement' },
+    fixtures: { golden: 'Spring opening announcement', 'edge-report': 'Weekly operations report' },
   },
   _starter: {
     bot: 'example-ops-bot',

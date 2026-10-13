@@ -107,7 +107,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   }
 
   for (const [id, valid] of [
-    ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies']],
+    ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies', 'edge-many']],
     ['approve-one', ['golden', 'edge-access', 'edge-minimal', 'edge-max']],
     ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-max']],
   ]) {
@@ -330,25 +330,89 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
         choices: [...c.querySelectorAll('rs-action-row button')].map((b) => [b.value, b.textContent, b.getAttribute('aria-checked')]),
       }));
       assert.equal(card.id, first.id);
-      assert.equal(card.eyebrow, first.kind + t('due', { date: '14.10.' }));
-      assert.equal(card.title, `${first.source}${de.sep_list}${first.title}`);
+      assert.equal(card.eyebrow, first.source + de.sep_list + first.kind + t('due', { date: '14.10.' }));
+      assert.equal(card.title, first.title, 'the request leads; who asks sits in the quiet line above');
       assert.deepEqual(card.choices, dlChoice(first).map((c) => [c, de['choice_' + c], 'false']), 'no preselection');
+      const row = await page.$eval('.dl-item[data-item-id="laptop-refresh"] .dl-row', (r) => ({
+        title: r.querySelector('.dl-row__title').textContent,
+        meta: r.querySelector('.dl-row__meta').textContent,
+      }));
+      assert.deepEqual(row, { title: data.items[1].title, meta: data.items[1].source + de.sep_list + data.items[1].kind });
+      assert.equal(await page.textContent('#rs-submit-label'), de.send_decisions, 'the footer sends every decision; it approves nothing by itself');
+      const picked = { approve: 0, reject: 0, defer: 0 };
+      const tally = () => ['approve', 'reject', 'defer'].filter((c) => picked[c])
+        .map((c) => t('dl_count', { n: picked[c], label: de['choice_' + c] }));
       for (let i = 0; i < data.items.length; i++) {
         const left = data.items.slice(i);
         const full = t('items_open_named', {
           n: left.length, total: data.items.length, names: left.map((w) => w.source || w.title).join(de.sep_names),
         });
-        const short = t('items_open_short', { n: left.length });
+        const short = [...tally(), t('items_open_short', { n: left.length })].join(de.sep_list);
         assert.equal(await page.textContent('#rs-status'), short);
         assert.equal(await page.getAttribute('#rs-status', 'aria-label'), short + de.sep_list + full);
         assert.equal(await page.isDisabled('#rs-submit'), true);
         const w = data.items[i];
         await page.click(`rs-action-row[data-item="${w.id}"] button[value="${dlChoice(w).at(-1)}"]`);
+        picked[dlChoice(w).at(-1)] += 1;
         assert.equal(await page.getAttribute(`.dl-item[data-item-id="${w.id}"]`, 'data-decided'), dlChoice(w).at(-1));
       }
-      assert.equal(await page.textContent('#rs-status'), de.items_all_decided);
+      assert.equal(await page.textContent('#rs-status'), tally().join(de.sep_list), 'once decided the status counts each choice');
+      assert.equal(await page.textContent('#rs-submit-label'), de.send_decisions);
       assert.equal(await page.isDisabled('#rs-submit'), false);
       assert.equal(await page.textContent('.dl-item[data-item-id="travel-workshop"] .dl-row__outcome'), de.choice_defer);
+    } finally { await ctx.close(); }
+  });
+
+  test('decide-list: payload labels name the choices, the banner and the status; the result keeps the values', async () => {
+    const data = fixture('decide-list', 'edge-many');
+    assert.equal(data.items.length, 12);
+    const { ctx, page, log, run } = await open('decide-list', 'edge-many');
+    try {
+      assert.equal(await page.textContent('#rs-task .rs-task__what'), t('task_line_label_continue', { label: data.labels.approve }));
+      const labels = (id) => page.$$eval(`rs-action-row[data-item="${id}"] button`, (els) => els.map((b) => [b.value, b.textContent]));
+      assert.deepEqual(await labels('inv-paper'), [['approve', 'Pay'], ['reject', 'Dispute'], ['defer', 'Next week']]);
+      assert.equal(await page.$eval('#dl-todo-h', (h) => h.getBoundingClientRect().width <= 1), true, 'one group: no visible heading');
+      assert.equal(await page.textContent('#dl-todo-h'), de.section_todo, 'it still names the list');
+      const choose = ['approve', 'approve', 'reject', 'defer', 'reject', 'approve', 'approve', 'reject', 'approve', 'defer', 'approve', 'approve'];
+      for (let i = 0; i < data.items.length; i++) {
+        const w = data.items[i];
+        if (w.id === 'inv-legal') {
+          assert.deepEqual(await labels(w.id), [['approve', 'Pay'], ['reject', 'Ask for details'], ['defer', 'Next week']], 'the item label wins');
+        }
+        await page.click(`rs-action-row[data-item="${w.id}"] button[value="${choose[i]}"]`);
+      }
+      /* inv-legal rejects with its own label, the others with the shared one: two groups */
+      assert.equal(await page.textContent('#rs-status'), [
+        t('dl_count', { n: 7, label: 'Pay' }), t('dl_count', { n: 2, label: 'Dispute' }),
+        t('dl_count', { n: 1, label: 'Ask for details' }), t('dl_count', { n: 2, label: 'Next week' }),
+      ].join(de.sep_list));
+      assert.equal(await page.textContent('.dl-item[data-item-id="inv-legal"] .dl-row__outcome'), 'Ask for details');
+      await page.click('#rs-submit');
+      const result = await submitted(page, run);
+      assert.deepEqual(result.items.map((x) => x.choice), choose);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('decide-list: a user item offers only its own choices; the steps name the footer', async () => {
+    const data = {
+      items: [
+        { id: 'book-room', actor: 'user', title: 'Book the meeting room for Thursday', choices: ['done', 'later'] },
+        { id: 'call-back', actor: 'user', source: 'Example Bank', title: 'Call back about the card limit' },
+      ],
+    };
+    const { ctx, page, log, run } = await open('decide-list', 'edge-single', { data });
+    try {
+      const values = (id) => page.$$eval(`rs-action-row[data-item="${id}"] button`, (els) => els.map((b) => b.value));
+      assert.deepEqual(await values('book-room'), ['done', 'later']);
+      assert.equal(await page.textContent('#rs-submit-label'), de.footer_done);
+      assert.equal(await page.textContent('.rs-task__steps'), t('task_steps_user_items', { button: de.footer_done }));
+      await page.click('rs-action-row[data-item="book-room"] button[value="later"]');
+      assert.deepEqual(await values('call-back'), ['done', 'skipped', 'later']);
+      await page.click('rs-action-row[data-item="call-back"] button[value="done"]');
+      await page.click('#rs-submit');
+      assert.deepEqual((await submitted(page, run)).items.map((x) => x.choice), ['later', 'done']);
+      assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
   });
 
@@ -1111,7 +1175,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.deepEqual(labels, [de.posted, de.skip, de.later]);
       const href = await page.getAttribute('[data-current] .dl-url a.rs-ext', 'href');
       assert.equal(href, 'https://x.com/example/status/184201');
-      assert.match(await page.textContent('[data-current] .dl-card__title'), /Example Harbour · /);
+      assert.match(await page.textContent('[data-current] .dl-card__eyebrow'), /^Example Harbour/);
       await page.click('[data-current] .dl-url a.rs-ext');
       assert.deepEqual(log.urls, [{ run_id: run.run_id, url: href }]);
       assert.equal(page.url().startsWith(ORIGIN), true);
