@@ -188,7 +188,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
   before(async () => {
     [server, serverEn] = await Promise.all([
       startServer({ port: PORT }),
-      startServer({ port: PORT + 31, env: { RS_LANG: 'en' } }),
+      startServer({ port: PORT + 16, env: { RS_LANG: 'en' } }),
     ]);
     browser = await chromium.launch({ channel: browserChannel(), headless: true });
   });
