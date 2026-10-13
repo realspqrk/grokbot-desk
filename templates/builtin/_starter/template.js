@@ -28,7 +28,8 @@ function showNote(focus) {
 noteOpen.addEventListener('click', function () { showNote(true); });
 
 /* Restore a half-done draft (window closed or reloaded), or show what was
-   sent when a submitted report is reopened. A restored draft gets focus back. */
+   sent when a submitted report is reopened. Focus stays where the window
+   opens; only the person moves it. */
 var sent = RS.run.state === 'submitted' ? RS.run.result : null;
 var draft = sent || (RS.run.state === 'open' ? RS.draft.get() : null);
 if (draft) {
@@ -36,11 +37,6 @@ if (draft) {
   if (typeof draft.note === 'string' && draft.note) {
     note.value = draft.note;
     showNote(false);
-  }
-  if (!sent) {
-    var checked = row.buttons.filter(function (b) { return b.getAttribute('aria-checked') === 'true'; })[0];
-    if (checked) checked.focus();
-    else if (draft.note) note.focus();
   }
 }
 
