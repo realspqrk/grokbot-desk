@@ -469,6 +469,15 @@ test('Instagram: hashtags with umlauts, no false positives', () => {
   assert.equal(count('##doppelt', 'instagram').hashtags, 1);
 });
 
+test('Instagram: a number or a URL fragment is not a hashtag', () => {
+  assert.equal(count('Our #1 bestseller', 'instagram').hashtags, 0);
+  assert.equal(count('#123', 'instagram').hashtags, 0);
+  assert.equal(count('#2026 #_ok #1st', 'instagram').hashtags, 2);
+  assert.equal(count('Menu: example.com/#menu', 'instagram').hashtags, 0);
+  assert.equal(count('Menu: https://example.com/#menu and https://example.com/page?a=1#top', 'instagram').hashtags, 0);
+  assert.equal(count('Menu https://example.com/ #menu', 'instagram').hashtags, 1);
+});
+
 test('foldIndex: LinkedIn 210 and Instagram 125 code points', () => {
   const t = rep('a', 300);
   assert.equal(RS_COUNT.foldIndex(t, 'linkedin'), 210);
@@ -487,4 +496,13 @@ test('X: a long post (X Premium) is within 25,000 weighted, folds after 280 weig
     'a URL weighs 23 and is never split: 271 + 23 > 280 folds before it');
   assert.equal(RS_COUNT.foldIndex(rep('a', 250) + ' https://example.com/ ' + rep('b', 40), 'x'), 251 + 20 + 1 + 5,
     '251 + 23 = 274: the URL stays above the fold, then 6 more characters');
+});
+
+test('X fold: a ZWJ emoji weighs 2 as a whole, so the fold follows the longest prefix of weight 280', () => {
+  const family = '\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}';
+  const text = rep('a', 275) + family + rep('b', 5);
+  assert.equal(count(text, 'x').count, 282);
+  assert.equal(RS_COUNT.foldIndex(text, 'x'), 275 + family.length + 3, '275 + 2 + 3 = 280');
+  const flags = rep('a', 277) + '\u{1F1E9}\u{1F1EA}' + rep('b', 5);
+  assert.equal(RS_COUNT.foldIndex(flags, 'x'), 277 + 4 + 1, 'a flag is one entity: 277 + 2 + 1');
 });

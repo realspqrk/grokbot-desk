@@ -34,7 +34,9 @@
   // unmatched selectors, joiners and regional indicators fall through.
   var EMOJI_SEQ_RE = new RegExp(twitterText.emoji ||
     '[0-9#*]\\uFE0F?\\u20E3|\\p{RGI_Emoji}', twitterText.emoji ? 'g' : 'gv');
-  var HASHTAG_RE = /(^|[^\p{L}\p{M}\p{N}_&#])#+(?=[\p{L}\p{M}\p{N}_])/gu;
+  // A tag body needs a letter or "_" (#1 and #123 are not tags); a "#" right
+  // after "/" or inside a URL is a fragment. components.js TAG_RE matches the same.
+  var HASHTAG_RE = /(^|[^\p{L}\p{M}\p{N}_&#\/])#+(?=[\p{L}\p{M}\p{N}_]*[\p{L}_])/gu;
   var PATH_CHAR_RE = /[a-z0-9!\*';:=+,\.$\/%#\[\]\-\u2013_~@\|&\xC0-\xD6\xD8-\xF6\xF8-\xFF\u0100-\u024F\u0253\u0254\u0256\u0257\u0259\u025B\u0263\u0268\u026F\u0272\u0289\u028B\u02BB\u0300-\u036F\u1E00-\u1EFF\u0400-\u04FF]/i;
   var PATH_END_RE = /[+\-a-z0-9=_#\/\xC0-\xD6\xD8-\xF6\xF8-\xFF\u0100-\u024F\u0253\u0254\u0256\u0257\u0259\u025B\u0263\u0268\u026F\u0272\u0289\u028B\u02BB\u0300-\u036F\u1E00-\u1EFF\u0400-\u04FF]/i;
   var QUERY_CHAR_RE = /[a-z0-9!?\*'@();:&=+\$\/%#\[\]\-_\.,~|]/i;
@@ -468,46 +470,74 @@
     return w + weightPlain(s.slice(pos), p);
   }
 
-  /* Weight of s.slice(0, end) with the URL ranges of the whole text: a URL
-     that starts before `end` weighs url_weight in full, so the weight never
-     drops as the prefix grows and the fold never lands inside a URL. */
-  function prefixWeight(s, ranges, end, p) {
-    var w = 0;
-    var pos = 0;
-    for (var i = 0; i < ranges.length && ranges[i][0] < end; i++) {
-      w += weightPlain(s.slice(pos, ranges[i][0]), p);
-      w += p.url_weight;
-      pos = ranges[i][1];
-    }
-    return pos < end ? w + weightPlain(s.slice(pos, end), p) : w;
-  }
-
+  /* Fold for a weighted platform (X): the text is cut into tokens from the
+     whole text (a URL, a complete emoji entity, one code point), and their
+     running total only grows. The fold is the end of the longest run of
+     tokens that weighs at most `fold`, at a grapheme boundary where the
+     browser can tell. */
   function weightedFold(s, p) {
     var ranges = urlRanges(s);
-    var bounds = [0];
-    for (var i = 0; i < s.length; i++) {
-      var c = s.charCodeAt(i);
-      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) i++;
-      bounds.push(i + 1);
+    var cuts = [];
+    var w = 0;
+    function codePointTokens(from, to) {
+      for (var i = from; i < to; i++) {
+        var c = s.charCodeAt(i);
+        var cp = c;
+        if (c >= 0xD800 && c <= 0xDBFF && i + 1 < to) {
+          var d = s.charCodeAt(i + 1);
+          if (d >= 0xDC00 && d <= 0xDFFF) { cp = s.codePointAt(i); i++; }
+        }
+        w += cpWeight(cp, p);
+        cuts.push([i + 1, w]);
+      }
     }
-    if (prefixWeight(s, ranges, s.length, p) <= p.fold) return -1;
-    var lo = 0;
-    var hi = bounds.length - 1;
-    while (lo < hi) {
-      var mid = (lo + hi + 1) >> 1;
-      if (prefixWeight(s, ranges, bounds[mid], p) <= p.fold) lo = mid;
-      else hi = mid - 1;
+    function plainTokens(from, to) {
+      var seg = s.slice(from, to);
+      var at = 0;
+      var m;
+      EMOJI_SEQ_RE.lastIndex = 0;
+      while ((m = EMOJI_SEQ_RE.exec(seg))) {
+        if (!m[0].length) { EMOJI_SEQ_RE.lastIndex++; continue; }
+        codePointTokens(from + at, from + m.index);
+        w += p.emoji_weight;
+        at = m.index + m[0].length;
+        cuts.push([from + at, w]);
+      }
+      codePointTokens(from + at, to);
     }
+    var pos = 0;
     for (var r = 0; r < ranges.length; r++) {
-      if (ranges[r][0] < bounds[lo] && bounds[lo] < ranges[r][1]) return ranges[r][1];
+      plainTokens(pos, ranges[r][0]);
+      w += p.url_weight;
+      cuts.push([ranges[r][1], w]);
+      pos = ranges[r][1];
     }
-    return bounds[lo];
+    plainTokens(pos, s.length);
+    if (w <= p.fold) return -1;
+    var graphemes = null;
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      graphemes = Object.create(null);
+      for (var g of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s)) {
+        graphemes[g.index + g.segment.length] = true;
+      }
+    }
+    var best = 0;
+    for (var k = 0; k < cuts.length && cuts[k][1] <= p.fold; k++) {
+      if (!graphemes || graphemes[cuts[k][0]]) best = cuts[k][0];
+    }
+    return best;
   }
 
   function hashtags(s) {
     var n = 0;
+    var ranges = s.indexOf('#') >= 0 ? urlRanges(s) : [];
+    var m;
     HASHTAG_RE.lastIndex = 0;
-    while (HASHTAG_RE.exec(s)) n++;
+    while ((m = HASHTAG_RE.exec(s))) {
+      var at = m.index + m[1].length;
+      var inUrl = ranges.some(function (r) { return r[0] <= at && at < r[1]; });
+      if (!inUrl) n++;
+    }
     return n;
   }
 
@@ -528,8 +558,8 @@
 
   /** UTF-16 index (in the NFC text) where the platform's fold (its "… more") goes, or -1.
       Code-point platforms fold after `fold` code points. A weighted platform (X)
-      folds after the longest code-point prefix that weighs at most `fold`;
-      weights only grow with the prefix, so a binary search finds it. */
+      folds after the longest run of whole tokens (URL, emoji entity, code
+      point) that weighs at most `fold`. */
   function foldIndex(text, platform) {
     var p = platformCfg(platform);
     if (!p.fold) return -1;

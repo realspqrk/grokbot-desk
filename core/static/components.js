@@ -473,7 +473,9 @@
   // RS.externalLink exists). Method refresh().
   var SKIN_ABBR = { x: 'x', linkedin: 'li', instagram: 'ig', facebook: 'fb' };
   var RATIOS = { '1:1': '1 / 1', '4:5': '4 / 5', '3:4': '3 / 4', '9:16': '9 / 16', '1.91:1': '1.91 / 1', '16:9': '16 / 9' };
-  var TAG_RE = /(^|[^\p{L}\p{M}\p{N}_&#])(#+[\p{L}\p{M}\p{N}_]+)|(https?:\/\/\S+[^\s.,;:!?'")\]}>])/gu;
+  // hashtags as count.js HASHTAG_RE: the body needs a letter or "_", and a
+  // "#" after "/" is a URL fragment
+  var TAG_RE = /(^|[^\p{L}\p{M}\p{N}_&#\/])(#+(?=[\p{L}\p{M}\p{N}_]*[\p{L}_])[\p{L}\p{M}\p{N}_]+)|(https?:\/\/\S+[^\s.,;:!?'")\]}>])/gu;
   var HL = {};
 
   function highlight(name) {
