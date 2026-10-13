@@ -468,6 +468,42 @@
     return w + weightPlain(s.slice(pos), p);
   }
 
+  /* Weight of s.slice(0, end) with the URL ranges of the whole text: a URL
+     that starts before `end` weighs url_weight in full, so the weight never
+     drops as the prefix grows and the fold never lands inside a URL. */
+  function prefixWeight(s, ranges, end, p) {
+    var w = 0;
+    var pos = 0;
+    for (var i = 0; i < ranges.length && ranges[i][0] < end; i++) {
+      w += weightPlain(s.slice(pos, ranges[i][0]), p);
+      w += p.url_weight;
+      pos = ranges[i][1];
+    }
+    return pos < end ? w + weightPlain(s.slice(pos, end), p) : w;
+  }
+
+  function weightedFold(s, p) {
+    var ranges = urlRanges(s);
+    var bounds = [0];
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) i++;
+      bounds.push(i + 1);
+    }
+    if (prefixWeight(s, ranges, s.length, p) <= p.fold) return -1;
+    var lo = 0;
+    var hi = bounds.length - 1;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (prefixWeight(s, ranges, bounds[mid], p) <= p.fold) lo = mid;
+      else hi = mid - 1;
+    }
+    for (var r = 0; r < ranges.length; r++) {
+      if (ranges[r][0] < bounds[lo] && bounds[lo] < ranges[r][1]) return ranges[r][1];
+    }
+    return bounds[lo];
+  }
+
   function hashtags(s) {
     var n = 0;
     HASHTAG_RE.lastIndex = 0;
@@ -490,11 +526,15 @@
     return out;
   }
 
-  /** UTF-16 index (in the NFC text) where the platform's fold (its "… more") goes, or -1. */
+  /** UTF-16 index (in the NFC text) where the platform's fold (its "… more") goes, or -1.
+      Code-point platforms fold after `fold` code points. A weighted platform (X)
+      folds after the longest code-point prefix that weighs at most `fold`;
+      weights only grow with the prefix, so a binary search finds it. */
   function foldIndex(text, platform) {
     var p = platformCfg(platform);
     if (!p.fold) return -1;
     var s = norm(text);
+    if (p.unit === 'weighted') return weightedFold(s, p);
     var n = 0;
     for (var i = 0; i < s.length; i++) {
       if (n === p.fold) return i;
