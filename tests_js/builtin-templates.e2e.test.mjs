@@ -521,6 +521,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await page.textContent('#rs-submit-label'), de.request_send);
       await alternative(page, de.cancel);
       assert.equal(await page.isHidden('[data-ao="comment-box"]'), true, 'the change request text hides with its mode');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), de.request_changes, 'focus returns to the button that opened the request');
       assert.equal(await page.textContent('#rs-submit-label'), fixture('approve-one', 'golden').approve_label);
       await alternative(page, de.request_changes);
       assert.equal(await page.inputValue('#ao-comment'), 'Wait for the sale to end', 'the text is kept');

@@ -309,6 +309,9 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
     const quiet = () => page.$$eval('#rs-submitbar .rs-btn--quiet', (b) => b.filter((x) => !x.hidden).map((x) => x.textContent));
     try {
       assert.deepEqual(await quiet(), [de.po_none]);
+      await page.click('#rs-alt');
+      await page.click('#rs-alt');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), de.po_none, 'Cancel without a pick returns focus to the button that opened it');
       await page.click('.po__card[value="hilltop"]');
       await page.click('#rs-alt');
       assert.equal(await page.evaluate(() => document.activeElement.id), 'po-note');

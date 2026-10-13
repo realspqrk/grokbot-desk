@@ -1619,10 +1619,18 @@
         state.alternatives = label ? [{ label: String(label), run: onClick }] : [];
         renderBar();
       },
-      /* Move focus to the first footer alternative (e.g. after leaving a sub-mode). */
-      focusAlternative: function () {
-        if (!live() || !el.alt.isConnected || el.alt.hidden) return false;
-        el.alt.focus();
+      /* Move focus to a footer alternative (e.g. after leaving a sub-mode):
+         the first one, or the one at an index or with a label. */
+      focusAlternative: function (which) {
+        if (!live()) return false;
+        var i = 0;
+        if (typeof which === 'number') i = which;
+        else if (typeof which === 'string') {
+          i = state.alternatives.map(function (a) { return a.label; }).indexOf(which);
+        }
+        var button = el.alts[i];
+        if (i < 0 || !button || !button.isConnected || button.hidden) return false;
+        button.focus();
         return true;
       },
       /* A quiet metadata line in the header overflow panel (not an action). */

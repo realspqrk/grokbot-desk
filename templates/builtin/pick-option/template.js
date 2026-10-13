@@ -162,7 +162,7 @@ function setNone(on) {
   if (!on) {
     var checked = row.buttons.filter(function (b) { return b.getAttribute('aria-checked') === 'true'; })[0];
     if (checked) checked.focus();
-    else RS.focusAlternative();
+    else RS.focusAlternative(RS.cta('request_changes'));
   }
 }
 

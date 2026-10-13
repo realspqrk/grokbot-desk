@@ -199,7 +199,7 @@ function setChanges(on) {
   render();
   update(true);
   if (on) comment.focus();
-  else RS.focusAlternative();
+  else RS.focusAlternative(RS.cta('request_changes'));
 }
 
 function update(save) {
