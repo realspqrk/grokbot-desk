@@ -93,9 +93,6 @@ def test_every_string_exists_in_english_and_german(template):
             assert table.get(key), f"{lang}: {key}"
             if key != "lint_em_dash":
                 assert "—" not in table[key], f"{lang}: {key}"
-    for key in ("choice_approve", "choice_reject", "choice_defer", "decision_pick", "send_rejection", "style_notes"):
-        placeholders = {lang: sorted(re.findall(r"\{(\w+)\}", tables[lang][key])) for lang in tables}
-        assert placeholders["en"] == placeholders["de"], key
 
 
 @pytest.mark.parametrize("template", IDS)

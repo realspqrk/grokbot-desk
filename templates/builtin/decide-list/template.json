@@ -21,6 +21,7 @@
     "posted",
     "skip",
     "later",
+    "done_mark",
     "footer_done",
     "send_decisions",
     "send_decision_one",
