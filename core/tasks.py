@@ -357,7 +357,7 @@ def report_shape(template_id, data, task):
     `mark` is posted, sent or done. `parties` lists both sides of a mixed
     report, one entry per platform ({id, role}) or item ({role, noun}), so the
     banner can give each actor its own line. `steps_for` picks a steps line
-    (replies, user_items, mixed_platforms, mixed_items) when the kind's default would
+    (replies, user_items, bot_items, mixed_platforms, mixed_items) when the kind's default would
     describe the wrong work.
     """
     data = data if isinstance(data, dict) else {}
@@ -402,6 +402,8 @@ def report_shape(template_id, data, task):
             mark = "done"
         if roles <= {"user", "user_post"} and items:
             steps_for = "replies" if all(item.get("content") == "reply" for item in items) else "user_items"
+        elif roles == {"bot"} and len(items) > 1:
+            steps_for = "bot_items"
     return mark, parties, steps_for
 
 
@@ -428,11 +430,13 @@ def task_view(payload, registry):
         if field in task:
             view[field] = task[field]
     label = data.get("approve_label")
-    if template_id == "decide-list":
-        labels = data.get("labels")
-        label = labels.get("approve") if isinstance(labels, dict) else None
+    if template_id == "decide-list" and view["base"] == "approve_bot_acts" and not parties:
+        # a list of the bot's actions: one line for the whole desk, never
+        # one item choice (labels.approve) promoted to it
+        count = len([item for item in data.get("items") or [] if isinstance(item, dict)])
+        view["list"] = max(count, 1)
     if (
-        template_id in ("approve-one", "decide-list")
+        template_id == "approve-one"
         and view["base"] == "approve_bot_acts"
         and isinstance(label, str)
         and label.strip()

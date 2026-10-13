@@ -368,12 +368,14 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('decide-list: payload labels name the choices, the banner and the status; the result keeps the values', async () => {
+  test('decide-list: payload labels name the choices and the status, not the banner; the result keeps the values', async () => {
     const data = fixture('decide-list', 'edge-many');
     assert.equal(data.items.length, 12);
     const { ctx, page, log, run } = await open('decide-list', 'edge-many');
     try {
-      assert.equal(await page.textContent('#rs-task .rs-task__what'), t('task_line_label_continue', { label: data.labels.approve, bot: t('task_the_bot') }));
+      /* the banner asks for decisions; one choice label (Pay) never names the whole desk */
+      assert.equal(await page.textContent('#rs-task .rs-task__what'), t('task_line_list_continue', { bot: t('task_the_bot') }));
+      assert.equal(await page.textContent('#rs-task .rs-task__steps'), t('task_steps_mixed_items', { button: de.send_decisions }));
       const labels = (id) => page.$$eval(`rs-action-row[data-item="${id}"] button`, (els) => els.map((b) => [b.value, b.textContent]));
       assert.deepEqual(await labels('inv-paper'), [['approve', 'Pay'], ['reject', 'Dispute'], ['defer', 'Next week']]);
       assert.equal(await page.$eval('#dl-todo-h', (h) => h.getBoundingClientRect().width <= 1), true, 'one group: no visible heading');

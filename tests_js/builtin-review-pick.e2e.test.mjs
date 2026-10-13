@@ -332,9 +332,16 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       await page.keyboard.press('Control+Enter');
       const result = await waitResult(run.run_id);
       assert.deepEqual(result.data, { decision: 'request_changes', note: 'All three are too far for the night shift.' });
+      /* the decided banner says new options were asked for, not that one was chosen */
+      const doneLine = async () => {
+        await page.waitForFunction(() => document.getElementById('rs-task').getAttribute('data-state') === 'decided');
+        return page.textContent('#rs-task .rs-task__what');
+      };
+      assert.equal(await doneLine(), de.task_done_pick_none, 'right after sending');
       await reopen(page, run.run_id);
       assert.equal(await page.inputValue('#po-note'), 'All three are too far for the night shift.');
       assert.equal(await page.isVisible('[data-po="label-none"]'), true);
+      assert.equal(await doneLine(), de.task_done_pick_none, 'reopened');
       assert.deepEqual(errors, []);
     } finally { await ctx.close(); }
     const strict = show('pick-option', { ...data, allow_none: false, question: 'Venue for the spring team day?' }, 'Venue for the spring team day');

@@ -141,24 +141,36 @@ test('per-actor lines: the person first, the bot by its verb, nothing once every
   }
 });
 
-test('mixed steps: what is left per actor in tab order, then the footer as it reads now', () => {
-  const plan = (parties) => {
-    const steps = TASKS.mixedSteps(parties);
-    return [steps.segments.map((s) => [s.key, s.names.map((p) => p.id)]), steps.tail];
-  };
-  const li = { id: 'linkedin', role: 'auto' };
-  const x = { id: 'x', role: 'manual' };
-  assert.deepEqual(plan([li, x]), [[['task_step_auto', ['linkedin']], ['task_step_manual', ['x']]], 'task_steps_tail_then']);
-  assert.deepEqual(plan([{ ...li, on: true }, { ...x, on: false }]), [[['task_step_manual', ['x']]], 'task_steps_tail_or']);
-  assert.deepEqual(plan([{ ...li, on: false }, { ...x, on: true }]), [[['task_step_auto', ['linkedin']]], 'task_steps_tail_or']);
-  assert.deepEqual(plan([{ ...li, on: true }, { ...x, on: true }]), [[], 'task_steps_tail_now']);
-  const golden = [x, li, { id: 'instagram', role: 'auto', blocked: true }, { id: 'facebook', role: 'auto' }];
-  assert.deepEqual(plan(golden), [[['task_step_manual', ['x']], ['task_step_auto', ['linkedin', 'facebook']]], 'task_steps_tail_then'],
-    'a platform that cannot be approved is not a step');
+test('mixed preview steps: one line without platform names, then the footer as it reads now', () => {
+  assert.equal(TASKS.stepsKey({ kind: 'approve_bot_acts', steps_for: 'mixed_platforms' }), 'task_steps_platforms');
   for (const table of [en, de]) {
-    for (const key of ['task_step_auto', 'task_step_manual', 'task_steps_tail_then', 'task_steps_tail_or', 'task_steps_tail_now',
-      'submit_mixed', 'mixed_approved_count', 'mixed_posted_count']) assert.ok(table[key], key);
+    for (const key of ['task_steps_platforms', 'submit_mixed', 'mixed_approved_count', 'mixed_posted_count']) assert.ok(table[key], key);
+    assert.ok(table.task_steps_platforms.includes('{button}'));
   }
+  assert.equal(de.submit_mixed, 'Rückmeldung senden');
+  assert.equal(en.submit_mixed, 'Send response');
+});
+
+test('a bot list asks for decisions, never for one choice; a pick answered with None of these asked for new options', () => {
+  const list = { kind: 'approve_bot_acts', base: 'approve_bot_acts', verb: 'continue', list: 3 };
+  assert.equal(TASKS.lineKey(list), 'task_line_list_continue');
+  assert.equal(TASKS.lineKey({ ...list, list: 1 }), 'task_line_list_continue_one');
+  assert.equal(TASKS.lineKey({ ...list, verb: 'send', label: 'Pay' }), 'task_line_list_send');
+  assert.equal(TASKS.stepsKey({ ...list, steps_for: 'bot_items' }), 'task_steps_mixed_items');
+  assert.equal(de.task_line_list_continue, 'Entscheidungen treffen, dann macht {bot} weiter');
+  assert.equal(en.task_line_list_continue, 'Make your decisions, then {bot} continues');
+  assert.equal(de.task_steps_mixed_items, 'Jeden Eintrag entscheiden, dann {button}');
+  for (const verb of ['post', 'send', 'continue']) {
+    for (const key of ['task_line_list_' + verb, 'task_line_list_' + verb + '_one']) {
+      assert.ok(en[key].includes('{bot}') && de[key].includes('{bot}'), key);
+    }
+  }
+  const pick = { kind: 'pick', base: 'pick' };
+  assert.equal(TASKS.lineKey(pick, 'submitted', { choice: 'b', note: '' }), 'task_done_pick');
+  assert.equal(TASKS.lineKey(pick, 'submitted', { decision: 'request_changes', note: 'cheaper' }), 'task_done_pick_none');
+  assert.equal(TASKS.lineKey(pick, 'submitted'), 'task_done_pick');
+  assert.ok(de.task_done_pick_none.startsWith('Neue Optionen angefragt'));
+  assert.ok(en.task_done_pick_none.startsWith('New options requested'));
 });
 
 /* the data a golden needs so the server accepts the kind: a platform the
@@ -286,10 +298,11 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         if (template === 'preview-post') {
           /* the golden: X by hand, LinkedIn, Instagram and Facebook by the bot */
           assert.deepEqual(view.actors.map(([actor]) => actor), ['user', 'bot'], template);
-          assert.equal(view.steps, [
-            t('task_step_manual', { names: 'X' }), t('task_step_auto', { names: 'LinkedIn, Instagram, Facebook' }),
-            t('task_steps_tail_then', { button: t('submit_mixed') }),
-          ].join(' · '), template);
+          assert.equal(view.steps, t('task_steps_platforms', { button: t('submit_mixed') }), template);
+        } else if (template === 'decide-list') {
+          const items = fixture(template, 'golden').items.length;
+          assert.equal(view.what, t(TASKS.lineKey({ ...task, list: items }), { bot: t('task_the_bot') }), template);
+          assert.equal(view.steps, items > 1 ? t('task_steps_mixed_items', { button: t('send_decisions') }) : null, template);
         } else {
           const data = fixture(template, 'golden');
           const label = template === 'approve-one' && data.approve_label ? data.approve_label : '';
@@ -640,9 +653,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       const lines = async () => (await banner(page)).actors;
       const you = tl('task_you_post', { names: 'X' });
       const botPosts = tl('task_bot_post', { bot, names: 'LinkedIn' });
-      const steps = (segments, tail, button) => [
-        ...segments.map(([key, names]) => tl(key, { names })), tl(tail, { button: tl(button) }),
-      ].join(' · ');
+      const steps = (button) => tl('task_steps_platforms', { button: tl(button) });
       const bar = () => page.evaluate(() => ({
         label: document.getElementById('rs-submit-label').textContent,
         disabled: document.getElementById('rs-submit').disabled,
@@ -651,17 +662,17 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       try {
         assert.deepEqual(await lines(), [['user', you], ['bot', botPosts]], 'initial');
         assert.equal((await banner(page)).steps,
-          steps([['task_step_auto', 'LinkedIn'], ['task_step_manual', 'X']], 'task_steps_tail_then', 'submit_mixed'), 'initial');
+          steps('submit_mixed'), 'initial');
         assert.deepEqual(await bar(), { label: tl('submit_mixed'), disabled: true, status: tl('select_platform_manual') }, 'initial');
         const stepsRows = await page.$eval('.rs-task__steps', (el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
-        assert.equal(stepsRows, 1, 'the two-platform steps stay on one line inside the measure');
+        assert.equal(stepsRows, 1, 'the steps stay on one line inside the measure');
         await assertReading(page);
 
         await page.check('#approve-linkedin');
         assert.deepEqual(await lines(), [
           ['user', tl('task_unticked', { line: tl('task_you_none_post'), names: 'X' })], ['bot', botPosts],
         ], 'only LinkedIn');
-        assert.equal((await banner(page)).steps, steps([['task_step_manual', 'X']], 'task_steps_tail_or', 'approve_post'), 'only LinkedIn');
+        assert.equal((await banner(page)).steps, steps('approve_post'), 'only LinkedIn');
         assert.deepEqual(await bar(), { label: tl('approve_post'), disabled: false, status: tl('mixed_approved_count', { n: 1 }) }, 'only LinkedIn');
 
         await page.uncheck('#approve-linkedin');
@@ -675,17 +686,34 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         assert.deepEqual(await lines(), [
           ['user', you], ['bot', tl('task_unticked', { line: tl('task_bot_none_post', { bot }), names: 'LinkedIn' })],
         ], 'only X');
-        assert.equal((await banner(page)).steps, steps([['task_step_auto', 'LinkedIn']], 'task_steps_tail_or', 'posted'), 'only X');
+        assert.equal((await banner(page)).steps, steps('posted'), 'only X');
         assert.deepEqual(await bar(), { label: tl('posted'), disabled: false, status: tl('mixed_posted_count', { n: 1 }) }, 'only X');
 
         await page.click('#tab-linkedin');
         await page.check('#approve-linkedin');
         assert.deepEqual(await lines(), [['user', you], ['bot', botPosts]], 'both');
-        assert.equal((await banner(page)).steps, steps([], 'task_steps_tail_now', 'submit_mixed'), 'both');
+        assert.equal((await banner(page)).steps, steps('submit_mixed'), 'both');
         assert.deepEqual(await bar(), {
           label: tl('submit_mixed'), disabled: false,
           status: `${tl('mixed_approved_count', { n: 1 })} · ${tl('mixed_posted_count', { n: 1 })}`,
         }, 'both');
+        /* the longer German label fits beside the status and Request changes */
+        const fits = await page.evaluate(() => {
+          const shown = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
+          const bar = document.getElementById('rs-submitbar');
+          const submit = document.getElementById('rs-submit');
+          const alt = document.getElementById('rs-alt');
+          const a = submit.getBoundingClientRect();
+          const b = shown(alt) ? alt.getBoundingClientRect() : null;
+          return {
+            column: Math.round(bar.getBoundingClientRect().width),
+            clipped: submit.scrollWidth > submit.clientWidth + 1 || bar.scrollWidth > bar.clientWidth + 1,
+            overlap: !!b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom,
+            alt: shown(alt),
+            oneRow: Math.round(a.height) <= 48,
+          };
+        });
+        assert.ok(fits.alt && !fits.clipped && !fits.overlap && fits.oneRow, JSON.stringify(fits));
 
         await page.click('#rs-submit');
         await decided(page);
@@ -861,7 +889,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       } finally { await over.ctx.close(); }
     });
 
-    test(`${lang}: a longer mixed steps list wraps inside the reading measure`, async () => {
+    test(`${lang}: four mixed platforms keep the steps to one line inside the reading measure`, async () => {
       const srv = on();
       await srv.clearRuns();
       const run = srv.show(fixture('preview-post', 'golden'), {
@@ -878,7 +906,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
           };
         });
         assert.ok(fit.overflow <= 1, JSON.stringify(fit));
-        if (lang === 'de') assert.ok(fit.rows >= 2, `the longer German list wraps (${JSON.stringify(fit)})`);
+        assert.equal(fit.rows, 1, `no platform list in the steps (${JSON.stringify(fit)})`);
         await assertReading(page);
         assert.deepEqual(errors, []);
       } finally { await ctx.close(); }
