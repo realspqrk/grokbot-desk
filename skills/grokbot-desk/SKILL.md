@@ -113,7 +113,7 @@ Exit 2: the payload is invalid. Fix the field the error names, then send it once
 
 ## Data directory, dedupe, time
 
-`paths` prints the directory and why (`RS_DATA_DIR`, `legacy`, `default`), plus any unused older directory. On Windows, `spqrk-report-shell` moves once to `%LOCALAPPDATA%\grokbot-desk` at server start or `paths`, when the new folder is missing or empty and no server is using the old one (`reason`: `migrated`). A live server or a failed move leaves the old folder (`reason` and `warning`). `RS_DATA_DIR` is never moved.
+`paths` prints the directory and why (`RS_DATA_DIR`, `legacy`, `default`), plus any unused older directory. On Windows, an older data folder stays in use until the user runs `python report_shell.py migrate` while the desk is closed; `paths` says so (`warning`). `RS_DATA_DIR` is never moved.
 
 The webhook stays off unless enabled with `GROKBOT_DESK_WEBHOOK_KEY` and an allow-listed `https` URL. Bots use `wait`. Startup drops `runs`, `results` and `log` files older than 30 days.
 

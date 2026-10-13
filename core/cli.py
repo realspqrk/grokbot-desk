@@ -32,10 +32,12 @@ from .paths import (
     data_dir,
     data_dir_report,
     ensure_layout,
+    follow_migration,
     load_config,
-    migrate_legacy_data_dir,
+    migration_advice,
     selected_port,
 )
+from .migrate import DataDirBusy, MigrationRefused, migrate
 from .platform import (
     BrowserLaunchError,
     BrowserNotFound,
@@ -414,6 +416,9 @@ def command_show(args, base, port):
     if warnings:
         answer["warnings"] = warnings
     answer["data_dir"] = str(Path(base))
+    advice = migration_advice(base)
+    if advice:
+        answer["data_dir_warning"] = advice
     output(answer)
     return 0
 
@@ -449,6 +454,13 @@ def command_wait(args, base):
     remaining = None if result_path.exists() else _seconds_until_expiry(run_path)
     expiry_deadline = None if remaining is None else now + max(0.0, remaining)
     while not result_path.exists():
+        moved = follow_migration(base)
+        if moved != Path(base):
+            # `migrate` moved the default folder while this wait ran
+            base = moved
+            run_path = base / "runs" / f"{args.run_id}.json"
+            result_path = base / "results" / f"{args.run_id}.json"
+            continue
         current = time.monotonic()
         if deadline is not None and current >= deadline and (
             expiry_deadline is None or deadline <= expiry_deadline
@@ -594,6 +606,7 @@ def command_results(args, base):
     deadline = time.monotonic() + max(0.0, min(args.wait, 3600.0))
     skip = set(getattr(args, "seen", None) or ())
     while True:
+        base = follow_migration(base)
         every = _results_since(base, since, args.bot)
         items = [item for item in every if item["run_id"] not in skip]
         if items or time.monotonic() >= deadline:
@@ -616,6 +629,27 @@ def command_results(args, base):
 def command_paths(base):
     """The data directory in use and why, so a bot never guesses it."""
     output(data_dir_report(base))
+    return 0
+
+
+def command_migrate():
+    """Move the older Windows data folder to the product name, explicitly,
+    while no desk runs. RS_DATA_DIR and macOS are never migrated."""
+    local = os.environ.get("LOCALAPPDATA")
+    if os.environ.get("RS_DATA_DIR"):
+        output({"migrated": False, "reason": "RS_DATA_DIR is set; it is never migrated"})
+        return 0
+    if sys.platform != "win32" or not local:
+        output({"migrated": False, "reason": "nothing to migrate on this system"})
+        return 0
+    try:
+        output(migrate(local))
+    except MigrationRefused as exc:
+        return error(f"migrate: {exc}", exc.code)
+    except OSError as exc:
+        return error(
+            f"migrate: nothing was moved, the old folder stays in use: {exc.strerror or exc}", 7
+        )
     return 0
 
 
@@ -724,6 +758,7 @@ def command_doctor():
         "templates": len(registry),
         "warnings": list(registry.warnings),
         "identity_warnings": registry_warnings(data_dir()),
+        **({"data_dir_warning": advice} if (advice := migration_advice(data_dir())) else {}),
     })
     return 0
 
@@ -856,6 +891,7 @@ def build_parser():
     new.add_argument("name")
     commands.add_parser("serve")
     commands.add_parser("stop")
+    commands.add_parser("migrate")
     return parser
 
 
@@ -882,9 +918,8 @@ def main(argv=None):
         return command_check(args)
     if args.command == "new":
         return command_new(args)
-    if args.command in ("serve", "paths", "show"):
-        # show too: it starts the server, which would move the folder under it
-        migrate_legacy_data_dir()
+    if args.command == "migrate":
+        return command_migrate()
     base = ensure_layout(data_dir())
     try:
         config = load_config(base)
@@ -919,4 +954,6 @@ def main(argv=None):
             return error(f"cannot bind port {port}: {exc}", 4)
         except RegistryError as exc:
             return error(str(exc), 7)
+        except DataDirBusy as exc:
+            return error(str(exc), 4)
     return error("unknown command", 2)

@@ -19,7 +19,7 @@ launcher that finds a Python 3.11+), `report-shell.cmd` (Windows, `py -3`).
 
 | Path | What |
 |---|---|
-| `core/cli.py` | CLI: `show wait result results paths status open cancel list templates doctor check new serve stop` |
+| `core/cli.py` | CLI: `show wait result results paths status open cancel list templates doctor check new serve stop migrate` |
 | `core/server.py` | `ThreadingHTTPServer` on `127.0.0.1` (product port 18742), API + event stream |
 | `core/runs.py`, `core/results.py`, `core/envelope.py` | run store, result files, payload/result envelopes |
 | `core/registry.py`, `core/schema.py`, `core/check.py`, `core/lint.py` | template registry, restricted JSON Schema, `check`, template lint |
@@ -27,6 +27,7 @@ launcher that finds a Python 3.11+), `report-shell.cmd` (Windows, `py -3`).
 | `core/identity.py`, `core/launcher.py`, `core/launch_coordination.py` | bot identity/avatars, browser app-window launch, burst coordination |
 | `core/platform*.py` | OS layer (`platform_windows.py`, `platform_darwin.py`) |
 | `core/paths.py` | data dir (`%LOCALAPPDATA%\grokbot-desk`, `~/Library/Application Support/grokbot-desk`, `RS_DATA_DIR`) |
+| `core/migrate.py` | `migrate` (older Windows data folder) and the server lock that keeps it apart from a starting desk |
 | `core/static/` | shell UI: `shell.html`, `rs.js` (RS template API), `components.js`, `tokens.css`, `shell.css`, `count.js` (platform char counting) |
 | `core/i18n/{de,en}.json` | UI strings; German is default, `RS_LANG=en` |
 | `templates/builtin/<id>/` | built-ins: `approve-one decide-list pick-option preview-post review-doc` + `_starter` |
