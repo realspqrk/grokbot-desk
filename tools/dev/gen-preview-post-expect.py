@@ -3,10 +3,13 @@
 Copies are the composed strings by the template rule (variant text or text,
 plus a blank line and the platform's hashtags (variant hashtags or hashtags)
 when hashtag_mode is append; NFC).
-Counters are derived independently of count.js and only for fixtures whose
-composed text is plain ASCII without URLs: every code point then weighs 1 on
-X, and the code-point platforms count code points."""
+Counters are derived independently of count.js for fixtures whose composed
+text is plain ASCII without URLs: every code point then weighs 1 on X, and
+the code-point platforms count code points. A fixture whose X weight is not
+its length (CJK, emoji, a URL) takes its counters from count.js itself,
+through Node (`counted_by_count_js`)."""
 import json
+import subprocess
 import unicodedata
 from pathlib import Path
 
@@ -108,6 +111,30 @@ def counters(data):
     return out
 
 
+COUNT_JS = """
+const C = require(process.argv[1]);
+const jobs = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(JSON.stringify(jobs.map(([text, p]) => C.count(text, p))));
+"""
+
+
+def counted_by_count_js(data):
+    """The counters as count.js reports them (Node runs core/static/count.js)."""
+    jobs = [[composed(data, p), p] for p in ids(data)]
+    script = ROOT / "core" / "static" / "count.js"
+    out = subprocess.run(
+        ["node", "-e", COUNT_JS, str(script)], input=json.dumps(jobs),
+        capture_output=True, text=True, encoding="utf-8", check=True, timeout=60,
+    ).stdout
+    result = {}
+    for p, res in zip(ids(data), json.loads(out)):
+        result[p] = {"count": res["count"], "limit": res["limit"], "over": res["over"]}
+        if p == "instagram":
+            n = res["hashtags"]
+            result["instagram-hashtags"] = {"count": n, "limit": res["hashtagLimit"], "over": n > res["hashtagLimit"]}
+    return result
+
+
 def write(name, value):
     (EXP / name).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
@@ -132,4 +159,6 @@ quote = load("quote-video")
 write("quote-video.json", {"copies": copies(quote), "counters": counters(quote)})
 mixed = load("mixed-image")
 write("mixed-image.json", {"copies": copies(mixed), "counters": counters(mixed)})
+cjk = load("edge-x-cjk")
+write("edge-x-cjk.json", {"copies": copies(cjk), "counters": counted_by_count_js(cjk)})
 print("ok")

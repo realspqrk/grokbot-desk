@@ -109,7 +109,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   for (const [id, valid] of [
     ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies', 'edge-many']],
     ['approve-one', ['golden', 'edge-access', 'edge-de', 'edge-minimal', 'edge-max']],
-    ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-max']],
+    ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-x-cjk', 'edge-max']],
   ]) {
     test(`${id}: expect.flow (mouse) and expect.keyboard (keys only) write expect.result`, async () => {
       const expect = expectFor(id, 'golden');
@@ -659,6 +659,41 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.deepEqual(await submitted(page, run), {
         decision: 'approve', platforms: [], comment: '', per_platform: { x: { mode: 'manual', decision: 'done' } },
       });
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('preview-post: CJK, emoji and a URL weigh as X counts them; the fold falls before a URL that would cross 280', async () => {
+    const expect = expectFor('preview-post', 'edge-x-cjk');
+    const { ctx, page, log, run } = await open('preview-post', 'edge-x-cjk');
+    try {
+      const composed = expect.copies['x-text'];
+      assert.notEqual(expect.counters.x.count, [...composed].length, 'the X weight is not the length');
+      const view = await page.evaluate(() => {
+        const ellipsis = document.querySelector('#panel-x .rs-pf__ellipsis');
+        const range = document.createRange();
+        range.setStart(document.querySelector('#panel-x [slot="text"]'), 0);
+        range.setEndBefore(ellipsis);
+        return {
+          counted: document.querySelector('[data-counter-id="x"]').result.count,
+          counter: document.querySelector('[data-counter-id="x"] .rs-counter__num').textContent,
+          before: range.toString(),
+          long: !document.querySelector('#panel-x [data-pp="long-note"]').hidden,
+          blocked: !document.querySelector('#blocked-x').hidden,
+        };
+      });
+      assert.equal(view.counted, expect.counters.x.count);
+      assert.equal(view.counter, t('counter_value', { value: String(expect.counters.x.count), limit: '25.000' }));
+      const url = composed.indexOf(' https://');
+      assert.equal(view.before, composed.slice(0, url), 'the visible part ends right before the URL');
+      assert.ok(RS_COUNT.count(composed.slice(0, url), 'x').count + 23 > 280, 'the URL would cross 280');
+      assert.deepEqual([view.long, view.blocked], [true, false], 'a long post, still approvable');
+      await page.check('#approve-x');
+      await page.click('#tab-linkedin');
+      assert.equal(await page.$eval('[data-counter-id="linkedin"]', (el) => el.result.count), expect.counters.linkedin.count);
+      await page.check('#approve-linkedin');
+      await page.keyboard.press('Control+Enter');
+      assert.deepEqual((await submitted(page, run)).platforms, ['x', 'linkedin']);
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
   });
