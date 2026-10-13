@@ -36,7 +36,17 @@ WHY_SOURCES = {
     "preview-post": "notes",
 }
 
-SENTENCE_END = re.compile(r"(?<=[.!?\u2026])[\"'\u201c\u201d\u00bb)\]]*\s+(?=\S)")
+# After . ! ? or an ellipsis (and any closing quote or bracket), the
+# whitespace before the next sentence; or a line break anywhere.
+CLOSERS = "\"'“”»)]"
+SENTENCE_GAP = re.compile(r"(?<=[.!?…])[\"'“”»)\]]*\s+(?=\S)|\s*\n\s*(?=\S)")
+# the word before a full stop, after any opening quote or bracket
+ABBREV_TAIL = re.compile(r"(?:^|[\s(\[\"'„“«])([^\s(\[\"'„“«]+)\.$")
+ABBREVIATIONS = frozenset(
+    "ca nr dr prof bzw vgl ggf inkl exkl evtl mio mrd tsd st str tel abs art hr fr jh mr mrs ms vs "
+    "approx no resp min max sog zzgl abzgl".split()
+)
+MAYBE_END = frozenset({"usw", "etc"})
 DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 # What Edge parses: a calendar date, or an extended timestamp with Z or ±HH:MM.
 # Basic ISO, week dates and odd separators parse in Python and then vanish in the browser.
@@ -57,26 +67,76 @@ class TaskError(ValueError):
         super().__init__(f"{pointer}: {message}")
 
 
+def _boundaries(text):
+    """Where one sentence ends and the next starts: (end, start) pairs.
+
+    A line break always ends a sentence. A full stop does not when it closes
+    an abbreviation (z. B., ca., Nr., Dr., d. h., u. a., bzw., e.g.) or an
+    ordinal or date ("1. Schritt", "15. Mai"); usw. and etc. end one only
+    when a capital follows.
+    """
+    for match in SENTENCE_GAP.finditer(text):
+        gap = match.group(0)
+        end = match.start() + len(gap) - len(gap.lstrip(CLOSERS))
+        start = match.end()
+        if "\n" not in gap and text[end - 1] == "." and _abbreviation(text[:end], text[start:]):
+            continue
+        yield end, start
+
+
+def _abbreviation(head, tail):
+    word = ABBREV_TAIL.search(head)
+    if not word:
+        return False
+    token = word.group(1).lower()
+    if token.isdigit() or (len(token) == 1 and token.isalpha()) or "." in token:
+        return True
+    if token in MAYBE_END:
+        return not tail[:1].isupper()
+    return token in ABBREVIATIONS
+
+
 def sentences(text):
-    text = text.strip()
-    return [part for part in SENTENCE_END.split(text) if part] if text else []
+    text = (text or "").strip()
+    if not text:
+        return []
+    parts, at = [], 0
+    for end, start in _boundaries(text):
+        parts.append(text[at:end])
+        at = start
+    parts.append(text[at:])
+    return [part for part in parts if part]
 
 
 def split_why(text):
-    """The first three sentences, and the rest (shown folded)."""
-    parts = sentences(text or "")
-    return " ".join(parts[:MAX_WHY_SENTENCES]), " ".join(parts[MAX_WHY_SENTENCES:])
+    """The first three sentences, and the rest (shown folded). Line breaks
+    inside the shown part stay as written."""
+    text = (text or "").strip()
+    for index, (end, start) in enumerate(_boundaries(text), 1):
+        if index == MAX_WHY_SENTENCES:
+            return text[:end], text[start:]
+    return text, ""
 
 
 def present_why(text):
-    """Three sentences on show, the rest folded. A run longer than 360 characters
-    is cut there too, and the cut-off is folded rather than dropped."""
+    """Three sentences on show, the rest folded. A run longer than 360
+    characters is cut at the last word boundary before that, marked with an
+    ellipsis, and the cut-off is folded rather than dropped."""
     shown, more = split_why(text or "")
     if len(shown) > MAX_WHY:
-        extra = shown[MAX_WHY:].strip()
-        shown = shown[:MAX_WHY].rstrip()
+        cut = max(shown.rfind(" ", 0, MAX_WHY), shown.rfind("\n", 0, MAX_WHY))
+        if cut <= 0:
+            cut = MAX_WHY
+        extra = shown[cut:].strip()
+        shown = shown[:cut].rstrip() + "…"
         more = " ".join(part for part in (extra, more) if part)
     return shown, more
+
+
+def fits_banner(text):
+    """True when the text shows whole in the banner (three sentences, 360 characters)."""
+    shown, more = present_why(text)
+    return not more
 
 
 def why_warnings(why):
@@ -348,10 +408,16 @@ def task_view(payload, registry):
     for field in ("steps", "eta_min", "due"):
         if field in task:
             view[field] = task[field]
+    label = data.get("approve_label")
+    if template_id == "approve-one" and view["base"] == "approve_bot_acts" and isinstance(label, str) and label.strip():
+        view["label"] = label.strip()
     if isinstance(task.get("why"), str):
         text, source = task["why"].strip(), None
     else:
         text, source = default_why(template_id, data)
+        # a template text moves into the banner only when it shows whole there
+        if source and not fits_banner(text):
+            text, source = "", None
     view["why"], view["why_more"] = present_why(text)
     view["why_from"] = source
     return view
