@@ -82,12 +82,11 @@ This is the release candidate for 1.0. The desk is calmer, and you decide in one
   does not open an empty overall comment. The comment waits behind `Add a
   note`, and the request can be sent from the section comments alone. An
   empty section field closes when it loses focus, or with Esc.
-- Breaking: the `review-doc` result is stricter. `approve`, `done` and
-  `skipped` keep `comment` empty. `approve` may still carry section
-  comments. `request_changes` needs a non-blank overall comment, or a blank
-  one plus at least one section comment. A blank or whitespace-only section
-  comment does not count. Each section comment is `{section, heading,
-  comment}`.
+- Breaking: the `review-doc` result is stricter. `approve` keeps
+  `comment` empty and may still carry section comments. `request_changes`
+  needs a non-blank overall comment, or a blank one plus at least one
+  section comment. A section comment that is blank or only whitespace is
+  rejected. Each section comment is `{section, heading, comment}`.
 
 - **Social posts.** Breaking: an auto Instagram post allows 5 hashtags (the
   limit was 30). More than 5 blocks approval (`Cut to 5 hashtags to
