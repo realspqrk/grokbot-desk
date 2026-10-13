@@ -80,6 +80,7 @@ English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `rd_doc_la
 | `golden.json` | announcement draft, 5 sections, list, table, link |
 | `edge-max.json` | long season report: 8 sections, nested and numbered lists, two tables, a quote, a code block, a rule, strike-through, a media image (`fixtures/media/harvest-chart.png`, via `%RS_TEMPLATE%`) |
 | `edge-plain.json` | `format: text`: a reply letter, no sections, line breaks kept |
+| `edge-de.json` | the golden announcement in German, with a table, a link and one note callout, for German reviews |
 | `edge-report.json` | the model report: information only (`actor: none`), one-line TL;DR, a facts table, `- [x]` checks, one `[!WARNING]` callout, details last (under 400 words) |
 | `edge-html.json` | pasted HTML (`<p>`, `<b>`, `<script>`, `<a>`), a web image and links: all shown inert as text |
 | `invalid-empty-doc.json`, `invalid-format.json`, `invalid-image-key.json` | rejected at `/doc`, `/format`, `/images/0/key` |

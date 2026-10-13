@@ -19,8 +19,8 @@ It shows a short text, one copy value (`rs-copy`, a copy icon), one choice with 
 
 ```json
 {
-  "message": "Die Sicherung vom Server lief heute Nacht durch. Bitte kurz bestätigen, dass die Kontrolle erledigt ist, oder auf später schieben.",
-  "copy": { "label": "Pfad kopieren", "text": "\\\\files.example.invalid\\backup\\2026-10-08\\nightly.log" }
+  "message": "Last night's server backup finished. Please confirm that the check is done, or move it to later.",
+  "copy": { "label": "Copy path", "text": "\\\\files.example.invalid\\backup\\2026-10-08\\nightly.log" }
 }
 ```
 
@@ -37,9 +37,9 @@ Full envelope for `show`:
   "template": "_starter",
   "version": 1,
   "bot": "agent",
-  "title": "Sicherung prüfen",
+  "title": "Check the backup",
   "created": "2026-10-08T10:39:00+02:00",
-  "data": { "message": "…", "copy": { "label": "Pfad kopieren", "text": "…" } }
+  "data": { "message": "…", "copy": { "label": "Copy path", "text": "…" } }
 }
 ```
 
@@ -73,6 +73,7 @@ The agent reads the result from the selected data directory (`RS_DATA_DIR` or th
 | `schema.json`, `result.schema.json` | supported JSON-Schema keyword subset |
 | `fixtures/golden.json` | the screenshot fixture |
 | `fixtures/edge-max.json`, `fixtures/edge-no-copy.json` | all maxima with emoji/CJK/CRLF/tab; the optional copy left out |
+| `fixtures/edge-de.json` | the golden message in German |
 | `fixtures/invalid-empty-message.json`, `fixtures/invalid-long-label.json` | rejected at `/message` and `/copy/label` |
 | `fixtures/expect/golden.json` | `copies` (by `data-copy-id`), `flow` (mouse), `keyboard` (keys only), `result` (exact result data). `report-shell check` reports clearly that the `tools/e2e.mjs` backend is required to execute these expectations. |
 

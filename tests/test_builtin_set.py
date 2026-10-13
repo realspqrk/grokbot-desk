@@ -20,7 +20,7 @@ BUILTIN = ROOT / "templates" / "builtin"
 IDS = ("decide-list", "approve-one", "preview-post")
 FIXTURES = {
     "decide-list": {
-        "valid": ("golden", "edge-single", "edge-unicode", "edge-max", "edge-replies", "edge-many"),
+        "valid": ("golden", "edge-single", "edge-unicode", "edge-max", "edge-replies", "edge-many", "edge-de"),
         "invalid": {
             "invalid-too-many-items": "/items",
             "invalid-bad-choice": "/items/1/choices/0",
@@ -36,13 +36,13 @@ FIXTURES = {
         "expect": ("golden", "edge-access", "edge-de", "edge-max"),
     },
     "preview-post": {
-        "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-x-long", "edge-x-cjk", "edge-max", "quote-video", "mixed-image"),
+        "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-x-long", "edge-x-cjk", "edge-de", "edge-max", "quote-video", "mixed-image"),
         "invalid": {
             "invalid-hash-in-tag": "/hashtags/1",
             "invalid-no-platform": "/platforms",
             "invalid-image-and-video": "/video",
         },
-        "expect": ("golden", "edge-no-image", "edge-x-limit", "edge-x-long", "edge-x-cjk", "edge-max", "quote-video", "mixed-image"),
+        "expect": ("golden", "edge-no-image", "edge-x-limit", "edge-x-long", "edge-x-cjk", "edge-de", "edge-max", "quote-video", "mixed-image"),
     },
 }
 # Built-ins are product-neutral and do not carry vendor endorsements.

@@ -117,6 +117,7 @@ Tab ×5 passes the `…` menu and the two copy icons of the first card and reach
 | `schema.json`, `result.schema.json` | payload and result |
 | `fixtures/golden.json` | 5 items, every choice set, copies, due dates, a detail, done list |
 | `fixtures/edge-single.json` | one item, no kind, intro or done |
+| `fixtures/edge-de.json` | four invoices in German with German labels (Bezahlen, Nicht bezahlen, Nächste Woche) and one item label (Verlängern) |
 | `fixtures/edge-unicode.json` | emoji (ZWJ, flags, skin tone), CJK, Hangul, tabs, CRLF, decomposed umlauts |
 | `fixtures/edge-max.json` | every field at its maximum (12 items, 4 copies each, one 5000-character copy, 24-character labels, 12 done) |
 | `fixtures/edge-many.json` | 12 invoices with the payload's own labels (Pay, Dispute, Next week) and one item label |

@@ -107,9 +107,9 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   }
 
   for (const [id, valid] of [
-    ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies', 'edge-many']],
+    ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies', 'edge-many', 'edge-de']],
     ['approve-one', ['golden', 'edge-access', 'edge-de', 'edge-minimal', 'edge-max']],
-    ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-x-cjk', 'edge-max']],
+    ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-x-cjk', 'edge-de', 'edge-max']],
   ]) {
     test(`${id}: expect.flow (mouse) and expect.keyboard (keys only) write expect.result`, async () => {
       const expect = expectFor(id, 'golden');

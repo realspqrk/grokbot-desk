@@ -73,6 +73,7 @@ English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `po_sugges
 | `golden.json` | 3 venues, summaries, 3 aligned facts, a suggestion |
 | `edge-max.json` | 4 options, longest names and summaries, 6 facts each (4 columns; 2×2 when narrow) |
 | `edge-two.json` | 2 options with names only, no context, no suggestion |
+| `edge-de.json` | the golden comparison in German (question, context, option names, summaries and fact labels) for German reviews |
 | `edge-uneven.json` | German content, a missing summary and an uneven number of facts (rows stay aligned) |
 | `invalid-one-option.json`, `invalid-five-options.json`, `invalid-bad-id.json`, `invalid-duplicate-ids.json` | rejected at `/options` (too few, too many), `/options/0/id` and `/options/1/id` (two different options share the id `slot`) |
 | `expect/golden.json` | `flow` (mouse) and `keyboard` (keys only) produce the same `result` |

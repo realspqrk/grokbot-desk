@@ -26,6 +26,7 @@ const SHOTS = {
       'edge-single': '2027 holiday calendar',
       'edge-many': '12 invoices due this month',
       'edge-replies': 'Four replies to post',
+      'edge-de': 'Vier Rechnungen diesen Monat',
     },
   },
   'approve-one': {
@@ -44,22 +45,23 @@ const SHOTS = {
       golden: 'Autumn menu launch post',
       'edge-no-image': 'Bread class announcement',
       'edge-x-long': 'How the bread gets made',
+      'edge-de': 'Beitrag zur Herbstkarte',
     },
   },
   'pick-option': {
     bot: 'example-office-bot',
     identity: { name: 'Office Agent', avatar_shape: 'pebble', avatar_color: 'green' },
-    fixtures: { golden: 'Venue for the spring team day' },
+    fixtures: { golden: 'Venue for the spring team day', 'edge-de': 'Ort für den Frühjahrs-Teamtag' },
   },
   'review-doc': {
     bot: 'example-writer-bot',
     identity: { name: 'Writer Agent', avatar_shape: 'squircle', avatar_color: 'violet' },
-    fixtures: { golden: 'Spring opening announcement', 'edge-report': 'Weekly operations report' },
+    fixtures: { golden: 'Spring opening announcement', 'edge-report': 'Weekly operations report', 'edge-de': 'Ankündigung zur Saisoneröffnung' },
   },
   _starter: {
     bot: 'example-ops-bot',
     identity: { name: 'Ops Agent' },
-    fixtures: { golden: 'Nightly backup check' },
+    fixtures: { golden: 'Nightly backup check', 'edge-de': 'Nächtliche Sicherung prüfen' },
   },
 };
 

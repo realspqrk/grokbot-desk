@@ -156,6 +156,7 @@ Tab ×2 passes the `…` menu and reaches the selected tab (X, manual): Tab ×4 
 | `fixtures/edge-x-limit.json` | X and LinkedIn (auto), image 9:16; the X variant weighs 25,012 (blocked: `Shorten by 12 characters to approve`), LinkedIn shows the base text |
 | `fixtures/edge-x-long.json` | one X long post you post yourself (`post_yourself`), about 490 weighted: X folds after 280 with `Show more`, `Long post (X Premium)`, image 3:4 |
 | `fixtures/edge-x-cjk.json` | X and LinkedIn (auto), English, Japanese, a ZWJ emoji and a URL: 270 characters weigh 332 on X, which folds right before the URL because its 23 would cross 280 |
+| `fixtures/edge-de.json` | the golden mix in German (text, hashtags with an umlaut, first comment, image alt text, author) for German reviews |
 | `fixtures/edge-max.json` | every channel, 30 hashtags (X has its own two in `variants.x.hashtags`; Instagram blocked over 5), longest texts, 8 flags, image 4:5 |
 | `fixtures/invalid-hash-in-tag.json` | rejected at `/hashtags/1` |
 | `fixtures/invalid-no-platform.json` | rejected at `/platforms` |
