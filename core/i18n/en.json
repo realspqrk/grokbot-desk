@@ -114,7 +114,7 @@
   "comment_required": "Please write a comment to request changes",
   "select_platform": "Approve at least one platform",
   "preview_label": "{platform} preview",
-  "fold_hint": "Fold after {n} characters: the rest is behind “{more}”",
+  "fold_hint": "Cut after {n} characters; the rest is behind “{more}”",
   "fold_more_linkedin": "…more",
   "fold_more_instagram": "… more",
   "pf_now": "now",

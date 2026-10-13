@@ -475,6 +475,11 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
         const counted = await page.$eval(`[data-counter-id="${p}"]`, (el) => el.result.count);
         assert.equal(counted, RS_COUNT.count(composed, p).count, `${p}: counted`);
         assert.equal(counted, expect.counters[p].count, `${p}: hand oracle`);
+        if (p === 'x') {
+          assert.equal(await page.textContent('[data-counter-id="x"] .rs-counter__num'),
+            t('counter_value', { value: String(counted), limit: '280' }), 'a standard X post reads against 280');
+          assert.equal(await page.isHidden('#panel-x [data-pp="long-note"]'), true);
+        }
         await page.click(`[data-copy-id="${p}-text"] .rs-copy__btn`);
         await page.waitForSelector(`[data-copy-id="${p}-text"][data-state="copied"]`);
         assert.equal(log.copies.at(-1).text, composed, `${p}: copied`);
@@ -506,7 +511,27 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
         over: document.querySelector('[data-counter-id="x"]').hasAttribute('over'),
         long: document.querySelector('#panel-x [data-pp="long-note"]').textContent,
         reason: document.querySelector('#blocked-x').hidden,
+        /* X cuts at a word: the visible text before the ellipsis, the label on its own line */
+        cut: (() => {
+          const ellipsis = document.querySelector('#panel-x .rs-pf__ellipsis');
+          const range = document.createRange();
+          range.setStart(document.querySelector('#panel-x [slot="text"]'), 0);
+          range.setEndBefore(ellipsis);
+          return {
+            before: range.toString(),
+            ellipsis: ellipsis.getAttribute('data-label'),
+            block: getComputedStyle(document.querySelector('#panel-x .rs-pf__see-more')).display,
+          };
+        })(),
       }));
+      const cut = view.cut;
+      delete view.cut;
+      assert.equal(cut.ellipsis, '…');
+      assert.equal(cut.block, 'block', 'Show more stands on its own line');
+      assert.match(cut.before, /\S$/, 'the visible text ends on a word');
+      assert.match(composed.slice(cut.before.length), /^\s/, 'the cut is at whitespace');
+      assert.ok(RS_COUNT.count(cut.before, 'x').count <= 280, 'the visible part is a standard post');
+      assert.ok(cut.before.length > 200, 'the cut stays near 280');
       assert.deepEqual(view, {
         labels: [de.fold_more_x],
         notes: [t('fold_hint', { n: 280, more: de.fold_more_x })],

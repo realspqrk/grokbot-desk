@@ -116,7 +116,7 @@
   "comment_required": "Für Änderungen bitte einen Kommentar schreiben",
   "select_platform": "Mindestens eine Plattform freigeben",
   "preview_label": "Vorschau {platform}",
-  "fold_hint": "Falz nach {n} Zeichen: der Rest steht hinter „{more}“",
+  "fold_hint": "Gekürzt nach {n} Zeichen; der Rest steht hinter „{more}“",
   "fold_more_linkedin": "…mehr",
   "fold_more_instagram": "… mehr",
   "pf_now": "Jetzt",
