@@ -353,7 +353,7 @@ async function auditCopyFocusState(page, stateIndex) {
     const rovingMembers = await page.evaluate(() => {
       const groupSelector = '[role=radiogroup],[role=toolbar],[role=tablist]';
       const group = document.activeElement?.closest?.(groupSelector);
-      // P8d: arrows on the shell's report strip switch reports and it holds
+      // Arrows on the shell's report strip switch reports and it holds
       // no copies (tools/e2e.mjs audits its arrows); template groups arrow
       if (!group || (
         group.id === 'rs-strip' && group.closest('#rs-strip-nav') && !group.closest('#rs-mount')
@@ -995,7 +995,7 @@ export function calmEvaluator(options) {
       };
     });
 
-  // P8d: the avatar strip of open reports (older pages and fixtures: a rail)
+  // The avatar strip of open reports (older pages and fixtures: a rail)
   const strip = document.getElementById('rs-strip-nav') || [...document.querySelectorAll(
     '.rs-strip,[data-rs-strip],.rs-rail,[data-rs-rail],nav[aria-label*="run" i]',
   )].find((element) => !element.closest('#rs-mount')) || null;

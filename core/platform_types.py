@@ -4,7 +4,7 @@ from enum import Enum
 from pathlib import Path
 
 
-# P8d: the default app window is a compact pop-up for one report: an
+# The default app window is a compact pop-up for one report: an
 # 864x836 viewport (the 760 px column with its padding; every built-in golden
 # but the long review-doc fits without scrolling) plus the measured Edge app
 # frame of 16x84 px on Windows 11 (tools/dev/popup-measure.mjs --chrome).

@@ -77,7 +77,7 @@
   --rs-on-disabled: #636366;
   --rs-avatar-bg: #dcdce1;  /* neutral initials disc, ink text */
 
-  /* --- shape avatars (P8c): fills of the named colours; the eyes are holes.
+  /* --- shape avatars: fills of the named colours; the eyes are holes.
      Vivid like the bot app's avatars; decorative (the name is the text).
      --rs-avatar-default = the theme's default accent (no colour given) --- */
   --rs-avatar-blue: #0e74e0;

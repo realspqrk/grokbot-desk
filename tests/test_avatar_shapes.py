@@ -1,4 +1,4 @@
-"""P8c shape avatars: core shape set, enum validation, precedence, accent seed."""
+"""Shape avatars: core shape set, enum validation, precedence, accent seed."""
 import importlib.util
 import json
 import os

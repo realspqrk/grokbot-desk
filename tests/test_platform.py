@@ -477,7 +477,7 @@ def test_darwin_direct_launch_uses_one_canonical_profile_and_posix_detachment(
     assert result.identity.pid == 321
     assert result.identity.user_data_dir == profile
     assert args.count(f"--user-data-dir={profile}") == 1
-    assert "--window-size=880,920" in args   # P8d pop-up default
+    assert "--window-size=880,920" in args   # pop-up default
     assert "--window-position=2,3" in args
     assert options == {
         "shell": False,

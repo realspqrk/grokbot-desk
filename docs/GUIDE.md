@@ -111,7 +111,7 @@ German is the default; set `RS_LANG=en` before starting the server to select Eng
 
 ## 7. Accessibility
 
-Checklist (spec 5.2). The core already gives `lang="de"`, visible focus, token contrast and the keyboard map; templates must not break them.
+Checklist. The core already gives `lang="de"`, visible focus, token contrast and the keyboard map; templates must not break them.
 
 - [ ] Every control has an accessible name: a `<label for>` filled by `data-rs-t`, or `data-rs-t-aria-label`; `rs-action-row` gets a `label` (e.g. `RS.t('choice_group_label', {what: ...})` = `Entscheidung: ...`).
 - [ ] Every image has alt text (payload `alt`, or `data-rs-t-alt`).
@@ -182,7 +182,7 @@ To reuse a shipped UI, add `"extends": "<builtin id>"` to the user manifest. Inh
 
 Calm-UI helpers (template API, all scoped to the active report):
 
-- `RS.time(iso)`: a timestamp in **Europe/Vienna**, whatever the machine's time zone. German `Do 08.10.2026 · 10:39` (spec 2.9), English `Thu, Oct 8, 2026 · 10:39`. Accepts `Z` and any offset.
+- `RS.time(iso)`: a timestamp in **Europe/Vienna**, whatever the machine's time zone. German `Do 08.10.2026 · 10:39`, English `Thu, Oct 8, 2026 · 10:39`. Accepts `Z` and any offset.
 - `RS.date(isoDate)`: a calendar date (`2026-10-15`, the same day everywhere). German `15.10.`, English `Oct 15`.
 - `RS.number(n)`: grouped by the selected string table: German `99.999`, English `99,999`. The table is German by default; `RS_LANG=en` selects English.
 - `RS.setAlternative(label, onClick)` / `RS.setAlternative(null)`: the one quiet footer alternative next to the primary (e.g. *Request changes*). It is reset on every report switch.
@@ -384,12 +384,12 @@ When no report is on screen while some wait (for example, a report failed to loa
 ## Deviations from the spec
 
 - All CLI output (stdout and stderr) is pure ASCII: JSON escapes non-ASCII characters (`\u00e4`), so it survives any console code page. `ConvertFrom-Json` restores them.
-- `result` returns exit 6 both for an unknown run and for a known run without a result yet (spec 3.1 lists only 0 and 6).
-- `show --data` also accepts a bare `data` object and wraps it in an envelope (not in spec 3.1).
-- `list` exits 7, and `open` / `stop` can exit 4, which spec 3.1 does not list.
+- `result` returns exit 6 both for an unknown run and for a known run without a result yet.
+- `show --data` also accepts a bare `data` object and wraps it in an envelope.
+- `list` exits 7, and `open` / `stop` can exit 4.
 - A payload file or stdin may start with one UTF-8 BOM, which is stripped; JSON nesting is limited to 64 levels (exit 2 beyond).
-- The template lint treats any `//` in `template.html`, `template.css` or `template.js` as a URL, so `//` comments fail (spec 4.4 names only URLs).
-- Localised attributes use `data-rs-t-<attribute>` and literal UI strings in `template.js` fail the lint (plan 2.4; not in spec 4.4).
+- The template lint treats any `//` in `template.html`, `template.css` or `template.js` as a URL, so `//` comments fail.
+- Localised attributes use `data-rs-t-<attribute>` and literal UI strings in `template.js` fail the lint.
 - `check` also needs `node tools\visual.mjs` for `--visual` (exit 7 if missing) and runs `node tools\e2e.mjs expect <id>` when `fixtures\expect\` exists.
-- The `● ` prefix stays while any open run is unread, not only the active one (spec 2.4).
+- The `● ` prefix stays while any open run is unread, not only the active one.
 - The clipboard writer opens the clipboard with a message-only window (`CreateWindowExW`) so it does not depend on a visible UI window.

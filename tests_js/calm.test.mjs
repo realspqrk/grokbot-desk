@@ -396,7 +396,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   });
 
-  test('P8d fix1: only the shell strip with verified arrow keys counts as the report switcher', async () => {
+  test('Only the shell strip with verified arrow keys counts as the report switcher', async () => {
     const source = readFileSync(path.join(ROOT, 'tools/e2e.mjs'), 'utf8');
     const scope = {
       CALM_THRESHOLDS,

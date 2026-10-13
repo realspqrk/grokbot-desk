@@ -12,7 +12,7 @@ It shows a short text, one copy value (`rs-copy`, a copy icon), one choice with 
 
 ## Purpose
 
-- A working example of the template contract (spec section 4) that passes `report-shell check _starter`.
+- A working example of the template contract that passes `report-shell check _starter`.
 - The patterns to copy: German text only via `data-rs-t` / `RS.t`, payload text via `textContent`, `RS.setResult(null)` until the input is complete, drafts via `RS.draft`, and `data-copy-id` on every `rs-copy`.
 
 ## Payload `data` (`schema.json`)
@@ -70,7 +70,7 @@ The agent reads the result from the selected data directory (`RS_DATA_DIR` or th
 | `template.html` | partial; no literal text, only `<span data-rs-t="key"></span>`; only core custom elements |
 | `template.css` | `var(--rs-*)` tokens only; no colour literals, no URLs |
 | `template.js` | body of `function (RS, root)`; RS API only; block comments only (`//` fails the URL lint) |
-| `schema.json`, `result.schema.json` | supported JSON-Schema keyword subset (spec 4.4) |
+| `schema.json`, `result.schema.json` | supported JSON-Schema keyword subset |
 | `fixtures/golden.json` | the screenshot fixture |
 | `fixtures/edge-max.json`, `fixtures/edge-no-copy.json` | all maxima with emoji/CJK/CRLF/tab; the optional copy left out |
 | `fixtures/invalid-empty-message.json`, `fixtures/invalid-long-label.json` | rejected at `/message` and `/copy/label` |

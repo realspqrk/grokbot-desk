@@ -1,4 +1,4 @@
-// P8d pop-up layout (served, headless Edge): one open report is a compact
+// Pop-up layout (served, headless Edge): one open report is a compact
 // pop-up with no strip; two or more show a slim avatar strip at the top
 // ("n of m open"), the active one underlined. A decision advances to the next
 // open report; after the last one a calm done state shows and the window
@@ -31,7 +31,7 @@ const BOTS = [
 ];
 const isoAt = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
 
-describe('P8d pop-up: strip, auto-advance, done state, keyboard (served, headless Edge)', { skip }, () => {
+describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Edge)', { skip }, () => {
   let server;
   let browser;
 

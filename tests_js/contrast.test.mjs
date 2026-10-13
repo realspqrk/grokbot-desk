@@ -1,4 +1,4 @@
-// Token contrast (spec 5.2): every pair in contrast-pairs.json passes in both themes.
+// Token contrast: every pair in contrast-pairs.json passes in both themes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

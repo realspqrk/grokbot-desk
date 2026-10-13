@@ -1,4 +1,4 @@
-// P8c shape avatars in the served shell (headless Edge): the page draws only
+// Shape avatars in the served shell (headless Edge): the page draws only
 // shapes of the core set (boot.avatar_shapes, path data, eyes as holes), in
 // the named fill per theme, in the strip, header and "…" menu; image > shape >
 // initials; unknown names fall back; the colour seeds the accent.
@@ -34,7 +34,7 @@ function hex(rgb) {
   return m ? '#' + m.slice(0, 3).map((x) => Number(x).toString(16).padStart(2, '0')).join('') : String(rgb);
 }
 
-describe('P8c shape avatars (served, headless Edge)', { skip }, () => {
+describe('shape avatars (served, headless Edge)', { skip }, () => {
   let server;
   let browser;
   const runs = {};
@@ -281,7 +281,7 @@ describe('P8c shape avatars (served, headless Edge)', { skip }, () => {
         }));
         assert.equal(header.name, 'Registry Agent');
         assert.equal(header.weight, '600');
-        assert.equal(header.line, 'Registry shape');   // P8d: the report title, never a time (K11)
+        assert.equal(header.line, 'Registry shape');   // the report title, never a time (K11)
         assert.equal(hex(header.lineColor), header.muted.toLowerCase());
         await page.click('#rs-more-btn');
         const menu = (await avatars(page)).find((item) => item.where === 'menu');

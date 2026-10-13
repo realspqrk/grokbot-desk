@@ -1,4 +1,4 @@
-// Dev screenshots for the P8d pop-up layout on the real served shell
+// Dev screenshots for the pop-up layout on the real served shell
 // (isolated server, temp data dir, headless Edge, English UI), light and
 // dark, at 1280x720 and at the default pop-up viewport (864x836: the 880x920
 // window minus the measured app frame):

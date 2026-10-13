@@ -1,4 +1,4 @@
-"""P8d pop-up layout: window default, strings and shell structure."""
+"""Pop-up layout: window default, strings and shell structure."""
 import json
 import re
 from html.parser import HTMLParser
@@ -84,7 +84,7 @@ def test_shell_css_has_no_rail_and_paints_the_strip_in_ink():
 
 
 # ------------------------------------------------ app-window ownership --
-# P8d fix1: only the window the server launched with --app may close itself.
+# Only the window the server launched with --app may close itself.
 # The launch URL carries the launch generation as a one-time `app` token; the
 # page presents it on /events and the server answers `event: window`
 # {"app": true} only while that launch is pending. Ordinary tabs (no token,
@@ -148,7 +148,7 @@ def test_launch_url_carries_the_one_time_app_token(tmp_path, monkeypatch):
     urls = []
     probed = []
     monkeypatch.setattr(cli_module, "launch_window", lambda url, *rest: urls.append(url) or LaunchResult("app"))
-    # P8d fix2: the readiness probe is stubbed too; the URLs name a port
+    # The readiness probe is stubbed too; the URLs name a port
     # nothing here owns, so no real server is ever asked
     monkeypatch.setattr(cli_module, "_hello", lambda port, *rest, **kw: probed.append(port))
     cli_module._launch_window_once(base, "http://127.0.0.1:18981/?launch=r1&run=r1", {})
@@ -193,7 +193,7 @@ def test_only_the_launched_window_is_told_it_owns_the_app_window(tmp_path, monke
 
 
 def test_a_launch_token_is_claimed_by_exactly_one_page(tmp_path):
-    # P8d fix2: the pending launch stays readable until the first stream has
+    # The pending launch stays readable until the first stream has
     # written its answer, so pages racing with the same token all saw it;
     # the claim binds the launch to one sid atomically before answering
     import secrets
@@ -245,7 +245,7 @@ def test_a_launch_token_is_claimed_by_exactly_one_page(tmp_path):
 
 
 def test_a_reload_takes_over_the_app_window_only_from_a_page_that_is_gone(tmp_path):
-    # P8d fix2: a tab the app window opens inherits its sessionStorage, so a
+    # A tab the app window opens inherits its sessionStorage, so a
     # stored flag made that ordinary tab close itself. The app window keeps
     # its launch token and its current sid for itself (window.name, which a
     # new tab does not inherit); a new page in that window (a reload) names
@@ -281,7 +281,7 @@ def test_a_reload_takes_over_the_app_window_only_from_a_page_that_is_gone(tmp_pa
 
 
 def test_a_burst_of_page_requests_is_never_refused(tmp_path):
-    # P8d fix1: socketserver's default listen backlog (5) made Windows reset
+    # socketserver's default listen backlog (5) made Windows reset
     # some of a page's parallel subresource connections under load (an
     # unstyled page, or no rs.js and so no data-rs-ready: the calm abort)
     import http.client

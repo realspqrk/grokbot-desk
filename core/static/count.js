@@ -1,4 +1,4 @@
-/* grokbot-desk: platform character counter (spec 4.7, C6).
+/* grokbot-desk: platform character counter (C6).
  * UMD: in the browser it sets window.RS_COUNT; in Node it is module.exports
  * (load it with createRequire). Rules and limits live in platforms.json; the
  * exact rules are written down in its "notes".

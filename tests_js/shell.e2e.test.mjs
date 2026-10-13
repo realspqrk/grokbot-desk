@@ -1,4 +1,4 @@
-// Browser tests for the served shell + _starter + core components (plan 2.5).
+// Browser tests for the served shell + _starter + core components.
 // Isolated server in the worker's assigned range with a temp RS_DATA_DIR; headless Edge via
 // playwright-core loaded by absolute path. The server is stopped in after().
 import { test, describe, before, after, beforeEach } from 'node:test';
@@ -622,7 +622,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       const req = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       assert.deepEqual(JSON.parse((await req).postData()), { run_id: a.run_id });
-      // P8d: the discard is a decision, so the pop-up moves on to B
+      // The discard is a decision, so the pop-up moves on to B
       await page.waitForFunction((id) => window.RS.activeRun === id
         && document.documentElement.dataset.rsReady === '1', b.run_id);
       assert.equal(server.result(a.run_id).status, 'cancelled');
@@ -839,7 +839,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.click('#rs-submit');
       assert.deepEqual(JSON.parse((await submitted).postData()), { run_id: a.run_id, data: expected });
       await page.unroute(`**/api/run/${b.run_id}`);
-      // P8d: once sent, the pop-up advances to B
+      // Once sent, the pop-up advances to B
       await page.waitForFunction((id) => window.RS.activeRun === id
         && document.documentElement.dataset.rsReady === '1', b.run_id);
       assert.deepEqual(server.result(a.run_id).data, expected);
@@ -906,7 +906,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       const submitted = page.waitForRequest((request) => request.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       assert.deepEqual(JSON.parse((await submitted).postData()), { run_id: b.run_id, data: expected });
-      // P8d: once sent, the pop-up advances to the open A with its draft
+      // Once sent, the pop-up advances to the open A with its draft
       await page.waitForFunction((id) => window.RS.activeRun === id
         && document.documentElement.dataset.rsReady === '1', a.run_id);
       assert.deepEqual(server.result(b.run_id).data, expected);
@@ -1039,7 +1039,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await kit.goto(pathToFileURL(path.join(ROOT, 'tools/dev/kit-preview.html')).href);
       const visible = await kit.locator('body').innerText();
       assert.match(visible, /Inbox Agent/);
-      // P8d: the waiting report is an avatar in the strip, named by bot and title
+      // The waiting report is an avatar in the strip, named by bot and title
       assert.match(await kit.getAttribute('.rs-strip__run:not([aria-current])', 'aria-label'), /^Social Agent · /);
       assert.match(visible, /Northwind/);
     } finally { await ctx.close(); }
@@ -1112,7 +1112,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await page.textContent('.rs-banner[data-banner="expired"]'), de.run_expired_msg);
       assert.equal(await page.isDisabled('#rs-submit'), true);
       assert.equal(await page.isDisabled('#rs-discard'), true);
-      // P8d: a decided report is not in the strip of open reports
+      // A decided report is not in the strip of open reports
       assert.equal(await page.$(`.rs-strip__run[data-run-id="${run.run_id}"]`), null);
     } finally { await ctx.close(); }
   });

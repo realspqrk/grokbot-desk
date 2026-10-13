@@ -1,4 +1,4 @@
-// RS.count tests (spec 4.7, C6). Run: node --test tests_js/
+// RS.count tests (C6). Run: node --test tests_js/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -222,7 +222,7 @@ test('X: 140 emoji = 280 (boundary), 141 = over', () => {
 });
 
 // review round 1, finding 2: only emoji sequences weigh 2; text-presentation
-// characters without U+FE0F use the per-code-point rule (spec 4.7)
+// characters without U+FE0F use the per-code-point rule
 test('X: text-presentation characters without U+FE0F use the code-point weight', () => {
   assert.equal(count('\u00A9', 'x').count, 1); // © in 0-4351
   assert.equal(count('\u00AE', 'x').count, 1); // ®

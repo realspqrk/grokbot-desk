@@ -90,7 +90,7 @@ class SSEHub:
         self._lock = threading.Lock()
         self._subscribers = {}
         self._page_generations = {}
-        # P8d fix2: launch generation -> the one sid that owns its app window
+        # Launch generation -> the one sid that owns its app window
         self._app_owners = {}
         self._next_id = 0
 
@@ -122,7 +122,7 @@ class SSEHub:
             return self._next_id, subscriber
 
     def claim_app_window(self, sid, token, launch_generation, previous=None):
-        """P8d fix2: a launch's app window belongs to exactly one page. The
+        """A launch's app window belongs to exactly one page. The
         first stream presenting the pending launch's token claims it under
         the hub lock, before any page is told; the same page (sid)
         reconnecting keeps it. A new page in the app window (a reload)
@@ -562,7 +562,7 @@ class Handler(BaseHTTPRequestHandler):
             launch_generation=launch_generation,
         )
         launch_generation = subscriber["launch_generation"]
-        # P8d: the page the CLI launched with --app presents that launch's
+        # The page the CLI launched with --app presents that launch's
         # one-time token (?app=); only it may close itself after its last
         # decision. The first page presenting it claims it (hub, atomic); a
         # reload in that window names the page it replaces (?prev=).

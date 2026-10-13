@@ -924,7 +924,7 @@ async function tabAudit(page, options = {}) {
       const entry = compositeMembers.get(group)
         .find((element) => element.tabIndex === 0)?.dataset.rsTabAuditId;
       if (entry) {
-        // P8d: the shell's report strip (only #rs-strip in #rs-strip-nav,
+        // The shell's report strip (only #rs-strip in #rs-strip-nav,
         // never markup inside the template mount) switches the shown report
         // with its arrow keys; its members are identified by run id
         const runs = compositeMembers.get(group).map((element) => element.dataset.runId || null);
@@ -1052,7 +1052,7 @@ async function tabAudit(page, options = {}) {
   return { expected, seen, groups: scan.groups };
 }
 
-/* P8d: the report strip's own keyboard evidence. ArrowRight must move the
+/* The report strip's own keyboard evidence. ArrowRight must move the
    focus to the next entry, make that report the shown one (aria-current,
    one Tab stop, ready again) with a visible focus ring, and wrap around to
    the entry, so it ends on the report it started from. */
@@ -1577,7 +1577,7 @@ const IDENTITY_FOREIGN = [
 const IDENTITY_SCENES = [
   { fixture: 'golden+custom-accent', identity: { name: 'Research Agent', accent: '#0891b2' }, fallback: ['light'] },
   { fixture: 'golden+low-contrast-accent', identity: { name: 'Travel Agent', accent: '#f6c945' }, fallback: ['light'] },
-  // P8c shape avatars: every shape is in a strip across the scenes; the shown
+  // Shape avatars: every shape is in a strip across the scenes; the shown
   // report's colour seeds its accent (violet fails dark, orange fails light).
   // Avatar fills are media like an image, not accent fills.
   {

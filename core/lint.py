@@ -7,7 +7,7 @@ ALLOWED_CUSTOM = {
     "rs-card", "rs-action-row", "rs-copy", "rs-badge", "rs-counter",
     "rs-post-frame", "rs-confirm",
 }
-# P8d: the calm checkers treat only the shell's own strip as the report switcher
+# The calm checkers treat only the shell's own strip as the report switcher
 RESERVED_STRIP_IDS = {"rs-strip", "rs-strip-nav", "rs-strip-count", "rs-rail", "rs-rail-nav"}
 STRIP_RESERVED = "data-rs-strip, data-rs-rail and the rs-strip ids are reserved for the shell's report strip"
 

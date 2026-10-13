@@ -16,7 +16,7 @@ warning and the next source is used. A valid accent that fails the WCAG checks
 in a theme falls back to that theme's default accent; the theme is recorded in
 ``accent_fallback``.
 
-Shape avatars (P8c): ``avatar_shape`` and ``avatar_color`` name one of the
+Shape avatars: ``avatar_shape`` and ``avatar_color`` name one of the
 fixed shapes and fills of ``static/avatar-shapes.json`` (core draws them; no
 SVG is ever taken from a bot). Empty = no value (initials), but the source
 still decides the avatar; a wrong type is dropped with a warning (a source
@@ -70,7 +70,7 @@ BIDI_CONTROLS = set("؜‎‏‪‫‬‭‮⁦⁧⁨⁩")
 ACCENT_TOKENS = ("--rs-accent", "--rs-accent-hover", "--rs-on-accent", "--rs-focus")
 ON_ACCENT_CHOICES = ("#ffffff", "#000000")
 HOVER_MIX = 0.15
-# WCAG checks for a custom accent, per theme (spec 3): accent and hover fills
+# WCAG checks for a custom accent, per theme: accent and hover fills
 # against page/surface >= 3:1 (1.4.11), label on either fill >= 4.5:1 (AA),
 # and the focus ring (= accent) >= 3:1 against every background it is drawn on
 # (the --rs-focus pairs of contrast-pairs.json).

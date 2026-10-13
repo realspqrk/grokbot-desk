@@ -35,7 +35,7 @@ def test_launch_uses_app_profile_and_detached_flags(tmp_path, monkeypatch):
     assert result.identity.pid == 41
     assert "--app=http://127.0.0.1:9999/?launch=x" in args
     assert f"--user-data-dir={tmp_path / 'edge-profile'}" in args
-    assert "--window-size=880,920" in args   # P8d pop-up default
+    assert "--window-size=880,920" in args   # pop-up default
     assert "--window-position=2,3" in args
     assert kwargs["shell"] is False
     assert kwargs["creationflags"] & launcher.DETACHED_PROCESS

@@ -1,4 +1,4 @@
-// Dev screenshots for P8c shape avatars on the real served shell (isolated
+// Dev screenshots for shape avatars on the real served shell (isolated
 // server, temp data dir, headless Edge, English UI):
 //   contact-sheet-<theme>@<1|2>x.png  every shape x every colour (+ default
 //       fill and the initials fallbacks) at 24, 32 and 64 px, drawn with the

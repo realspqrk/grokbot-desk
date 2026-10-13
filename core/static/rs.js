@@ -1,4 +1,4 @@
-/* grokbot-desk page core (spec 2.4-2.8, 4.3, 5.2).
+/* grokbot-desk page core.
  *
  * Load order (shell.html <head>): count.js, rs.js, components.js; then the
  * inline template blocks call RS._define(id, fn). Everything that touches
@@ -28,10 +28,10 @@
         body: JSON.stringify({ sid: sid }) }).catch(function () {});
     } catch (e) { /* page is going away */ }
   });
-  /* P8d fix1: the window the CLI launched with --app carries that launch's
+  /* The window the CLI launched with --app carries that launch's
      one-time token (?app=); the page presents it on /events and only a
      confirmed page (event window) may close itself after its last decision.
-     The token leaves the address at once. P8d fix2: the confirmed window
+     The token leaves the address at once. The confirmed window
      keeps the token and this page's sid in window.name, not in
      sessionStorage: a tab opened from the app inherits its sessionStorage
      but starts with an empty name. A reload (a new page, a new sid) presents
@@ -104,7 +104,7 @@
   // ------------------------------------------------- locale formats --
   // Dates and numbers follow the selected string table (de default, en):
   // German "15.10." / "99.999", English "Oct 15" / "99,999". Timestamps are
-  // always Europe/Vienna (spec 2.9), whatever the machine's time zone:
+  // always Europe/Vienna, whatever the machine's time zone:
   // German "Do 08.10.2026 · 10:39", English "Thu, Oct 8, 2026 · 10:39".
   var LOCALE = boot.lang === 'en' ? 'en-US' : 'de-DE';
   var numberFmt = new Intl.NumberFormat(LOCALE);
@@ -555,7 +555,7 @@
   // Each run carries its bot's name, avatar URL (same origin, or null for
   // initials) and, for the shown run only, accent tokens per theme. The shown
   // run sets the one accent; strip entries never carry one (C16/K1).
-  // P8c: a run may also name a shape and colour. The page draws the shape from
+  // A run may also name a shape and colour. The page draws the shape from
   // the core set in boot.avatar_shapes (path data only, never bot SVG); the
   // eyes are holes. Precedence: image > shape > initials.
   var HEX = /^#[0-9a-f]{6}$/;
@@ -663,7 +663,7 @@
     document.documentElement.setAttribute('data-rs-accent', '');
   }
 
-  /* P8d header: the avatar, the bot's name in bold and, as the one quiet
+  /* The avatar, the bot's name in bold and, as the one quiet
      line below it, the report title (the page's h1); a decided report says
      so in its result banner, times stay in the "…" menu (K11) */
   function renderBot(run) {
@@ -864,7 +864,7 @@
   }
 
   // ------------------------------------------------------------ strip --
-  /* P8d: the window is a pop-up for one decision at a time. With 2+ open
+  /* The window is a pop-up for one decision at a time. With 2+ open
      reports a slim strip above the header shows each one's avatar with its
      waiting dot (filled while new, a ring once seen), the active one
      underlined, and "n of m open". It is one Tab stop (roving tabindex):
@@ -1254,7 +1254,7 @@
   }
 
   // ------------------------------------------------ after a decision --
-  /* P8d: after the person's own decision (send or discard) the pop-up moves
+  /* After the person's own decision (send or discard) the pop-up moves
      on to the next open report. After the last one it shows a calm done
      state in the result banner; the app window the server launched (see
      appWindow) then closes after a moment; "Keep open", a new report or a
@@ -1864,7 +1864,7 @@
       showEmpty();
       return;
     }
-    /* switching rule (spec 2.8): an open report on screen always
+    /* switching rule: an open report on screen always
        stays, touched or not; an arrival becomes active only when nothing
        open is shown (empty, or the shown report is decided or gone) and no
        other report is loading. The oldest arrival goes first; the rest wait

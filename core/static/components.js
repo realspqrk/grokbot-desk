@@ -1,4 +1,4 @@
-/* report-shell core components (spec 4.3, 5.2).
+/* report-shell core components.
  *
  * Light DOM only (no shadow DOM), so tokens, shell.css, axe and the text
  * checks reach every node. Styles live in shell.css. Components talk to the

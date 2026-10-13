@@ -1,11 +1,11 @@
-// German string table (spec 5.3, 4.6, 4.7).
+// German string table.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const de = JSON.parse(readFileSync(new URL('../core/i18n/de.json', import.meta.url), 'utf8'));
 
-test('spec 5.3 core set, exact wording', () => {
+test('core set, exact wording', () => {
   const core = {
     submit: 'An Bot senden', discard: 'Verwerfen', seen: 'Gesehen', copy: 'Kopieren',
     copied: 'Kopiert ✓', copy_text: 'Text kopieren', copy_hashtags: 'Hashtags kopieren',
@@ -19,7 +19,7 @@ test('spec 5.3 core set, exact wording', () => {
   for (const [k, v] of Object.entries(core)) assert.equal(de[k], v, k);
 });
 
-test('template strings from spec 4.6 / 4.7', () => {
+test('template strings', () => {
   const want = {
     section_todo: 'Wartet auf dich' /* calm UI: no icon, no count */, section_done: 'Erledigt', section_feed: 'Feed', section_keep: 'Behalten',
     verb_pay: 'Zahlen', verb_sign: 'Unterschreiben', verb_reply: 'Antworten', verb_shop: 'Neuer Shop',

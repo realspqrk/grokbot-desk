@@ -1,4 +1,4 @@
-// P8d: measures what the pop-up window needs for one report. For every
+// Measures what the pop-up window needs for one report. For every
 // golden fixture of the built-in and shipped templates (one open report, no
 // strip) it renders the served shell at the given viewport width and reports
 // the natural height: header + the report's content + the submit bar, i.e.
