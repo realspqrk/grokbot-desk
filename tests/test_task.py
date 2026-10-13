@@ -215,6 +215,29 @@ def test_sentences_still_split_after_a_real_end_and_keep_closing_quotes():
     assert sentences("Eins. Zwei! Drei?") == ["Eins.", "Zwei!", "Drei?"]
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Fertig... Nicht deployen. Erst pruefen. Sonst stoppen.",
+         ["Fertig...", "Nicht deployen.", "Erst pruefen.", "Sonst stoppen."]),
+        ("Fertig… Nicht deployen.", ["Fertig…", "Nicht deployen."]),
+        ("Wir liefern Version 2.4. Danach prüfen wir.", ["Wir liefern Version 2.4.", "Danach prüfen wir."]),
+        ("Das war 2026. Jetzt kommt 2027.", ["Das war 2026.", "Jetzt kommt 2027."]),
+        ("Siehe example.com. Dort steht mehr.", ["Siehe example.com.", "Dort steht mehr."]),
+        ("Der 1. Schritt ist erledigt. Am 15. Mai folgt der Rest.",
+         ["Der 1. Schritt ist erledigt.", "Am 15. Mai folgt der Rest."]),
+    ],
+)
+def test_ellipses_numbers_and_dotted_words_end_a_sentence(text, expected):
+    assert sentences(text) == expected
+
+
+def test_a_four_sentence_why_after_an_ellipsis_still_folds():
+    shown, more = present_why("Fertig... Nicht deployen. Erst pruefen. Sonst stoppen.")
+    assert shown == "Fertig... Nicht deployen. Erst pruefen."
+    assert more == "Sonst stoppen."
+
+
 def test_a_why_keeps_its_line_breaks():
     shown, more = split_why("Erste Zeile.\nZweite Zeile.\n\nDritte Zeile.\nVierte Zeile.")
     assert shown == "Erste Zeile.\nZweite Zeile.\n\nDritte Zeile."

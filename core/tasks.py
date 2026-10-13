@@ -73,8 +73,9 @@ def _boundaries(text):
 
     A line break always ends a sentence. A full stop does not when it closes
     an abbreviation (z. B., ca., Nr., Dr., d. h., u. a., bzw., e.g.) or an
-    ordinal or date ("1. Schritt", "15. Mai"); usw. and etc. end one only
-    when a capital follows.
+    ordinal or day ("1. Schritt", "15. Mai"); usw. and etc. end one only
+    when a capital follows. "..." ends one, and so does a longer number or a
+    version ("2026.", "2.4.").
     """
     for match in SENTENCE_GAP.finditer(text):
         gap = match.group(0)
@@ -85,15 +86,27 @@ def _boundaries(text):
         yield end, start
 
 
+# z.B., d.h., u.a., e.g., i.e.: single letters joined by dots
+DOTTED_LETTERS = re.compile(r"^(?:[^\W\d_]\.)+[^\W\d_]$")
+# an ordinal or a day of the month: "1. Schritt", "15. Mai"
+ORDINAL = re.compile(r"^[0-9]{1,2}$")
+
+
 def _abbreviation(head, tail):
+    if head.endswith("..."):
+        return False  # an ASCII ellipsis ends a sentence like "…"
     word = ABBREV_TAIL.search(head)
     if not word:
         return False
     token = word.group(1).lower()
-    if token.isdigit() or (len(token) == 1 and token.isalpha()) or "." in token:
+    if ORDINAL.fullmatch(token):
+        return True
+    if (len(token) == 1 and token.isalpha()) or DOTTED_LETTERS.fullmatch(token):
         return True
     if token in MAYBE_END:
         return not tail[:1].isupper()
+    # any other number or version (2026., 2.4.) and any dotted word
+    # (example.com.) ends the sentence
     return token in ABBREVIATIONS
 
 

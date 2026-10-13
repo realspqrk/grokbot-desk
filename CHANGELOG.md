@@ -13,7 +13,8 @@
 - A template's summary, intro, context or notes becomes the banner's why only
   when it fits whole (three sentences, 360 characters); otherwise it stays in
   the report. Line breaks are kept, German abbreviations (`z. B.`, `ca.`,
-  `Nr.`) and ordinals no longer end a sentence, and a cut falls between words.
+  `Nr.`) and ordinals no longer end a sentence, while `...`, a year or a
+  version number at the end still do, and a cut falls between words.
 - Discard report moves from the footer into the `…` menu, behind the same
   confirmation. The footer holds the status, up to two quiet alternatives
   (`RS.setAlternatives`) and the one primary.
