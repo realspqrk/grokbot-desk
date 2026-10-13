@@ -787,7 +787,7 @@
     else el.task.removeAttribute('data-due-urgent');
     var line = document.createElement('p');
     line.className = 'rs-task__line';
-    var whatKey = TASKS.lineKey(task, run.state);
+    var whatKey = TASKS.lineKey(task, run.state, run.result);
     var what = textNode('span', 'rs-task__what', whatKey ? t(whatKey, { label: task.label || '', bot: botNameOf(run) || t('task_the_bot') }) : '');
     if (!whatKey) {
       fillActors(what, run);
@@ -801,12 +801,13 @@
     if (meta.length) line.appendChild(textNode('span', 'rs-task__meta', meta.join(' ' + t('sep') + ' ')));
     box.appendChild(line);
     /* steps only where they add something: the payload's own, a mixed
-       report's plan per actor, a list's "decide each, then <button>". The
+       preview's "review the platforms, then <button>", a list's "decide
+       each, then <button>". The
        button is the footer as it reads now (renderBar keeps it current). */
     state.taskSteps = null;
     if (!decided) {
       if (task.steps) setSteps(task.steps);
-      else if (task.steps_for === 'mixed_platforms') setSteps(mixedStepsText(task.parties || [], t('submit_mixed')));
+      else if (task.steps_for === 'mixed_platforms') setSteps(t('task_steps_platforms', { button: t('submit_mixed') }));
       else if (TASKS.stepsKey(task)) {
         state.taskSteps = { key: TASKS.stepsKey(task), button: null };
         setSteps(t(state.taskSteps.key, { button: currentSubmitLabel(run) }));
@@ -842,15 +843,6 @@
     var list = TASKS.shortList(parties.map(partyLabel).filter(Boolean));
     var names = list.shown.join(t('sep_names'));
     return list.more ? t('task_names_more', { names: names, n: number(list.more) }) : names;
-  }
-
-  /* "LinkedIn: tick Approve · X: copy, post, Posted ✓ · then Submit";
-     button is the footer as it reads now. */
-  function mixedStepsText(parties, button) {
-    var plan = TASKS.mixedSteps(parties);
-    var parts = plan.segments.map(function (segment) { return t(segment.key, { names: partyNames(segment.names) }); });
-    parts.push(t(plan.tail, { button: button }));
-    return parts.join(' ' + t('sep') + ' ');
   }
 
   /* The parties of a mixed report as the template last reported them
@@ -905,7 +897,7 @@
         setSteps(t(patch.stepsKey, { button: button }));
       } else if (patch.stepsFor === 'mixed_platforms' && patch.parties) {
         state.taskSteps = null;
-        setSteps(mixedStepsText(patch.parties, button));
+        setSteps(t('task_steps_platforms', { button: button }));
       } else if (patch.steps != null) {
         state.taskSteps = null;
         setSteps(String(patch.steps));
@@ -2016,6 +2008,8 @@
       var operation = finishOperation(id, token);
       if (r.ok) {
         if (operation) clearDraftIfUnchanged(id, operation.draft);
+        /* the decided banner words what was sent (a pick or new options) */
+        a.result = data;
         if (state.active && state.active.run_id === id) showDecided('submitted');
         if (state.activeId === id) toast(t('sent'));
         afterDecision(id, successors);

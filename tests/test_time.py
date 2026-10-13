@@ -422,3 +422,26 @@ def test_idle_shutdown_starts_30_minutes_after_last_subscriber_leaves():
     assert server.idle_since == 200
     assert not server_module._maintenance_tick(server, 1999)
     assert server_module._maintenance_tick(server, 2000)
+
+
+def test_the_browser_gets_only_the_zone_python_uses(monkeypatch):
+    from core.page import build_page
+    from core.registry import scan_registry
+    from core.paths import ROOT
+
+    def boot_tz():
+        page = build_page(scan_registry(ROOT / "templates", ROOT / "missing"), "c", 18920)
+        return json.loads(page.split('id="rs-boot"', 1)[1].split(">", 1)[1].split("</script>", 1)[0])["tz"]
+
+    monkeypatch.setenv("RS_TZ", "UTC")
+    assert boot_tz() == "UTC"
+    monkeypatch.setattr(timeutil, "ZoneInfo", lambda name: (_ for _ in ()).throw(RuntimeError()))
+    # no tz data: Python falls back to the machine zone, and so must the page
+    monkeypatch.setenv("RS_TZ", "America/New_York")
+    assert timeutil.effective_zone_name() is None
+    assert boot_tz() is None
+    # the EU rule fallback and UTC still match the named zone
+    monkeypatch.setenv("RS_TZ", "Europe/Vienna")
+    assert boot_tz() == "Europe/Vienna"
+    monkeypatch.setenv("RS_TZ", "Etc/UTC")
+    assert boot_tz() == "Etc/UTC"

@@ -133,14 +133,17 @@
   /* banner copy, as i18n keys. A user action that is not a post uses mark
      (done or sent) instead of the posting line. A mixed report has one line
      per actor (actorLines), open or decided; lineKey is null for that. A
-     mixed preview's steps come from mixedSteps, not from stepsKey. */
-  function lineKey(task, state) {
+     list of the bot's actions (task.list items) asks for decisions, never
+     for one item's choice. result is the submitted data, when known: a pick
+     answered with "None of these" asked for new options. */
+  function lineKey(task, state, result) {
     var base = baseOf(task);
     if (state === 'cancelled' || state === 'expired') return 'task_' + state;
     if (task && task.parties && task.parties.length) return null;
     if (state === 'submitted') {
       if (task && task.mark === 'done') return 'task_done_do';
       if (task && task.mark === 'sent') return 'task_done_send';
+      if (base === 'pick' && result && result.decision === 'request_changes') return 'task_done_pick_none';
       return 'task_done_' + base;
     }
     if (task && task.kind === 'blocking') return 'task_line_blocking';
@@ -148,6 +151,7 @@
     if (task && task.mark === 'sent') return 'task_line_send';
     if (base === 'approve_bot_acts') {
       var verb = APPROVE[task && task.verb] ? task.verb : 'continue';
+      if (task && task.list) return 'task_line_list_' + verb + (task.list === 1 ? '_one' : '');
       /* the payload's own approve label ({label}) leads the line */
       return (task && task.label ? 'task_line_label_' : 'task_line_approve_') + verb;
     }
@@ -156,14 +160,19 @@
 
   /* The default steps line, or null. Steps show only where they add what
      the task line and the buttons do not say: a list of replies, of other
-     things the person does, or a mixed list, each to decide before the
-     footer's {button}. A mixed preview's
-     steps come from mixedSteps; a payload's task.steps always shows. */
+     things the person does, of the bot's actions, or a mixed list, each to
+     decide before the footer's {button}; a mixed preview's platforms to
+     review before it. A payload's task.steps always shows. */
+  var STEPS = {
+    replies: 'task_steps_replies',
+    user_items: 'task_steps_user_items',
+    bot_items: 'task_steps_mixed_items',
+    mixed_items: 'task_steps_mixed_items',
+    mixed_platforms: 'task_steps_platforms'
+  };
   function stepsKey(task) {
-    if (task && task.steps_for === 'replies') return 'task_steps_replies';
-    if (task && task.steps_for === 'user_items') return 'task_steps_user_items';
-    if (task && task.steps_for === 'mixed_items') return 'task_steps_mixed_items';
-    return null;
+    var key = task && task.steps_for;
+    return Object.prototype.hasOwnProperty.call(STEPS, key) ? STEPS[key] : null;
   }
 
   function kindKey(task) {
@@ -226,31 +235,6 @@
     return lines;
   }
 
-  /* The steps of a mixed preview, one line: per role what is still open, in
-     tab order ("LinkedIn: tick Approve · X: copy, post, Posted ✓"),
-     then the footer as it reads now (tail then, before any
-     tick; or, while something is left; now, once nothing is). A platform
-     that cannot be approved (blocked) is never a step. */
-  var STEP_KEYS = { auto: 'task_step_auto', manual: 'task_step_manual' };
-
-  function mixedSteps(parties) {
-    var segments = [];
-    var byRole = {};
-    var ticked = false;
-    (parties || []).forEach(function (party) {
-      if (!party || !STEP_KEYS[party.role]) return;
-      if (party.on === true) ticked = true;
-      if (party.on === true || party.blocked) return;
-      if (!byRole[party.role]) {
-        byRole[party.role] = { role: party.role, key: STEP_KEYS[party.role], names: [] };
-        segments.push(byRole[party.role]);
-      }
-      byRole[party.role].names.push(party);
-    });
-    var tail = !segments.length ? 'task_steps_tail_now' : ticked ? 'task_steps_tail_or' : 'task_steps_tail_then';
-    return { segments: segments, tail: tail };
-  }
-
   /* reply, post or item: what a counted group of items is called */
   function nounOf(parties) {
     var first = parties.length ? parties[0].noun : 'item';
@@ -265,8 +249,7 @@
 
   var ACTOR_KEYS = [
     'task_you_changes', 'task_you_changes_done', 'task_unticked', 'task_names_more',
-    'task_steps_mixed_items', 'task_steps_changes', 'task_step_auto', 'task_step_manual',
-    'task_steps_tail_then', 'task_steps_tail_or', 'task_steps_tail_now'
+    'task_steps_mixed_items', 'task_steps_changes', 'task_steps_platforms'
   ];
   ['post', 'do'].forEach(function (verb) {
     ['task_you_', 'task_you_none_'].forEach(function (stem) {
@@ -291,7 +274,6 @@
     stepsKey: stepsKey,
     kindKey: kindKey,
     actorLines: actorLines,
-    mixedSteps: mixedSteps,
     nounOf: nounOf,
     shortList: shortList,
     ACTOR_KEYS: ACTOR_KEYS

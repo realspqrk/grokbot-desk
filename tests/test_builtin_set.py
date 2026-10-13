@@ -29,8 +29,8 @@ FIXTURES = {
         "expect": ("golden", "edge-unicode", "edge-max"),
     },
     "approve-one": {
-        "valid": ("golden", "edge-access", "edge-de", "edge-minimal", "edge-max"),
-        "invalid": {"invalid-no-summary": "/summary", "invalid-check-state": "/checks/1/state"},
+        "valid": ("golden", "edge-access", "edge-de", "edge-minimal", "edge-max", "edge-no-summary"),
+        "invalid": {"invalid-blank-summary": "/summary", "invalid-check-state": "/checks/1/state"},
         "expect": ("golden", "edge-access", "edge-de", "edge-max"),
     },
     "preview-post": {
@@ -200,6 +200,26 @@ def test_decide_list_edges_cover_maxima_and_unicode():
     uni = "".join(_strings(fixture("decide-list", "edge-unicode")))
     for needle in ("\r\n", "\t", "‍", "🇦🇹", "東京", "한국어", "ü"):
         assert needle in uni, repr(needle)
+
+
+def test_review_doc_result_schema_enforces_the_decision_contract():
+    result = schema("review-doc", "result.schema.json")
+    section = [{"section": 2, "heading": "Reliability", "comment": "Name the tested limits."}]
+    for ok in (
+        {"decision": "approve", "comment": "", "comments": []},
+        {"decision": "approve", "comment": "", "comments": section},
+        {"decision": "request_changes", "comment": "Shorter, please.", "comments": []},
+        {"decision": "request_changes", "comment": "", "comments": section},
+        {"decision": "acknowledged", "comment": "Noted.", "comments": []},
+    ):
+        validate(ok, result)
+    for bad in (
+        {"decision": "request_changes", "comment": "", "comments": []},
+        {"decision": "request_changes", "comment": "   ", "comments": []},
+        {"decision": "approve", "comment": "Unreviewed overall comment", "comments": []},
+    ):
+        with pytest.raises(SchemaError):
+            validate(bad, result)
 
 
 def test_approve_one_result_schema_one_of():

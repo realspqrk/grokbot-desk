@@ -9,7 +9,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 ## What the person sees
 
-- The `summary` first (as the why of the task banner above the title, unless the payload brings its own `task.why` or the summary has a link). With `checks`, one line sums them up before the facts: `3 ok · 1 warning: Bundle size`. Warnings and failures are named there, so nothing that needs a look waits below the fold. Then the key `facts` as label/value pairs and the `copy` values next to copy icons.
+- The `summary` first, when given (as the why of the task banner above the title, unless the payload brings its own `task.why` or the summary has a link). With `checks`, one line sums them up before the facts: `3 ok · 1 warning: Bundle size`. Warnings and failures are named there, so nothing that needs a look waits below the fold. Then the key `facts` as label/value pairs and the `copy` values next to copy icons.
 - The footer is the decision, one click each. The primary approves: `Approve & post`, `Approve & send` or `Approve & continue` (from `action`; `approve_label` overrides that phrase). There is no plain `Approve` default. The quiet alternatives are `Reject` and, with `allow_changes`, `Request changes`. Ctrl+Enter presses the primary.
 - `Reject` sends at once and needs no reason.
 - `Request changes` opens the comment field (`What should change?`) and moves the focus there. The primary becomes `Send request`; `Cancel` goes back. While the comment is empty the primary is disabled and the status reads `Please write a comment to request changes`.
@@ -38,7 +38,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 | Field | Rule |
 |---|---|
-| `summary` | required, 1–600, plain text (newlines kept). An http(s) address in the text becomes a link |
+| `summary` | optional, 1–600, not blank, plain text (newlines kept). An http(s) address in the text becomes a link |
 | `actor` | optional `bot` (default), `user` or `none`. `user`: the mark names what the person did. Posted ✓ for a post (`task.kind` `post_yourself`), Sent ✓ when `action` is `send`, Done ✓ only when there is no specific content or action. Results stay `done` / `skipped`. `allow_changes` adds Request changes. `none`: only Got it, sent at once (`acknowledged`), plus one collapsed note. The bot never acts on `user` or `none`. A payload `task.kind` sets the actor when left out (`post_yourself` = `user`, `fyi` = `none`) |
 | `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. For a bot decision, `post` labels the primary Approve & post, `send` labels it Approve & send, any other verb labels it Approve & continue. For a user decision, `send` labels the choice Sent ✓ |
 | `approve_label` | optional, 1–24; the label of the approving primary for the bot, instead of the action phrase (Approve & continue, or Approve & post / send). There is no plain Approve default |
@@ -105,7 +105,8 @@ Tab ×5 passes the `…` menu, the `Rollback` disclosure, `Add note` and `Reject
 | `fixtures/edge-de.json` | the golden deploy written in German (`Deployment freigeben`) |
 | `fixtures/edge-minimal.json` | the summary only |
 | `fixtures/edge-max.json` | every field at its maximum |
-| `fixtures/invalid-no-summary.json` | rejected (missing `summary`) |
+| `fixtures/edge-no-summary.json` | no `summary`: the label and one fact carry the request |
+| `fixtures/invalid-blank-summary.json` | rejected at `/summary` (blank) |
 | `fixtures/invalid-check-state.json` | rejected at `/checks/1/state` |
 | `fixtures/expect/golden.json` | copy, `flow`, `keyboard`, `result` |
 | `fixtures/expect/edge-access.json`, `edge-de.json`, `edge-max.json` | every copy string |

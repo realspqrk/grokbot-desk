@@ -215,6 +215,29 @@ def test_sentences_still_split_after_a_real_end_and_keep_closing_quotes():
     assert sentences("Eins. Zwei! Drei?") == ["Eins.", "Zwei!", "Drei?"]
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Fertig... Nicht deployen. Erst pruefen. Sonst stoppen.",
+         ["Fertig...", "Nicht deployen.", "Erst pruefen.", "Sonst stoppen."]),
+        ("Fertig… Nicht deployen.", ["Fertig…", "Nicht deployen."]),
+        ("Wir liefern Version 2.4. Danach prüfen wir.", ["Wir liefern Version 2.4.", "Danach prüfen wir."]),
+        ("Das war 2026. Jetzt kommt 2027.", ["Das war 2026.", "Jetzt kommt 2027."]),
+        ("Siehe example.com. Dort steht mehr.", ["Siehe example.com.", "Dort steht mehr."]),
+        ("Der 1. Schritt ist erledigt. Am 15. Mai folgt der Rest.",
+         ["Der 1. Schritt ist erledigt.", "Am 15. Mai folgt der Rest."]),
+    ],
+)
+def test_ellipses_numbers_and_dotted_words_end_a_sentence(text, expected):
+    assert sentences(text) == expected
+
+
+def test_a_four_sentence_why_after_an_ellipsis_still_folds():
+    shown, more = present_why("Fertig... Nicht deployen. Erst pruefen. Sonst stoppen.")
+    assert shown == "Fertig... Nicht deployen. Erst pruefen."
+    assert more == "Sonst stoppen."
+
+
 def test_a_why_keeps_its_line_breaks():
     shown, more = split_why("Erste Zeile.\nZweite Zeile.\n\nDritte Zeile.\nVierte Zeile.")
     assert shown == "Erste Zeile.\nZweite Zeile.\n\nDritte Zeile."
@@ -271,6 +294,19 @@ def test_the_banner_carries_the_approve_label_of_the_payload():
     assert "label" not in task_view(envelope("approve-one", plain), REGISTRY)
     user = dict(data, actor="user")
     assert "label" not in task_view(envelope("approve-one", user), REGISTRY)
+
+
+def test_a_bot_list_asks_for_decisions_and_never_promotes_one_choice_label():
+    bills = {"items": [
+        {"id": "a", "title": "Hosting"}, {"id": "b", "title": "Duplicate"}, {"id": "c", "title": "Supplies"},
+    ], "labels": {"approve": "Pay", "reject": "Don't pay", "defer": "Next week"}}
+    view = task_view(envelope("decide-list", bills), REGISTRY)
+    assert (view["kind"], view["list"], view["steps_for"]) == ("approve_bot_acts", 3, "bot_items")
+    assert "label" not in view
+    one = task_view(envelope("decide-list", dict(bills, items=bills["items"][:1])), REGISTRY)
+    assert one["list"] == 1 and "steps_for" not in one
+    mixed = task_view(envelope("decide-list", {"items": [{"id": "a", "title": "A", "actor": "user"}, {"id": "b", "title": "B"}]}), REGISTRY)
+    assert "list" not in mixed
 
 
 def test_a_default_why_with_a_link_stays_in_the_template():
@@ -396,12 +432,10 @@ def test_a_user_action_is_generic_unless_it_is_a_post_or_a_send():
     assert (chores["mark"], chores["steps_for"]) == ("done", "user_items")
 
 
-def test_decide_list_labels_name_the_banner_and_keep_the_result_values():
+def test_decide_list_labels_stay_on_the_items_and_keep_the_result_values():
     data = fixture("decide-list", "edge-many")
     view = task_view(envelope("decide-list", data), REGISTRY)
-    assert (view["base"], view["label"]) == ("approve_bot_acts", data["labels"]["approve"])
-    plain = task_view(envelope("decide-list", fixture("decide-list", "golden")), REGISTRY)
-    assert "label" not in plain
+    assert view["base"] == "approve_bot_acts" and "label" not in view
     for bad, pointer in (
         ({"items": [{"id": "a", "title": "A", "choices": ["done"]}]}, "/data/items/0/choices/0"),
         ({"items": [{"id": "a", "title": "A", "actor": "user", "choices": ["approve"]}]}, "/data/items/0/choices/0"),

@@ -47,7 +47,7 @@ Shared buttons for `approve-one` and `review-doc`. The bot primary is "Approve &
 
 ### approve-one
 
-One footer click. `Reject`, `Request changes` (only with `allow_changes`) and the approve button are separate buttons. Not a segmented control. Reject sends at once. `approve_label` (1–24 characters) replaces the bot primary. At most six facts; a label may be 32 characters. With `checks`, a summary line is shown before the facts. Result `{decision, comment}`. `request_changes` needs a comment.
+`summary` is optional; without it, put the question in `task.why`. One footer click. `Reject`, `Request changes` (only with `allow_changes`) and the approve button are separate buttons. Not a segmented control. Reject sends at once. `approve_label` (1–24 characters) replaces the bot primary. At most six facts; a label may be 32 characters. With `checks`, a summary line is shown before the facts. Result `{decision, comment}`. `request_changes` needs a comment.
 
 ### pick-option
 
@@ -69,7 +69,7 @@ Two to four cards, nothing preselected. `suggested` is only a mark. The primary 
 
 Tabs `x`, `linkedin`, `instagram`, `facebook`. A plain id is `auto` (you post after approval). `{"platform":"x","mode":"manual"}` means the user posts it. Use `manual` where you cannot post. `variants.<platform>` is `{text?, hashtags?}` with at least one field. Hashtags omit `#`. Auto Instagram allows at most five hashtags and needs an image or a video. Ratios include `3:4` and `9:16` (`1:1`, `4:5`, `1.91:1`, `16:9` too). `video` replaces `image`. Optional `target` is a quote or reply. X ignores `target.url`. URLs in `text` weigh 23.
 
-Limits: X 25,000 weighted (Premium long posts; the preview folds at 280, "Long post (X Premium)"), LinkedIn 3,000, Instagram 2,200, Facebook 63,206. A limit never blocks a manual platform. An over-limit `auto` platform cannot be approved. There is no "skip all". The primary stays off until one platform is ticked. An all-manual desk still offers "Request changes"; its primary reads "Posted ✓" once one is ticked. A mix reads "Submit", "Approve & post" or "Posted ✓" from what is ticked. On approval, an unticked manual platform is `skipped`.
+Limits: X 25,000 weighted (Premium long posts; the preview folds at 280, "Long post (X Premium)"), LinkedIn 3,000, Instagram 2,200, Facebook 63,206. A limit never blocks a manual platform. An over-limit `auto` platform cannot be approved. There is no "skip all". The primary stays off until one platform is ticked. An all-manual desk still offers "Request changes"; its primary reads "Posted ✓" once one is ticked. A mix reads "Send response", "Approve & post" or "Posted ✓" from what is ticked. On approval, an unticked manual platform is `skipped`.
 
 Post only `platforms` whose `per_platform` decision is `approved`. Never post `manual`. `done` means the user posted it. `not_approved` and `skipped` mean stop. `changes_requested` carries the note. Read `per_platform`. A `results` summary is not permission to post.
 
@@ -107,17 +107,17 @@ On macOS, `/usr/bin/python3` is 3.9. Use `./report-shell` (Python 3.11+) or `pyt
 
 5. One chat line: topic + OK (for example "Invoices: hosting paid, toner next week, OK"). Start work the result asks for. Otherwise stop.
 
-Catch up with `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID ...]`, oldest first. Pass `cursor` and `seen` back unchanged. `CURSOR` is ISO 8601 with an offset. Items have `run_id`, `bot`, `template`, `status`, `decided`, `result_path`, and `title` when known. `summary`, when present: decide-list counts (`2 approve, 1 defer`), a preview line (`x posted by you, linkedin approved`), an approve-one or review-doc word, or a pick id. "None of these" has no summary. Every answer includes `data_dir`. So does `paths`. Never guess the directory.
+Catch up with `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID]...`, oldest first. Pass `cursor` and `seen` back unchanged: repeat `--seen` once per id (`--seen A --seen B`). `CURSOR` is ISO 8601 with an offset. Items have `run_id`, `bot`, `template`, `status`, `decided`, `result_path`, and `title` when known. `summary`, when present: decide-list counts (`2 approve, 1 defer`), a preview line (`x posted by you, linkedin approved`), an approve-one or review-doc word, or a pick id. "None of these" has no summary. Every answer includes `data_dir`. So does `paths`. Never guess the directory.
 
 Exit 2: the payload is invalid. Fix the field the error names, then send it once more. Exit 3: no Edge or Chrome. Tell the user. Do not open another browser. Exit 4: port taken or the server did not start. `doctor` lists setup warnings. Retry once. Do not loop.
 
 ## Data directory, dedupe, time
 
-`paths` prints the directory and why (`RS_DATA_DIR`, `legacy`, `default`), plus any unused older directory. On Windows, `spqrk-report-shell` moves once to `%LOCALAPPDATA%\grokbot-desk` at server start or `paths`, when the new folder is missing or empty and no server is using the old one (`reason`: `migrated`). A live server or a failed move leaves the old folder (`reason` and `warning`). `RS_DATA_DIR` is never moved.
+`paths` prints the directory and why (`RS_DATA_DIR`, `legacy`, `default`), plus any unused older directory. On Windows, an older data folder stays in use until the user runs `python report_shell.py migrate` while the desk is closed; `paths` says so (`warning`). `RS_DATA_DIR` is never moved.
 
 The webhook stays off unless enabled with `GROKBOT_DESK_WEBHOOK_KEY` and an allow-listed `https` URL. Bots use `wait`. Startup drops `runs`, `results` and `log` files older than 30 days.
 
-`dedupe_key` (1–120 printable ASCII) returns the open, submitted or cancelled run for that bot and key within `dedupe_hours` (1–168, default 24). `show` adds `deduped: true` and `state`. Expired runs do not match. `created` more than two minutes ahead is clamped to now, with a warning. Up to two minutes ahead stays.
+`dedupe_key` (1–120 printable ASCII) returns the existing run for that bot and key instead of a new one. An open run always matches. A submitted or cancelled run matches when it was decided within `dedupe_hours` (1–168, default 24). Expired runs do not match. `show` adds `deduped: true` and `state`. Dedupe never updates the old desk: new title or data need a new key. `created` more than two minutes ahead is clamped to now, with a warning. Up to two minutes ahead stays.
 
 ## Identity
 

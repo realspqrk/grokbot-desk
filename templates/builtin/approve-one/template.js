@@ -43,7 +43,7 @@ function lineCount(text) {
 }
 
 /* ---- what it is about: summary, facts, copies ---- */
-if (RS.task.why_from === 'summary') part('summary').remove();
+if (RS.task.why_from === 'summary' || !data.summary) part('summary').remove();
 else RS.fillText(part('summary'), data.summary);
 
 var facts = data.facts || [];
