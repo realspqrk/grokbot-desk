@@ -64,6 +64,20 @@ def zone_name():
     return name if ZONE_NAME.fullmatch(name) else None
 
 
+def effective_zone_name():
+    """The pinned zone as Python really applies it, for the browser: None
+    when the pin falls back to the machine's zone (no time zone data), so
+    the page and the server never disagree on a date."""
+    name = zone_name()
+    if not name:
+        return None
+    try:
+        ZoneInfo(name)
+        return name
+    except Exception:
+        return name if name in EU_CENTRAL or name in UTC_NAMES else None
+
+
 def to_local(value):
     utc = _parse(value).astimezone(timezone.utc)
     name = zone_name()
