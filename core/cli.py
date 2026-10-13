@@ -447,7 +447,14 @@ def command_wait(args, base):
     run_path = Path(base) / "runs" / f"{args.run_id}.json"
     result_path = Path(base) / "results" / f"{args.run_id}.json"
     if not run_path.exists() and not result_path.exists():
-        return error(f"unknown run: {args.run_id}", 6)
+        # `migrate` may have moved the default folder after it was resolved
+        moved = follow_migration(base)
+        if moved != Path(base):
+            base = moved
+            run_path = base / "runs" / f"{args.run_id}.json"
+            result_path = base / "results" / f"{args.run_id}.json"
+        if not run_path.exists() and not result_path.exists():
+            return error(f"unknown run: {args.run_id}", 6)
     if getattr(args, "until_expiry", False) and args.timeout:
         return error("--until-expiry and --timeout exclude each other", 2)
     now = time.monotonic()

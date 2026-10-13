@@ -348,6 +348,45 @@ def test_wait_reads_a_result_moved_by_migrate_after_it_was_seen(tmp_path, monkey
     assert answer["status"] == "approve" and answer["data_dir"] == str(current)
 
 
+def test_wait_finds_a_run_moved_by_migrate_before_its_first_lookup(tmp_path, monkeypatch, capsys):
+    from core import cli
+
+    monkeypatch.delenv("RS_DATA_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    _legacy_with_run(tmp_path)
+    legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
+    run_id = "20261011-093000-bot-0123456789ab"
+    (legacy / "results" / f"{run_id}.json").write_text('{"status": "approve"}')
+    real_exists = Path.exists
+
+    def move_first(path, *args, **kwargs):
+        if path == legacy / "runs" / f"{run_id}.json" and real_exists(legacy):
+            assert migrate.migrate(tmp_path)["migrated"] is True
+        return real_exists(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", move_first)
+    args = cli.build_parser().parse_args(["wait", run_id, "--timeout", "2"])
+
+    assert cli.command_wait(args, legacy) == 0
+    answer = json.loads(capsys.readouterr().out)
+    assert answer["status"] == "approve" and answer["data_dir"] == str(current)
+
+
+def test_wait_keeps_an_explicit_data_dir_fixed(tmp_path, monkeypatch, capsys):
+    from core import cli
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
+    monkeypatch.setenv("RS_DATA_DIR", str(legacy))
+    (current / "results").mkdir(parents=True)
+    run_id = "20261011-093000-bot-0123456789ab"
+    (current / "results" / f"{run_id}.json").write_text('{"status": "approve"}')
+    args = cli.build_parser().parse_args(["wait", run_id, "--timeout", "1"])
+
+    assert cli.command_wait(args, legacy) == 6
+    assert "unknown run" in capsys.readouterr().err
+
+
 def test_default_media_dir_follows_selected_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "user"))
     base = tmp_path / "selected-data"
