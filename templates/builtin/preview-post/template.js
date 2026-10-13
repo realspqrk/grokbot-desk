@@ -514,7 +514,7 @@ function perPlatform(list, note) {
    platform manual: you post yourself, "Posted ✓" once one is ticked.
    Any auto platform: "Approve & post" (the bot posts what is ticked;
    "Posted ✓" when only manual ones are ticked). A mix names neither actor
-   while both act ("Submit"); before any tick every approvable platform is
+   while both act ("Send response"); before any tick every approvable platform is
    the plan. "Request changes" is always the alternative. */
 var selfPost = RS.task.base === 'post_yourself';
 /* nothing can be approved or marked: only a change request is left */
