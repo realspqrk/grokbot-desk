@@ -156,6 +156,26 @@ def test_a_submitted_report_keeps_its_media_after_migrate(tmp_path):
     assert reloaded.media[media_id].path == current / "media" / "photo.png"
 
 
+def test_migrate_rewrites_only_path_fields_never_reviewed_text(tmp_path):
+    """A document the person approved may quote the old path: it stays as
+    approved. Only media paths, roots and the identity are relocated."""
+    _legacy_with_run(tmp_path)
+    legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
+    old_media = str(legacy / "media" / "incident.png")
+    run_file = next((legacy / "runs").glob("*.json"))
+    run_file.write_text(json.dumps({
+        "payload": {"data": {"doc": old_media + "\nThe path in the old incident log."}},
+        "media": {"m1": {"path": old_media, "roots": [str(legacy / "media")]}},
+    }))
+
+    assert migrate.migrate(tmp_path)["migrated"] is True
+
+    record = json.loads((current / "runs" / run_file.name).read_text(encoding="utf-8"))
+    assert record["payload"]["data"]["doc"].startswith(old_media)
+    assert record["media"]["m1"]["path"] == str(current / "media" / "incident.png")
+    assert record["media"]["m1"]["roots"] == [str(current / "media")]
+
+
 def test_migrate_replaces_an_empty_new_dir_but_never_one_with_files(tmp_path):
     _legacy_with_run(tmp_path)
     paths.ensure_layout(tmp_path / "grokbot-desk")
@@ -209,6 +229,7 @@ def test_a_server_does_not_start_while_migrate_runs(tmp_path, monkeypatch):
     with pytest.raises(migrate.DataDirBusy):
         run_server(base, 18923, paths.ROOT)
     moved = tmp_path / "spqrk-report-shell"
+    (tmp_path / "grokbot-desk" / "runs").mkdir(parents=True)  # where it went
     with pytest.raises(migrate.DataDirBusy):
         run_server(moved, 18923, paths.ROOT)
     assert not moved.exists()
@@ -267,7 +288,7 @@ def test_wait_follows_a_migrated_default_folder(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
     assert paths.follow_migration(legacy) == legacy
-    current.mkdir()
+    (current / "runs").mkdir(parents=True)  # what migrate leaves behind
     assert paths.follow_migration(legacy) == current
     (legacy / "log").mkdir(parents=True)  # a stray write after the move
     assert paths.follow_migration(legacy) == current
@@ -281,8 +302,9 @@ def test_a_migrated_old_folder_is_never_created_again(tmp_path, monkeypatch):
 
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
+    (current / "runs").mkdir(parents=True)  # migrate moved the old folder here
     assert paths.ensure_layout(legacy) == current
-    assert not legacy.exists() and (current / "runs").is_dir()
+    assert not legacy.exists()
 
     # a server spawned for the old folder just before migrate moved it
     monkeypatch.setenv("RS_DATA_DIR", str(legacy))
@@ -322,6 +344,24 @@ def test_an_explicit_data_dir_with_the_old_name_is_used_as_given(tmp_path, monke
         os.rmdir(explicit / name)  # a fresh folder: serve lays it out itself
     server.run_server(explicit, 18923, paths.ROOT)
     assert served == [explicit] and (explicit / "runs").is_dir()
+
+
+def test_a_fresh_explicit_data_dir_at_the_old_location_is_served(tmp_path, monkeypatch):
+    """Nothing was migrated (no new folder with runs): RS_DATA_DIR naming the
+    old default location is a fresh folder, and serve uses it."""
+    from core import server
+
+    local = tmp_path / "local"
+    monkeypatch.setenv("LOCALAPPDATA", str(local))
+    explicit = local / "spqrk-report-shell"
+    monkeypatch.setenv("RS_DATA_DIR", str(explicit))
+    assert not paths.legacy_gone(explicit)
+
+    served = []
+    monkeypatch.setattr(server, "_serve", lambda base, port, root: served.append(Path(base)))
+    server.run_server(explicit, 18923, paths.ROOT)
+    assert served and served[0].resolve() == explicit.resolve()
+    assert (explicit / "runs").is_dir()
 
 
 def test_wait_reads_a_result_moved_by_migrate_after_it_was_seen(tmp_path, monkeypatch, capsys):

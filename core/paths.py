@@ -55,9 +55,16 @@ def legacy_gone(base):
     """True for the older Windows folder after `migrate` moved it away. It
     counts only while it still holds runs/: a stray log or result written
     there after the move does not bring it back. Location only, so a server
-    spawned for that folder (RS_DATA_DIR set to it) is caught too."""
+    spawned for that folder (RS_DATA_DIR set to it) is caught too; the new
+    folder must hold runs/, else nothing was moved."""
     base = Path(base)
-    return is_legacy_location(base) and not (base / "runs").is_dir()
+    return (
+        is_legacy_location(base)
+        and not (base / "runs").is_dir()
+        # durable evidence of the move: the new folder holds the runs, so a
+        # fresh explicit RS_DATA_DIR at this location is still usable
+        and (base.with_name(PRODUCT_NAME) / "runs").is_dir()
+    )
 
 
 def follow_migration(base):
@@ -123,7 +130,10 @@ def ensure_layout(base=None):
     if is_legacy_location(base):
         try:
             if not legacy_gone(base):
-                # no parents=True: a folder moved away meanwhile stays gone
+                # nothing was moved (the new folder holds no runs): a fresh
+                # folder here is created like any other
+                base.parent.mkdir(parents=True, exist_ok=True)
+                base.mkdir(mode=0o700, exist_ok=True)
                 for name in ("runs", "results", "log", "media"):
                     (base / name).mkdir(exist_ok=True)
                 return base

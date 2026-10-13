@@ -126,9 +126,10 @@ def _moved(value, old, new):
     return value
 
 
-def _rewrite_json(path, old, new, select=None):
-    """Point absolute paths under old to new in one JSON file, atomically.
-    With select, only that top-level list changes. Returns the original
+def _rewrite_json(path, old, new, keys, fmt):
+    """Point absolute paths under old to new in one JSON object file,
+    atomically, but only inside its top-level `keys` (the path-bearing
+    fields; reviewed text elsewhere is never touched). Returns the original
     bytes when the file changed (to put back), else None."""
     if not path.is_file():
         return None
@@ -137,24 +138,32 @@ def _rewrite_json(path, old, new, select=None):
         value = loads(original.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         return None  # unreadable now, unreadable after the move: leave it
-    if select is not None and not (
-        isinstance(value, dict) and isinstance(value.get(select), list)
-    ):
+    if not isinstance(value, dict):
         return None
-    changed = value[select] if select is not None else value
-    for prefix in old:
-        changed = _moved(changed, prefix, new)
-    if select is not None:
-        if changed == value[select]:
-            return None
-        text = dumps(dict(value, **{select: changed}), ensure_ascii=False, indent=2)
-    else:
-        if changed == value:
-            return None
-        # the run store's own format (core/runs.py RunStore._save)
-        text = dumps(changed, ensure_ascii=False, separators=(",", ":"))
-    _replace(path, (text + "\n").encode("utf-8"))
+    changed = dict(value)
+    for key in keys:
+        if key in changed:
+            for prefix in old:
+                changed[key] = _moved(changed[key], prefix, new)
+    if changed == value:
+        return None
+    _replace(path, (fmt(changed) + "\n").encode("utf-8"))
     return original
+
+
+# Run records keep paths only in their media entries (path, roots) and in
+# the resolved identity; config.json only in media_roots.
+RUN_PATH_KEYS = ("media", "identity")
+CONFIG_PATH_KEYS = ("media_roots",)
+
+
+def _run_format(value):
+    # the run store's own format (core/runs.py RunStore._save)
+    return dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _config_format(value):
+    return dumps(value, ensure_ascii=False, indent=2)
 
 
 def _rewrite_references(legacy, current):
@@ -172,11 +181,11 @@ def _rewrite_references(legacy, current):
     originals = {}
     try:
         for path in sorted((legacy / "runs").glob("*.json")):
-            before = _rewrite_json(path, old, str(current))
+            before = _rewrite_json(path, old, str(current), RUN_PATH_KEYS, _run_format)
             if before is not None:
                 originals[path] = before
         config = legacy / "config.json"
-        before = _rewrite_json(config, old, str(current), select="media_roots")
+        before = _rewrite_json(config, old, str(current), CONFIG_PATH_KEYS, _config_format)
         if before is not None:
             originals[config] = before
     except BaseException:
