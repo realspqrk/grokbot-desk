@@ -7,7 +7,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 200,
-      "description": "The decision in one sentence, shown above the options (plain text). http(s) addresses become links."
+      "description": "The decision in one sentence, shown as the heading above the options (plain text; left out when it only repeats the report title). http(s) addresses become links."
     },
     "context": {
       "type": "string",
@@ -45,6 +45,11 @@
           }
         }
       }
+    },
+    "allow_none": {
+      "type": "boolean",
+      "default": true,
+      "description": "Offer \"None of these\": a quiet alternative that asks what is missing (note required) and returns decision request_changes with no choice. false hides it."
     },
     "suggested": {
       "type": "string",

@@ -270,7 +270,13 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       assert.deepEqual(await cards.evaluateAll((b) => b.map((x) => x.getAttribute('aria-checked'))), ['false', 'false', 'false']);
       assert.equal(await page.locator('button[data-suggested]').getAttribute('value'), 'old-mill');
       assert.equal(await page.isDisabled('#rs-submit'), true);
-      assert.equal(await page.textContent('#rs-status'), de.po_pick.replace('{n}', '3'));
+      assert.equal(await page.textContent('#rs-status'), '', 'the banner already says to pick one');
+      const question = await page.evaluate(() => {
+        const q = document.querySelector('[data-po="question"]');
+        return { tag: q.tagName, text: q.textContent, weight: Number(getComputedStyle(q).fontWeight) };
+      });
+      assert.deepEqual([question.tag, question.text], ['H2', data.question], 'the question is the decision heading');
+      assert.ok(question.weight >= 600, `strong (${question.weight})`);
       const rows = await page.evaluate(() => [...document.querySelectorAll('.po__card')].map((c) => (
         [...c.querySelectorAll('.po__fact')].map((f) => Math.round(f.getBoundingClientRect().top))
       )));
@@ -292,6 +298,47 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       assert.deepEqual(view, [['boathouse', 'false', true], ['old-mill', 'false', true], ['hilltop', 'true', true]]);
       assert.deepEqual(errors, []);
     } finally { await ctx.close(); }
+  });
+
+  test('pick-option: None of these asks what is missing and sends no pick; Cancel goes back; allow_none false hides it', async () => {
+    const data = fixture('pick-option', 'golden');
+    const run = show('pick-option', data);
+    const { ctx, page, errors } = await open(run.run_id);
+    const quiet = () => page.$$eval('#rs-submitbar .rs-btn--quiet', (b) => b.filter((x) => !x.hidden).map((x) => x.textContent));
+    try {
+      assert.deepEqual(await quiet(), [de.po_none]);
+      await page.click('.po__card[value="hilltop"]');
+      await page.click('#rs-alt');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'po-note');
+      assert.equal(await page.getAttribute('.po__card[value="hilltop"]', 'aria-checked'), 'false', 'no pick while none fits');
+      assert.equal(await page.textContent('#rs-submit-label'), de.request_send);
+      assert.deepEqual(await quiet(), [de.cancel]);
+      assert.equal(await page.isDisabled('#rs-submit'), true);
+      assert.equal(await page.textContent('#rs-status'), de.po_none_required);
+      assert.equal(await page.isVisible('[data-po="label-none"]'), true);
+      await page.click('#rs-alt');
+      assert.equal(await page.getAttribute('.po__card[value="hilltop"]', 'aria-checked'), 'true', 'Cancel brings the pick back');
+      assert.equal(await page.textContent('#rs-submit-label'), de.po_choose.replace('{name}', 'Hilltop Farm'));
+      await page.click('#rs-alt');
+      await page.fill('#po-note', 'All three are too far for the night shift.');
+      await reload(page);
+      assert.equal(await page.inputValue('#po-note'), 'All three are too far for the night shift.');
+      assert.equal(await page.textContent('#rs-submit-label'), de.request_send);
+      await page.keyboard.press('Control+Enter');
+      const result = await waitResult(run.run_id);
+      assert.deepEqual(result.data, { decision: 'request_changes', note: 'All three are too far for the night shift.' });
+      await reopen(page, run.run_id);
+      assert.equal(await page.inputValue('#po-note'), 'All three are too far for the night shift.');
+      assert.equal(await page.isVisible('[data-po="label-none"]'), true);
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+    const strict = show('pick-option', { ...data, allow_none: false, question: 'Venue for the spring team day?' }, 'Venue for the spring team day');
+    const second = await open(strict.run_id);
+    try {
+      assert.deepEqual(await second.page.$$eval('#rs-submitbar .rs-btn--quiet', (b) => b.filter((x) => !x.hidden).length), 0);
+      assert.equal(await second.page.locator('[data-po="question"]').count(), 0, 'a question that repeats the title is left out');
+      assert.equal(await second.page.getAttribute('rs-action-row', 'aria-label'), de.choice_group_label.replace('{what}', 'Venue for the spring team day?'));
+    } finally { await second.ctx.close(); }
   });
 
   test('pick-option: a repeated id is rejected at show; four options wrap to two columns when narrow', async () => {

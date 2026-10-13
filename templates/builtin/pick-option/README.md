@@ -1,10 +1,11 @@
 # `pick-option`: pick one of 2–4 options
 
-Built-in template for one choice between 2 to 4 alternatives that the person should compare side by side: a venue, a laptop, a delivery slot, a plan. The question sits on top, then one card per option in one row (2, 3 or 4 columns; 3 or 4 options wrap to two columns when the window is narrow). The rows line up across the cards: name, short summary, then the facts in the same order.
+Built-in template for one choice between 2 to 4 alternatives that the person should compare side by side: a venue, a laptop, a delivery slot, a plan. The question is the decision heading on top (left out when it only repeats the report title), then one card per option in one row (2, 3 or 4 columns; 3 or 4 options wrap to two columns when the window is narrow). The rows line up across the cards: name, short summary, then the facts in the same order.
 
 - The cards are the radios of one radio group. Nothing is preselected; the agent's `suggested` option is only marked *Suggested*.
-- The primary names the pick (*Choose Old Mill Studio*); until then it is disabled and the status says *Pick one of 3 options*.
+- The primary names the pick (*Choose Old Mill Studio*); until then it is disabled. The task banner already says *Pick one option*, so the footer adds no status of its own.
 - *Add note* (shown on hover or keyboard focus) opens an optional note.
+- *None of these* (a quiet footer alternative; `allow_none: false` hides it) puts the pick aside and asks *What is missing from these options?*. The note is required; the primary becomes *Send request*, *Cancel* brings the pick back, and picking a card also leaves this mode. The result is then a change request with no choice.
 
 Pick this template when the person chooses **one** of a few alternatives. For a yes/no decision, use `approve-one`; for several independent items, `decide-list`.
 
@@ -34,7 +35,7 @@ Pick this template when the person chooses **one** of a few alternatives. For a 
 
 | Field | Rule |
 |---|---|
-| `question` | required, 1–200 characters, plain text |
+| `question` | required, 1–200 characters, plain text. Shown as the decision heading; left out when it only repeats the report title |
 | `context` | optional, 1–600 characters: constraints, what the agent already checked. Shown as the why of the task banner unless the payload brings its own `task.why` or the text has a link |
 | `options` | required, 2–4 items, shown in this order |
 | `options[].id` | `^[a-z0-9][a-z0-9_-]{0,31}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/options/1/id` |
@@ -43,21 +44,27 @@ Pick this template when the person chooses **one** of a few alternatives. For a 
 | `options[].copy` | optional, 1–4000 characters: the full text to copy, with a copy control in the same grid as that option's card, directly under it at every width, outside the selection button. The control is named for the option (`Copy: Offer` / `Kopieren: Offer`) |
 | `options[].facts` | optional, at most 6 `{ "label" (1–32), "value" (1–80) }`. Use the same labels in the same order in every option so the rows line up; a missing fact leaves its row empty |
 | `suggested` | optional option id; marked, never preselected; ignored when it names no option |
+| `allow_none` | optional boolean, default `true`: offer *None of these*. `false` hides it |
 
-## Result `data` (`result.schema.json`)
+## Result `data` (`result.schema.json`, oneOf)
 
 ```json
 { "choice": "old-mill", "note": "Please ask whether the garden has step-free access." }
+```
+
+```json
+{ "decision": "request_changes", "note": "All three are too far for the night shift." }
 ```
 
 | Field | Rule |
 |---|---|
 | `choice` | the `id` of the picked option |
 | `note` | string, at most 1000 characters, may be empty |
+| `decision` | only `request_changes`, for *None of these*: then there is no `choice`, and `note` (1–1000, not only spaces) says what is missing. Offer new options or ask again |
 
 ## Strings
 
-English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `po_suggested` (Suggested / Empfohlen), `po_pick` (Pick one of {n} options / Eine von {n} Optionen wählen), `po_choose` (Choose {name} / {name} wählen), `po_choose_idle` (Choose / Auswählen), `po_note_placeholder` (Optional); shared: `choice_group_label` (accessible name of the group: Decision: {what}), `add_note`, `note`.
+English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `po_suggested` (Suggested / Empfohlen), `po_choose` (Choose {name} / {name} wählen), `po_choose_idle` (Choose / Auswählen), `po_note_placeholder` (Optional), `po_none` (None of these / Keine davon), `po_none_label` (What is missing from these options? / Was fehlt an diesen Optionen?), `po_none_required` (Say briefly what is missing / Schreib kurz, was fehlt); shared: `choice_group_label` (accessible name of the group: Decision: {what}), `add_note`, `note`, `request_send` (Send request / Anfrage senden), `cancel`.
 
 ## Fixtures
 
