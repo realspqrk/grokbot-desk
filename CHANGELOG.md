@@ -22,6 +22,8 @@
   ("Review the platforms, then <button>") and its footer reads "Send
   response". After "None of these" the banner says new options were
   requested, also when the report is reopened.
+- decide-list: the list's heading reads `Items` (`Einträge`) instead of
+  `Needs you`, so a sent list no longer announces open work.
 - approve-one: `summary` is optional. Without it the banner's `task.why`
   and the facts carry the request.
 - Discard report moves from the footer into the `…` menu, behind the same

@@ -379,7 +379,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       const labels = (id) => page.$$eval(`rs-action-row[data-item="${id}"] button`, (els) => els.map((b) => [b.value, b.textContent]));
       assert.deepEqual(await labels('inv-paper'), [['approve', 'Pay'], ['reject', 'Dispute'], ['defer', 'Next week']]);
       assert.equal(await page.$eval('#dl-todo-h', (h) => h.getBoundingClientRect().width <= 1), true, 'one group: no visible heading');
-      assert.equal(await page.textContent('#dl-todo-h'), de.section_todo, 'it still names the list');
+      assert.equal(await page.textContent('#dl-todo-h'), de.section_items, 'it still names the list');
       const choose = ['approve', 'approve', 'reject', 'defer', 'reject', 'approve', 'approve', 'reject', 'approve', 'defer', 'approve', 'approve'];
       for (let i = 0; i < data.items.length; i++) {
         const w = data.items[i];

@@ -65,7 +65,7 @@
   "counter_hashtags_label": "{value} von {limit} Hashtags",
   "counter_hashtags_label_over": "{value} von {limit} Hashtags, {n} zu viel",
   "counter_over": "{n} zu viel",
-  "section_todo": "Wartet auf dich",
+  "section_items": "Einträge",
   "section_done": "Erledigt",
   "section_feed": "Feed",
   "section_keep": "Behalten",

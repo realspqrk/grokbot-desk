@@ -63,7 +63,7 @@
   "counter_hashtags_label": "{value} of {limit} hashtags",
   "counter_hashtags_label_over": "{value} of {limit} hashtags, {n} too many",
   "counter_over": "{n} too many",
-  "section_todo": "Needs you",
+  "section_items": "Items",
   "section_done": "Taken care of",
   "section_feed": "Newsletters & feeds",
   "section_keep": "Kept for reference",
