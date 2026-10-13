@@ -189,6 +189,8 @@ def test_review_doc_result_schema_enforces_the_decision_contract():
     for bad in (
         {"decision": "request_changes", "comment": "", "comments": []},
         {"decision": "request_changes", "comment": "   ", "comments": []},
+        {"decision": "request_changes", "comment": "", "comments": [{**section[0], "comment": "   "}]},
+        {"decision": "approve", "comment": "", "comments": [{**section[0], "comment": " \t "}]},
         {"decision": "approve", "comment": "Unreviewed overall comment", "comments": []},
     ):
         with pytest.raises(SchemaError):
