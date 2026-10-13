@@ -4,7 +4,7 @@ Built-in template for one choice between 2 to 4 alternatives that the person sho
 
 - The cards are the radios of one radio group. Nothing is preselected; the agent's `suggested` option is only marked *Suggested*.
 - The primary names the pick (*Choose Old Mill Studio*); until then it is disabled. The task banner already says *Pick one option*, so the footer adds no status of its own.
-- *Add note* (shown on hover or keyboard focus) opens an optional note.
+- *Add note*, a quiet text button under the cards, opens an optional note.
 - *None of these* (a quiet footer alternative; `allow_none: false` hides it) puts the pick aside and asks *What is missing from these options?*. The note is required; the primary becomes *Send request*, *Cancel* brings the pick back, and picking a card also leaves this mode. The result is then a change request with no choice.
 
 Pick this template when the person chooses **one** of a few alternatives. For a yes/no decision, use `approve-one`; for several independent items, `decide-list`.
