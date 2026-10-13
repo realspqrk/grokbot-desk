@@ -29,13 +29,23 @@ def _same(text):
 
 
 def _decide_list(data, pointer):
-    """Per bot item, the labels it shows (its own, then the top-level ones,
-    then the shared defaults in every UI language) differ; a due date is a
-    real calendar day."""
+    """A due date is a real calendar day (every item). Per bot item, the
+    labels it shows (its own, then the top-level ones, then the shared
+    defaults in every UI language) differ, and no custom label reads like
+    another choice's default label: a swap (approve shown as "Reject",
+    reject as "Approve") records the opposite of what the person read.
+
+    Runs on the final data (after task.kind set the actors). A template that
+    extends decide-list owns its schema, so odd shapes are skipped or
+    reported at their pointer, never crash."""
     defaults = _default_labels()
-    top = data.get("labels") or {}
-    for index, item in enumerate(data.get("items") or []):
+    top = data.get("labels")
+    top = top if isinstance(top, dict) else {}
+    items = data.get("items")
+    for index, item in enumerate(items if isinstance(items, list) else []):
         here = _pointer(_pointer(pointer, "items"), index)
+        if not isinstance(item, dict):
+            continue
         due = item.get("due")
         if isinstance(due, str):
             try:
@@ -44,13 +54,20 @@ def _decide_list(data, pointer):
                 raise SchemaError(_pointer(here, "due"), "must be a real calendar date") from error
         if item.get("actor") == "user":
             continue
-        own = item.get("labels") or {}
+        own = item.get("labels")
+        own = own if isinstance(own, dict) else {}
+        choices = item.get("choices")
         shown = []
-        for value in item.get("choices") or DEFAULT_CHOICES:
-            if value in own:
-                shown.append((value, {_same(own[value])}, _pointer(_pointer(here, "labels"), value)))
-            elif value in top:
-                shown.append((value, {_same(top[value])}, _pointer(_pointer(pointer, "labels"), value)))
+        for value in choices if isinstance(choices, list) else DEFAULT_CHOICES:
+            if not isinstance(value, str) or value not in defaults:
+                continue
+            for source, where in ((own, _pointer(_pointer(here, "labels"), value)),
+                                  (top, _pointer(_pointer(pointer, "labels"), value))):
+                if value in source:
+                    if not isinstance(source[value], str):
+                        raise SchemaError(where, "must be a string")
+                    shown.append((value, {_same(source[value])}, where))
+                    break
             else:
                 shown.append((value, defaults[value], None))
         for later, (value, labels, where) in enumerate(shown):
@@ -60,6 +77,11 @@ def _decide_list(data, pointer):
                         where or other_where,
                         f"label repeats the {other if where else value} choice of this item",
                     )
+            if where is None:
+                continue
+            for other in DEFAULT_CHOICES:
+                if other != value and labels & defaults[other]:
+                    raise SchemaError(where, f"label reads like the {other} choice")
     return data
 
 

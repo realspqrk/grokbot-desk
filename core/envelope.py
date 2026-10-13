@@ -125,7 +125,6 @@ def validate_payload(payload, registry, used_ids=(), warnings=None):
     try:
         schema = loads(template.read_text("schema.json"))
         validate(payload["data"], schema, "/data")
-        check_data(template.extends or template.id, payload["data"], "/data")
     except SchemaError as error:
         raise EnvelopeError(error.pointer, error.message) from error
     data = payload["data"]
@@ -140,6 +139,11 @@ def validate_payload(payload, registry, used_ids=(), warnings=None):
             from .tasks import why_warnings
             why = payload["task"].get("why") if isinstance(payload["task"], dict) else None
             warnings.extend(why_warnings(why))
+    try:
+        # on the final data: task.kind may have turned bot items into user items
+        check_data(template.extends or template.id, data, "/data")
+    except SchemaError as error:
+        raise EnvelopeError(error.pointer, error.message) from error
     result = dict(payload)
     result["data"] = data
     if clamped is not None:
