@@ -24,6 +24,8 @@
   requested, also when the report is reopened.
 - decide-list: the list's heading reads `Items` (`Einträge`) instead of
   `Needs you`, so a sent list no longer announces open work.
+- review-doc: with section comments, Request changes no longer opens an
+  empty overall comment; it waits behind a quiet `Add a note`.
 - approve-one: `summary` is optional. Without it the banner's `task.why`
   and the facts carry the request.
 - Discard report moves from the footer into the `…` menu, behind the same

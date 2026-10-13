@@ -141,6 +141,8 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       assert.equal(await page.evaluate(() => document.activeElement.id), 'rd-c-4');
       await page.keyboard.type('Per season, please.');
       await page.click('#rs-alt');
+      await page.click('[data-rd="request-add"]');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'rd-comment');
       await page.fill('#rd-comment', 'Fix the fee note.');
       assert.equal(await page.textContent('#rs-submit-label'), de.send_request);
       await reload(page);
@@ -153,7 +155,7 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       assert.equal(await page.textContent('#rs-submit-label'), de.looks_good);
       assert.equal(await page.textContent('#rs-status'), de.rd_with_comments_one);
       await page.click('#rs-alt');
-      await page.fill('#rd-comment', 'Fix the fee note.');
+      assert.equal(await page.isVisible('#rd-comment'), true, 'a comment already written stays in view');
       await page.keyboard.press('Control+Enter');
       const result = await waitResult(run.run_id);
       assert.deepEqual(result.data, {
@@ -223,6 +225,13 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       assert.equal(await page.textContent('#rs-submit-label'), de.send_request);
       assert.equal(await page.isDisabled('#rs-submit'), false, 'the section comment is the request');
       assert.notEqual(await page.evaluate(() => document.activeElement.id), 'rd-comment');
+      assert.equal(await page.isVisible('#rd-comment'), false, 'no empty overall comment to fill');
+      assert.equal(await page.textContent('[data-rd="request-add"]'), de.add_a_note);
+      await page.click('[data-rd="request-add"]');
+      assert.equal(await page.isVisible('#rd-comment'), true);
+      await page.click('[data-rd="request-cancel"]');
+      await page.click('#rs-alt');
+      assert.equal(await page.isVisible('#rd-comment'), false, 'a new request starts without the field again');
       await page.click('#rs-submit');
       const result = await waitResult(run.run_id);
       assert.equal(result.data.decision, 'request_changes');
