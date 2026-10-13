@@ -64,7 +64,7 @@ Empty sections are not rendered. Payload text keeps its language: the window doe
 
 - `approve` or `reject` (actor `bot`): `comment` 0–2000 (the optional note; `""` when no note was shown). Reject needs no reason.
 - `done` or `skipped` (actor `user`), and `acknowledged` (actor `none`): `comment` 0–2000.
-- `request_changes` (bot or user, only with `allow_changes`; not offered for information only): `comment` 1–2000 with at least one non-whitespace character. Information only may include the optional note as `comment`.
+- `request_changes` (bot or user, only with `allow_changes`; not offered for information only): `comment` 1–2000 with at least one non-whitespace character. Information only may include the optional note as `comment`, sent only while the note is open.
 - A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)

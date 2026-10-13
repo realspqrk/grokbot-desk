@@ -1,5 +1,5 @@
 {
-  "description": "approve, reject, done, skipped or acknowledged: the comment is optional. request_changes (bot with allow_changes, or actor none): the comment is required. done and skipped are the user actor. acknowledged is actor none.",
+  "description": "approve, reject, done, skipped or acknowledged: the comment is optional. request_changes (bot or user, only with allow_changes; never for information only): the comment is required. done and skipped are the user actor. acknowledged is actor none.",
   "oneOf": [
     {
       "type": "object",

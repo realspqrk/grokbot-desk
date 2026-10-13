@@ -39,7 +39,7 @@ Safe by construction:
 
 - **No raw HTML.** Tags such as `<b>` or `<script>` are shown as text; the page builds every node itself and uses `textContent` only.
 - **http(s) links open in the system browser.** `[label](https://…)` is a real link; activating it calls `RS.openUrl`. The address is also shown as quiet text when it differs from the label. Other targets stay text. Nothing is fetched. A right-click does not open the address inside the app profile.
-- **Copy.** Each fenced code block and each plain blockquote has a copy control; a callout has none. Write the report short and scannable: a one-line TL;DR, a table, bold verdicts, check states (`- [x]` / `- [ ]`), at most one callout, details last (see `edge-report.json`).
+- **Copy.** Each fenced code block and each plain blockquote has a copy control; a callout has none, also not for a code block or quote inside it. Write the report short and scannable: a one-line TL;DR, a table, bold verdicts, check states (`- [x]` / `- [ ]`), at most one callout, details last (see `edge-report.json`).
 - **No external images.** `![alt](key)` shows an image only when `key` names an entry in `images`; the page loads it through the media route (`RS.media`). Any other target, including a web address, becomes a quiet *Image not shown: alt*.
 - **Bounded nesting.** Links and emphasis nested more than 16 levels deep stay literal text (the Markdown source as written), so every accepted document renders and can be approved.
 
@@ -63,8 +63,8 @@ When the document has at least two headings of level 1–2, each of those headin
 
 | Field | Rule |
 |---|---|
-| `decision` | `approve` or `request_changes` for `bot`; `done` or `skipped` for `user`; `acknowledged` or `request_changes` for `none` |
-| `comment` | overall comment, at most 4000 characters; `""` for `approve` |
+| `decision` | `approve` or `request_changes` for `bot`; `done` or `skipped` for `user`; only `acknowledged` for `none` (information only never sends `request_changes`) |
+| `comment` | overall comment, at most 4000 characters; `""` for `approve`, `done` and `skipped`; for `acknowledged` the optional note, sent only while the note is open |
 | `comments` | section comments in document order, at most 200: `section` (1-based position among the sections), `heading` (plain text, at most 200 characters), `comment` (1–2000 characters). Empty sections are left out. |
 
 `approve` may carry section comments ("approve, and fix these small things"). `request_changes` needs the overall comment or at least one section comment.
