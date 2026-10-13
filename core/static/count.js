@@ -34,7 +34,7 @@
   // unmatched selectors, joiners and regional indicators fall through.
   var EMOJI_SEQ_RE = new RegExp(twitterText.emoji ||
     '[0-9#*]\\uFE0F?\\u20E3|\\p{RGI_Emoji}', twitterText.emoji ? 'g' : 'gv');
-  // A tag body needs a letter or "_" (#1 and #123 are not tags); a "#" right
+  // A tag body needs a letter or "_" (a bare number is no tag); a "#" right
   // after "/" or inside a URL is a fragment. components.js TAG_RE matches the same.
   var HASHTAG_RE = /(^|[^\p{L}\p{M}\p{N}_&#\/])#+(?=[\p{L}\p{M}\p{N}_]*[\p{L}_])/gu;
   var PATH_CHAR_RE = /[a-z0-9!\*';:=+,\.$\/%#\[\]\-\u2013_~@\|&\xC0-\xD6\xD8-\xF6\xF8-\xFF\u0100-\u024F\u0253\u0254\u0256\u0257\u0259\u025B\u0263\u0268\u026F\u0272\u0289\u028B\u02BB\u0300-\u036F\u1E00-\u1EFF\u0400-\u04FF]/i;
