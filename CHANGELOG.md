@@ -13,8 +13,9 @@
 - A template's summary, intro, context or notes becomes the banner's why only
   when it fits whole (three sentences, 360 characters); otherwise it stays in
   the report. Line breaks are kept, German abbreviations (`z. B.`, `ca.`,
-  `Nr.`) and ordinals no longer end a sentence, while `...`, a year or a
-  version number at the end still do, and a cut falls between words.
+  `Nr.`), ordinals and dates (`15.`, `31.12.`) no longer end a sentence,
+  while `...`, `…` and a year (`2026.`) still do, and a cut falls between
+  words.
 - A list of the bot's actions says "Make your decisions, then <bot>
   continues" (one item: "Make your decision"); a choice label such as `Pay`
   no longer names the whole desk. A mixed preview's steps are one line
