@@ -103,17 +103,21 @@
 
   // ------------------------------------------------- locale formats --
   // Dates and numbers follow the selected string table (de default, en):
-  // German "15.10." / "99.999", English "Oct 15" / "99,999". Timestamps are
-  // always Europe/Vienna (spec 2.9), whatever the machine's time zone:
+  // German "15.10." / "99.999", English "Oct 15" / "99,999". Timestamps use
+  // the machine's time zone, or the one the server pins (boot.tz, RS_TZ):
   // German "Do 08.10.2026 · 10:39", English "Thu, Oct 8, 2026 · 10:39".
   var LOCALE = boot.lang === 'en' ? 'en-US' : 'de-DE';
+  var ZONE = (function () {
+    if (typeof boot.tz !== 'string' || !boot.tz) return undefined;
+    try { new Intl.DateTimeFormat('en', { timeZone: boot.tz }); return boot.tz; } catch (e) { return undefined; }
+  })();
   var numberFmt = new Intl.NumberFormat(LOCALE);
   var dayFmt = new Intl.DateTimeFormat(LOCALE, boot.lang === 'en'
     ? { month: 'short', day: 'numeric', timeZone: 'UTC' }
     : { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
   var timeFmt = new Intl.DateTimeFormat(LOCALE, boot.lang === 'en'
-    ? { timeZone: 'Europe/Vienna', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
-    : { timeZone: 'Europe/Vienna', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    ? { timeZone: ZONE, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+    : { timeZone: ZONE, weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   function toDate(iso) {
     if (iso instanceof Date) return iso;
     /* a plain calendar date ("2026-10-15") is the same day everywhere */
@@ -124,7 +128,7 @@
     var d = toDate(iso);
     return isNaN(d.getTime()) ? '' : dayFmt.format(d);
   }
-  /** Vienna timestamp: "Do 08.10.2026 · 10:39" (de) / "Thu, Oct 8, 2026 · 10:39" (en). */
+  /** Local timestamp: "Do 08.10.2026 · 10:39" (de) / "Thu, Oct 8, 2026 · 10:39" (en). */
   function time(iso) {
     var d = toDate(iso);
     if (isNaN(d.getTime())) return '';
@@ -627,7 +631,7 @@
     return box;
   }
 
-  /* "Erstellt Do 08.10.2026 · 10:39": German uses the server's display (Vienna) */
+  /* "Erstellt Do 08.10.2026 · 10:39": German uses the server's display (same zone) */
   function createdText(run) {
     return t('created_at', { time: boot.lang === 'en' || !run.created_display ? time(run.created) : run.created_display });
   }
@@ -693,8 +697,8 @@
      3 buttons per item still hold (K1, K2, K6 in tools/calm.mjs). A decided
      report keeps the banner, neutral, saying what happened. */
   var TASKS = window.RS_TASKS;
-  var viennaDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit' });
-  var viennaClock = new Intl.DateTimeFormat(LOCALE, { timeZone: 'Europe/Vienna', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  var localDay = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
+  var localClock = new Intl.DateTimeFormat(LOCALE, { timeZone: ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
   function taskOf(run) {
     var task = run && run.task;
@@ -702,15 +706,15 @@
   }
 
   /* "due today 15:00", "due Oct 15 15:00", "overdue since 09:00"; urgent
-     when the day is today (Vienna) or the moment has passed */
+     when the day is today (local time) or the moment has passed */
   function dueInfo(due, now) {
     if (typeof due !== 'string' || !due) return null;
     var dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(due);
     var moment = toDate(due);
     if (isNaN(moment.getTime())) return null;
-    var today = viennaDay.format(now);
-    var day = dateOnly ? due : viennaDay.format(moment);
-    var clock = dateOnly ? '' : viennaClock.format(moment);
+    var today = localDay.format(now);
+    var day = dateOnly ? due : localDay.format(moment);
+    var clock = dateOnly ? '' : localClock.format(moment);
     var past = dateOnly ? day < today : moment.getTime() < now.getTime();
     var text;
     if (past) text = t('task_overdue', { when: [day === today ? '' : date(day), clock].filter(Boolean).join(' ') });

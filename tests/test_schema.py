@@ -171,7 +171,7 @@ def valid_payload():
 def test_generated_run_id_uses_twelve_random_hex_characters():
     with (
         patch(
-            "core.envelope.vienna_now",
+            "core.envelope.local_now",
             return_value=datetime(2026, 10, 9, 10, 18, tzinfo=timezone.utc),
         ),
         patch(

@@ -25,10 +25,10 @@ def _clock_probe(anchor=None, sleep_seconds=0):
     else:
         env["RS_CLOCK_ANCHOR"] = anchor
     code = (
-        "import json, time; from core.timeutil import vienna_now; "
-        "first=vienna_now(); "
+        "import json, time; from core.timeutil import local_now; "
+        "first=local_now(); "
         f"time.sleep({sleep_seconds!r}); "
-        "second=vienna_now(); "
+        "second=local_now(); "
         "print(json.dumps([first.isoformat(), second.isoformat()]))"
     )
     return subprocess.run(
@@ -73,31 +73,50 @@ def test_clock_anchor_invalid_fails_with_clear_error():
     assert "RS_CLOCK_ANCHOR must be an ISO 8601 instant with an offset" in probe.stderr
 
 
-def test_z_and_explicit_offset_convert_to_vienna():
-    assert timeutil.to_vienna("2026-01-08T10:00:00Z").isoformat() == "2026-01-08T11:00:00+01:00"
-    assert timeutil.to_vienna("2026-07-08T10:00:00+01:00").isoformat() == "2026-07-08T11:00:00+02:00"
+def test_without_a_pinned_zone_times_use_the_machines_own_zone(monkeypatch):
+    monkeypatch.delenv("RS_TZ", raising=False)
+    for value in ("2026-01-08T10:00:00Z", "2026-07-08T10:00:00+01:00"):
+        expected = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
+        assert timeutil.to_local(value) == expected
+        assert timeutil.to_local(value).utcoffset() == expected.utcoffset()
+    assert timeutil.zone_name() is None
+
+
+def test_a_pinned_zone_wins_and_an_unknown_one_falls_back_to_the_machine(monkeypatch):
+    monkeypatch.setenv("RS_TZ", "UTC")
+    assert timeutil.to_local("2026-07-08T10:00:00+02:00").isoformat() == "2026-07-08T08:00:00+00:00"
+    monkeypatch.setenv("RS_TZ", "../etc/passwd")
+    assert timeutil.zone_name() is None
+    monkeypatch.setenv("RS_TZ", "Mars/Olympus_Mons")
+    expected = datetime(2026, 7, 8, 8, tzinfo=timezone.utc).astimezone()
+    assert timeutil.to_local("2026-07-08T08:00:00Z").utcoffset() == expected.utcoffset()
+
+
+def test_z_and_explicit_offset_convert_to_local():
+    assert timeutil.to_local("2026-01-08T10:00:00Z").isoformat() == "2026-01-08T11:00:00+01:00"
+    assert timeutil.to_local("2026-07-08T10:00:00+01:00").isoformat() == "2026-07-08T11:00:00+02:00"
 
 
 def test_dst_boundaries_both_directions():
-    assert timeutil.to_vienna("2026-03-29T00:59:59Z").utcoffset().total_seconds() == 3600
-    assert timeutil.to_vienna("2026-03-29T01:00:00Z").utcoffset().total_seconds() == 7200
-    assert timeutil.to_vienna("2026-10-25T00:59:59Z").utcoffset().total_seconds() == 7200
-    assert timeutil.to_vienna("2026-10-25T01:00:00Z").utcoffset().total_seconds() == 3600
+    assert timeutil.to_local("2026-03-29T00:59:59Z").utcoffset().total_seconds() == 3600
+    assert timeutil.to_local("2026-03-29T01:00:00Z").utcoffset().total_seconds() == 7200
+    assert timeutil.to_local("2026-10-25T00:59:59Z").utcoffset().total_seconds() == 7200
+    assert timeutil.to_local("2026-10-25T01:00:00Z").utcoffset().total_seconds() == 3600
 
 
 def test_fallback_when_zoneinfo_raises(monkeypatch):
     monkeypatch.setattr(timeutil, "ZoneInfo", lambda name: (_ for _ in ()).throw(RuntimeError()))
-    summer = timeutil.to_vienna("2026-07-01T12:00:00Z")
-    winter = timeutil.to_vienna("2026-01-01T12:00:00Z")
+    summer = timeutil.to_local("2026-07-01T12:00:00Z")
+    winter = timeutil.to_local("2026-01-01T12:00:00Z")
     assert summer.utcoffset().total_seconds() == 7200
     assert winter.utcoffset().total_seconds() == 3600
 
 
 def test_format_and_offset_required():
-    assert timeutil.format_vienna("2026-10-08T10:39:00+02:00") == "Do 08.10.2026 · 10:39"
+    assert timeutil.format_local("2026-10-08T10:39:00+02:00") == "Do 08.10.2026 · 10:39"
     with pytest.raises(ValueError):
-        timeutil.to_vienna("2026-10-08T10:39:00")
-    assert timeutil.vienna_now().tzinfo is not None
+        timeutil.to_local("2026-10-08T10:39:00")
+    assert timeutil.local_now().tzinfo is not None
 
 
 @pytest.mark.parametrize(
@@ -147,9 +166,9 @@ def test_run_expiry_and_duration_use_elapsed_utc_across_dst(
         }
     )
     assert store.detail(run_id)["expires"] == expected_expires
-    with patch("core.runs.vienna_now", return_value=timeutil.to_vienna(before)):
+    with patch("core.runs.local_now", return_value=timeutil.to_local(before)):
         assert store.expire_due() == []
-    with patch("core.runs.vienna_now", return_value=timeutil.to_vienna(due)):
+    with patch("core.runs.local_now", return_value=timeutil.to_local(due)):
         assert store.expire_due() == [run_id]
     result = json.loads((data_dir / "results" / f"{run_id}.json").read_text())
     assert result["duration_s"] == 3600

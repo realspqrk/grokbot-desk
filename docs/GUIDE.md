@@ -80,9 +80,9 @@ When several bots post at once (a burst), the window stays one calm window:
 - Noise collapses to a count plus themes (`feed: {count, themes}` in `decide-list`); items kept without action become chips.
 - Empty sections are not rendered.
 
-## 5. German strings and Vienna time
+## 5. German strings and local time
 
-German is the default; set `RS_LANG=en` before starting the server to select English. Result timestamps use Europe/Vienna.
+German is the default; set `RS_LANG=en` before starting the server to select English. Times use the machine's time zone; `RS_TZ` (an IANA name such as `Europe/Vienna`) pins one zone, for tests and screenshots.
 
 - Every visible UI string is German and comes from `core\i18n\de.json` (keys in English, values in German). Templates never contain literal text:
   - static text in `template.html`: `<span data-rs-t="key"></span>`;
@@ -90,11 +90,11 @@ German is the default; set `RS_LANG=en` before starting the server to select Eng
   - dynamic text in `template.js`: `RS.t("key", {name: value})` (`{name}` placeholders in the value are filled from the params);
   - payload text (names, subjects, snippets): set with `textContent`, never `innerHTML`.
 - Every key a template uses is listed in `template.json` `strings` and exists in `de.json`. A new key goes into `de.json` first (see section 9, step 4).
-- Times: only `RS.time(iso)`, which shows Europe/Vienna in the format `Do 08.10.2026 · 10:39`.
-- Every timestamp in a payload must carry an offset (`+02:00`, `+01:00` or `Z`); the core converts it to Vienna time. Timestamps in result envelopes are always Vienna ISO 8601, e.g. `2026-10-08T10:44:12+02:00`.
+- Times: only `RS.time(iso)`, which shows local time in the format `Do 08.10.2026 · 10:39`.
+- Every timestamp in a payload must carry an offset (`+02:00`, `+01:00` or `Z`); the core converts it to local time. Timestamps in result envelopes are local ISO 8601 with their offset, e.g. `2026-10-08T10:44:12+02:00`.
 - Producing `created`:
   - PowerShell on `<host>`: `(Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')` gives e.g. `2026-10-08T12:41:33+02:00`.
-  - Python: `datetime.now(ZoneInfo("Europe/Vienna")).isoformat(timespec="seconds")`.
+  - Python: `datetime.now().astimezone().isoformat(timespec="seconds")`.
 
 ## 6. No external requests
 
@@ -182,7 +182,7 @@ To reuse a shipped UI, add `"extends": "<builtin id>"` to the user manifest. Inh
 
 Calm-UI helpers (template API, all scoped to the active report):
 
-- `RS.time(iso)`: a timestamp in **Europe/Vienna**, whatever the machine's time zone. German `Do 08.10.2026 · 10:39` (spec 2.9), English `Thu, Oct 8, 2026 · 10:39`. Accepts `Z` and any offset.
+- `RS.time(iso)`: a timestamp in the machine's time zone (or the one `RS_TZ` pins). German `Do 08.10.2026 · 10:39` (spec 2.9), English `Thu, Oct 8, 2026 · 10:39`. Accepts `Z` and any offset.
 - `RS.date(isoDate)`: a calendar date (`2026-10-15`, the same day everywhere). German `15.10.`, English `Oct 15`.
 - `RS.number(n)`: grouped by the selected string table: German `99.999`, English `99,999`. The table is German by default; `RS_LANG=en` selects English.
 - `RS.setAlternative(label, onClick)` / `RS.setAlternative(null)`: the one quiet footer alternative next to the primary (e.g. *Request changes*). It is reset on every report switch.
@@ -313,7 +313,7 @@ Each bot can show its own **name**, **avatar** (an image or a built-in shape) an
 
 ### Task banner
 
-A busy person who was interrupted should know within 10 seconds what to do. Every report therefore opens with a banner above the title: the task line of its kind, the steps (`task.steps` when the payload sets them, otherwise a default per kind), at most three sentences of why, and `eta_min` / `due` as quiet meta (`~3 min`, `due today 15:00`, `overdue since 09:00`; Vienna time). A supplied `task.steps` stays as written: ticks, choices and a change request refresh the actor lines and the footer, and they do not replace that line. A longer why, from the payload or from the template, is folded behind `Mehr dazu` / `More on why`, the only control the banner may hold. A decided report keeps the banner, neutral and muted (`Gelesen: nichts weiter zu tun`, `Verworfen: der Bot macht nichts`).
+A busy person who was interrupted should know within 10 seconds what to do. Every report therefore opens with a banner above the title: the task line of its kind, the steps (`task.steps` when the payload sets them, otherwise a default per kind), at most three sentences of why, and `eta_min` / `due` as quiet meta (`~3 min`, `due today 15:00`, `overdue since 09:00`; local time). A supplied `task.steps` stays as written: ticks, choices and a change request refresh the actor lines and the footer, and they do not replace that line. A longer why, from the payload or from the template, is folded behind `Mehr dazu` / `More on why`, the only control the banner may hold. A decided report keeps the banner, neutral and muted (`Gelesen: nichts weiter zu tun`, `Verworfen: der Bot macht nichts`).
 
 `task` fields:
 

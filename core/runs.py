@@ -19,7 +19,7 @@ from .platform import directory_identity
 from .results import ResultExists, write_result
 from .schema import SchemaError, validate
 from .tasks import task_brief, task_view
-from .timeutil import format_vienna, iso_now, to_vienna, vienna_now
+from .timeutil import format_local, iso_now, to_local, local_now
 from .webhook import fire_after_result
 
 
@@ -280,7 +280,7 @@ class RunStore:
         def created_key(record):
             payload = record.get("payload") or {}
             try:
-                created = to_vienna(payload["created"]).astimezone(timezone.utc)
+                created = to_local(payload["created"]).astimezone(timezone.utc)
             except (TypeError, ValueError, OverflowError, KeyError):
                 created = datetime.max.replace(tzinfo=timezone.utc)
             return (created, str(payload.get("run_id") or ""))
@@ -349,7 +349,7 @@ class RunStore:
         if not key:
             return None
         hours = payload.get("dedupe_hours", 24)
-        since = vienna_now().astimezone(timezone.utc) - timedelta(hours=hours)
+        since = local_now().astimezone(timezone.utc) - timedelta(hours=hours)
         with self._lock:
             best = None
             for run_id, record in self._runs.items():
@@ -361,7 +361,7 @@ class RunStore:
                 if record["state"] not in ("submitted", "cancelled"):
                     continue
                 try:
-                    decided = to_vienna(loads(
+                    decided = to_local(loads(
                         (self.results_dir / f"{run_id}.json").read_text(encoding="utf-8")
                     )["decided"]).astimezone(timezone.utc)
                 except (OSError, ValueError, KeyError, TypeError):
@@ -394,8 +394,8 @@ class RunStore:
             # Registration order. The page seeds the strip from this because
             # a bot's created stamp can be skewed. A record saved before seq
             # existed is numbered on load, in created order, ahead of these.
-            created_utc = to_vienna(payload["created"]).astimezone(timezone.utc)
-            expires = to_vienna(
+            created_utc = to_local(payload["created"]).astimezone(timezone.utc)
+            expires = to_local(
                 created_utc + timedelta(minutes=payload["expires_minutes"])
             )
             record = {
@@ -429,7 +429,7 @@ class RunStore:
         with self._lock:
             records = [record for record in self._runs.values() if record["state"] == "open"]
             records.sort(
-                key=lambda item: to_vienna(item["payload"]["created"]).astimezone(
+                key=lambda item: to_local(item["payload"]["created"]).astimezone(
                     timezone.utc
                 ),
                 reverse=True,
@@ -443,8 +443,8 @@ class RunStore:
                     "bot": item["payload"]["bot"],
                     "bot_display": self._display_bot(item, bots),
                     "identity": public_identity(item["identity"], with_accent=False),
-                    "created": to_vienna(item["payload"]["created"]).isoformat(timespec="seconds"),
-                    "created_display": format_vienna(item["payload"]["created"]),
+                    "created": to_local(item["payload"]["created"]).isoformat(timespec="seconds"),
+                    "created_display": format_local(item["payload"]["created"]),
                     "state": item["state"],
                     "unread": item["unread"],
                     "task": task_brief(item["payload"], self.registry),
@@ -471,8 +471,8 @@ class RunStore:
                 "bot": payload["bot"],
                 "bot_display": self._display_bot(record, bots),
                 "identity": public_identity(record["identity"], with_accent=True),
-                "created": to_vienna(payload["created"]).isoformat(timespec="seconds"),
-                "created_display": format_vienna(payload["created"]),
+                "created": to_local(payload["created"]).isoformat(timespec="seconds"),
+                "created_display": format_local(payload["created"]),
                 "expires": record["expires"],
                 "state": record["state"],
                 "data": payload["data"],
@@ -522,8 +522,8 @@ class RunStore:
                         "/data/per_platform",
                         "mode, decision and platforms do not agree",
                     )
-            decided = vienna_now()
-            created = to_vienna(payload["created"])
+            decided = local_now()
+            created = to_local(payload["created"])
             envelope = {
                 "schema": "report-shell/result@1",
                 "run_id": run_id,
@@ -576,11 +576,11 @@ class RunStore:
     def expire_due(self):
         expired = []
         with self._lock:
-            now = vienna_now()
+            now = local_now()
             for run_id, record in list(self._runs.items()):
                 if (
                     record["state"] == "open"
-                    and to_vienna(record["expires"]).astimezone(timezone.utc)
+                    and to_local(record["expires"]).astimezone(timezone.utc)
                     <= now.astimezone(timezone.utc)
                 ):
                     try:

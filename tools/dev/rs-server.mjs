@@ -157,6 +157,8 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
       || process.env.RS_CLI_HTTP_TIMEOUT
       || '15'
     ),
+    /* times follow the machine's zone; tests and screenshots pin one */
+    RS_TZ: environment.RS_TZ || process.env.RS_TZ || 'Europe/Vienna',
     RS_DATA_DIR: dataDir,
   };
   const stderrPath = path.join(dataDir, 'server.stderr.log');

@@ -40,7 +40,7 @@ TARGETS = {
     "C12": "keyboard 100%",
     "C13": "0 axe serious/critical + basic/contrast",
     "C14": "0 external; CSP every response",
-    "C15": "stdlib + German strings + Vienna time",
+    "C15": "stdlib + German strings + local time",
     "C16": "calm: 13 K-items on every scene",
 }
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from .identity import SHIPPED_REGISTRY, display_names, load_registry, shape_set
 from .jsonutil import dumps, loads
 from .product import DISPLAY_NAME
+from .timeutil import zone_name
 
 CORE = Path(__file__).resolve().parent
 LANGS = ("de", "en")
@@ -39,6 +40,7 @@ def build_page(registry, csrf_token, port):
         "csrf": csrf_token,
         "port": port,
         "lang": table.stem,
+        "tz": zone_name(),
         "strings": strings,
         "platforms": platforms,
         "bots": bots,

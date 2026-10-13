@@ -40,7 +40,7 @@ from .product import PRODUCT_NAME, RUNNER_ID
 from .registry import ID_RE, RegistryError, scan_registry
 from .runs import preview_post_summary
 from .server import run_server
-from .timeutil import iso_now, to_vienna
+from .timeutil import iso_now, to_local
 from .webhook import validate_webhook_url
 
 
@@ -420,7 +420,7 @@ def _seconds_until_expiry(run_path):
     run file has no readable expiry (an old or a damaged record)."""
     try:
         record = json_loads(run_path.read_text(encoding="utf-8"))
-        expires = to_vienna(record["expires"]).astimezone(timezone.utc)
+        expires = to_local(record["expires"]).astimezone(timezone.utc)
     except (OSError, ValueError, KeyError, TypeError, OverflowError):
         return None
     return (expires - datetime.now(timezone.utc)).total_seconds() + WAIT_EXPIRY_GRACE_S
@@ -476,7 +476,7 @@ def _decided_after(value, since):
     # inclusive: `decided` has whole seconds, so two decisions can share the
     # cursor's second; the caller drops the ones it saw by run_id (--seen)
     try:
-        return to_vienna(value["decided"]).astimezone(timezone.utc) >= since
+        return to_local(value["decided"]).astimezone(timezone.utc) >= since
     except (KeyError, TypeError, ValueError):
         return False
 
@@ -568,7 +568,7 @@ def _results_since(base, since, bot=None):
             continue
         listed.add(value.get("run_id"))
         items.append(_result_item(base, path, value))
-    items.sort(key=lambda item: (to_vienna(item["decided"]).astimezone(timezone.utc), item["run_id"] or ""))
+    items.sort(key=lambda item: (to_local(item["decided"]).astimezone(timezone.utc), item["run_id"] or ""))
     return items
 
 
@@ -580,7 +580,7 @@ def command_results(args, base):
     second, including ones seen before), so passing both back as-is next time
     neither loses nor repeats a decision."""
     try:
-        since = to_vienna(args.since).astimezone(timezone.utc)
+        since = to_local(args.since).astimezone(timezone.utc)
     except (TypeError, ValueError, OverflowError):
         return error("--since must be ISO 8601 with an offset", 2)
     deadline = time.monotonic() + max(0.0, min(args.wait, 3600.0))
@@ -594,10 +594,10 @@ def command_results(args, base):
     answer = {"data_dir": str(Path(base)), "results": items}
     if every:
         answer["cursor"] = every[-1]["decided"]
-        newest = to_vienna(every[-1]["decided"]).astimezone(timezone.utc)
+        newest = to_local(every[-1]["decided"]).astimezone(timezone.utc)
         answer["seen"] = [
             item["run_id"] for item in every
-            if to_vienna(item["decided"]).astimezone(timezone.utc) == newest
+            if to_local(item["decided"]).astimezone(timezone.utc) == newest
         ]
     else:
         answer["cursor"], answer["seen"] = args.since, sorted(skip)

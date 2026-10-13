@@ -7,7 +7,7 @@ from datetime import timedelta, timezone
 from .jsonutil import JSONBoundaryError, loads
 from .schema import SchemaError, validate
 from .tasks import TaskError, apply_kind, validate_task
-from .timeutil import to_vienna, vienna_now
+from .timeutil import to_local, local_now
 
 
 MAX_PAYLOAD = 2 * 1024 * 1024
@@ -36,7 +36,7 @@ class EnvelopeError(ValueError):
 
 
 def generate_run_id(bot="report"):
-    now = vienna_now()
+    now = local_now()
     tag = re.sub("[^a-z0-9-]", "-", bot.lower()).strip("-")[:20] or "report"
     return f"{now:%Y%m%d-%H%M%S}-{tag}-{secrets.token_hex(6)}"
 
@@ -78,7 +78,7 @@ def validate_payload(payload, registry, used_ids=(), warnings=None):
     if not isinstance(payload["title"], str) or not 1 <= len(payload["title"]) <= 80:
         raise EnvelopeError("/title", "must be 1-80 characters")
     try:
-        created = to_vienna(payload["created"])
+        created = to_local(payload["created"])
     except (TypeError, ValueError, OverflowError) as error:
         raise EnvelopeError("/created", "must be ISO 8601 with an offset") from error
     if "dedupe_key" in payload and (
@@ -95,10 +95,10 @@ def validate_payload(payload, registry, used_ids=(), warnings=None):
     if type(expires) is not int or not 5 <= expires <= 10080:
         raise EnvelopeError("/expires_minutes", "must be an integer from 5 to 10080")
     try:
-        to_vienna(created.astimezone(timezone.utc) + timedelta(minutes=expires))
+        to_local(created.astimezone(timezone.utc) + timedelta(minutes=expires))
     except (ValueError, OverflowError) as error:
         raise EnvelopeError("/expires_minutes", "expiry is outside the supported timestamp range") from error
-    now = vienna_now()
+    now = local_now()
     clamped = None
     if created.astimezone(timezone.utc) - now.astimezone(timezone.utc) > MAX_CREATED_AHEAD:
         clamped = now.isoformat(timespec="seconds")

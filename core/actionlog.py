@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 
 from .jsonutil import dumps
-from .timeutil import iso_now, vienna_now
+from .timeutil import iso_now, local_now
 
 
 class ActionLog:
@@ -16,7 +16,7 @@ class ActionLog:
         self._lock = Lock()
 
     def path(self):
-        return self.folder / f"{vienna_now():%Y-%m-%d}.jsonl"
+        return self.folder / f"{local_now():%Y-%m-%d}.jsonl"
 
     def write(self, run_id, event, detail=None):
         if event == "copy" and detail and "text" in detail:

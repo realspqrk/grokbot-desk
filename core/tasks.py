@@ -9,7 +9,7 @@ import copy
 import re
 from datetime import date
 
-from .timeutil import to_vienna
+from .timeutil import to_local
 
 KINDS = ("post_yourself", "approve_bot_acts", "pick", "fyi", "review", "blocking")
 TASK_FIELDS = {"kind", "steps", "eta_min", "due", "why"}
@@ -236,7 +236,7 @@ def _validate_due(due):
         if DATE_RE.fullmatch(due):
             date.fromisoformat(due)
         elif EXTENDED_DUE.fullmatch(due):
-            to_vienna(due)
+            to_local(due)
         else:
             raise ValueError
     except (TypeError, ValueError, OverflowError) as error:
