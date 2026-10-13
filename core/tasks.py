@@ -73,9 +73,14 @@ def _boundaries(text):
 
     A line break always ends a sentence. A full stop does not when it closes
     an abbreviation (z. B., ca., Nr., Dr., d. h., u. a., bzw., e.g.) or an
-    ordinal or day ("1. Schritt", "15. Mai"); usw. and etc. end one only
-    when a capital follows. "..." ends one, and so does a longer number or a
-    version ("2026.", "2.4.").
+    ordinal, a day or a date ("1. Schritt", "15. Mai", "Zum 100.", "Am
+    31.12."); usw. and etc. end one only when a capital follows. "..." and
+    "…" end one, and so does a year ("im Jahr 2026.").
+
+    Accepted limitation: any other number or version before a full stop
+    never ends a sentence, so "Es sind 12. Nicht deployen." and "Version
+    2.4. Danach" stay one sentence. Telling a count from an ordinal needs
+    context the text does not give; one long sentence only folds later.
     """
     for match in SENTENCE_GAP.finditer(text):
         gap = match.group(0)
@@ -88,8 +93,10 @@ def _boundaries(text):
 
 # z.B., d.h., u.a., e.g., i.e.: single letters joined by dots
 DOTTED_LETTERS = re.compile(r"^(?:[^\W\d_]\.)+[^\W\d_]$")
-# an ordinal or a day of the month: "1. Schritt", "15. Mai"
-ORDINAL = re.compile(r"^[0-9]{1,2}$")
+# digits and dots: an ordinal, a day or a date ("1.", "100.", "31.12.", "2.4.")
+NUMBER = re.compile(r"^[0-9][0-9.]*$")
+# a year ends a sentence: "im Jahr 2026."
+YEAR = re.compile(r"^(?:19|20)[0-9]{2}$")
 
 
 def _abbreviation(head, tail):
@@ -99,14 +106,13 @@ def _abbreviation(head, tail):
     if not word:
         return False
     token = word.group(1).lower()
-    if ORDINAL.fullmatch(token):
-        return True
+    if NUMBER.fullmatch(token):
+        return not YEAR.fullmatch(token)
     if (len(token) == 1 and token.isalpha()) or DOTTED_LETTERS.fullmatch(token):
         return True
     if token in MAYBE_END:
         return not tail[:1].isupper()
-    # any other number or version (2026., 2.4.) and any dotted word
-    # (example.com.) ends the sentence
+    # any dotted word (example.com.) ends the sentence
     return token in ABBREVIATIONS
 
 

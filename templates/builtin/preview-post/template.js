@@ -82,14 +82,14 @@ function composed(p) {
 
 /* The text whose hashtags count toward a hashtag limit (Instagram): the
    composed text, plus, when the list is not appended, every listed tag the
-   text does not already carry. The approved post goes out with that list. */
+   text does not already carry as a counted hashtag (the counter's own rules:
+   a "#tag" inside a URL or glued to a word is not one). The approved post
+   goes out with that list. */
 function tagCounted(p, text) {
   if (appends(p)) return text;
-  var lower = text.toLowerCase();
+  var carried = RS.count(text, p).tags || [];
   var extra = tagsOf(p).filter(function (h) {
-    var at = lower.indexOf('#' + h.toLowerCase());
-    var next = at < 0 ? '' : lower.charAt(at + h.length + 1);
-    return at < 0 || /[\p{L}\p{M}\p{N}_]/u.test(next);
+    return carried.indexOf(String(h).normalize('NFC').toLowerCase()) < 0;
   });
   return extra.length ? text + '\n\n' + extra.map(function (h) { return '#' + h; }).join(' ') : text;
 }
@@ -514,7 +514,7 @@ function perPlatform(list, note) {
    platform manual: you post yourself, "Posted ✓" once one is ticked.
    Any auto platform: "Approve & post" (the bot posts what is ticked;
    "Posted ✓" when only manual ones are ticked). A mix names neither actor
-   while both act ("Submit"); before any tick every approvable platform is
+   while both act ("Send response"); before any tick every approvable platform is
    the plan. "Request changes" is always the alternative. */
 var selfPost = RS.task.base === 'post_yourself';
 /* nothing can be approved or marked: only a change request is left */

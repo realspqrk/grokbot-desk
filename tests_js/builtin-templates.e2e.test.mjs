@@ -379,7 +379,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       const labels = (id) => page.$$eval(`rs-action-row[data-item="${id}"] button`, (els) => els.map((b) => [b.value, b.textContent]));
       assert.deepEqual(await labels('inv-paper'), [['approve', 'Pay'], ['reject', 'Dispute'], ['defer', 'Next week']]);
       assert.equal(await page.$eval('#dl-todo-h', (h) => h.getBoundingClientRect().width <= 1), true, 'one group: no visible heading');
-      assert.equal(await page.textContent('#dl-todo-h'), de.section_todo, 'it still names the list');
+      assert.equal(await page.textContent('#dl-todo-h'), de.section_items, 'it still names the list');
       const choose = ['approve', 'approve', 'reject', 'defer', 'reject', 'approve', 'approve', 'reject', 'approve', 'defer', 'approve', 'approve'];
       for (let i = 0; i < data.items.length; i++) {
         const w = data.items[i];
@@ -798,6 +798,17 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.equal(await listed.page.isDisabled('#approve-instagram'), true);
       assert.equal(await listed.page.textContent('#blocked-instagram [data-pp="blocked-text"]'), t('hashtags_to_approve', { limit: 5 }));
     } finally { await listed.ctx.close(); }
+    const hidden = await open('preview-post', 'golden', {
+      data: {
+        ...data, hashtag_mode: 'none', hashtags: ['one', ...tags.slice(1)], platforms: ['instagram'],
+        text: data.text + ' https://example.com/#one me#Sourdough',
+      },
+    });
+    try {
+      assert.equal(await hidden.page.$eval('[data-counter-id="instagram-hashtags"]', (el) => el.result.count), 6,
+        'a URL fragment or a tag glued to a word does not carry a listed tag');
+      assert.equal(await hidden.page.isDisabled('#approve-instagram'), true);
+    } finally { await hidden.ctx.close(); }
     const five = await open('preview-post', 'golden', {
       data: { ...data, hashtag_mode: 'none', hashtags: tags.slice(0, 5), platforms: ['instagram'] },
     });

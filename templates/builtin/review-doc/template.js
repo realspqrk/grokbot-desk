@@ -723,6 +723,7 @@ function update(save) {
     RS.draft.set(value);
   }
   if (requesting) {
+    syncRequestField(list);
     var ready = !!overall.value.trim() || list.length > 0;
     RS.setSubmitLabel(RS.t('send_request'));
     RS.setAlternative(null);
@@ -757,8 +758,23 @@ function update(save) {
   else if (list.length === 1) RS.setStatus(RS.t('rd_with_comments_one'));
   else RS.setStatus(RS.t('rd_with_comments', { n: RS.number(list.length) }));
 }
+/* With section comments the request can go as it is: the overall comment
+   waits behind a quiet "Add a note" instead of an empty field. It shows
+   once asked for, once it holds text, or when no section comment is left. */
+var requestField = false;
+function syncRequestField(list) {
+  var shown = requestField || !!overall.value.trim() || !list.length;
+  part('request-field').hidden = !shown;
+  part('request-add').hidden = shown;
+}
+part('request-add').addEventListener('click', function () {
+  requestField = true;
+  update(true);
+  overall.focus();
+});
 function setRequesting(on, focus) {
   requesting = on;
+  if (!on) requestField = false;
   part('request').hidden = !on;
   update(true);
   if (!focus) return;

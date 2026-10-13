@@ -40,7 +40,7 @@
           "description": "Label of the defer choice instead of Defer. The result value stays defer."
         }
       },
-      "description": "Optional button labels for bot items, plain text of 1-24 characters each, e.g. {\"approve\": \"Pay\", \"defer\": \"Next week\"}. An item's own labels win. The banner, the rows and the status use them. The result keeps approve, reject and defer. Each choice of an item needs its own label: a label that repeats another choice of that item, also a default label such as Reject, is rejected at show."
+      "description": "Optional button labels for bot items, plain text of 1-24 characters each, e.g. {\"approve\": \"Pay\", \"defer\": \"Next week\"}. An item's own labels win. The rows and the status use them; the banner does not. The result keeps approve, reject and defer. Each choice of an item needs its own label: a label that repeats another choice of that item, also a default label such as Reject, is rejected at show."
     },
     "items": {
       "type": "array",

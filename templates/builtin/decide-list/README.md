@@ -49,7 +49,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 |---|---|
 | `intro` | optional, 1–300 characters, plain text |
 | `action` | optional `post`, `send` or `continue` (default): what the bot does with the bot items you approve. Names the bot's banner line (Approve and the bot sends; in a mixed list `Inbox Agent sends after approval: 3 items`). The footer stays Send decisions. The result does not change |
-| `labels` | optional `{approve?, reject?, defer?}`, each plain text of 1–24 characters (no line break, no leading or trailing space): the bot items' button labels, e.g. `{"approve": "Pay", "reject": "Dispute"}`. `labels.approve` also leads the banner (`Pay, then the bot continues`); rows and the status use the labels. The result keeps `approve`, `reject`, `defer`. Each choice of an item needs its own label: a label that repeats another choice of that item (its own, top-level or default label such as `Reject` / `Ablehnen`) is rejected at show, at that `labels` entry |
+| `labels` | optional `{approve?, reject?, defer?}`, each plain text of 1–24 characters (no line break, no leading or trailing space): the bot items' button labels, e.g. `{"approve": "Pay", "reject": "Dispute"}`. The banner does not use them (`Make your decisions, then <bot> continues`); the rows and the status do. The result keeps `approve`, `reject`, `defer`. Each choice of an item needs its own label: a label that repeats another choice of that item (its own, top-level or default label such as `Reject` / `Ablehnen`) is rejected at show, at that `labels` entry |
 | `items[]` | required, 1–12 items, shown in this order. Each is a bot item (no `actor`, or `bot`) or a user item (`actor: user`) |
 | `items[].id` | `^[a-z0-9-]{1,40}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/items/1/id`; echoed in the result |
 | `items[].kind` | optional, 1–24 (a short category above the title, e.g. `Expense`) |
@@ -83,7 +83,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 | Key | English | German |
 |---|---|---|
-| `section_todo` | Needs you (visually hidden when it is the only group) | Wartet auf dich |
+| `section_items` | Items (names the list; visually hidden when it is the only group) | Einträge |
 | `choice_approve`, `choice_reject`, `choice_defer` | Approve, Reject, Defer | Freigeben, Ablehnen, Zurückstellen |
 | `done_mark`, `posted`, `skip`, `later` | Done ✓ or Posted ✓, Skip, Later (user items) | Erledigt ✓ or Gepostet ✓, Überspringen, Später |
 | `footer_done` | Done (footer when every item is a user item) | Fertig |

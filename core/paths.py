@@ -32,11 +32,19 @@ def migration_advice(base):
     return MIGRATE_ADVICE
 
 
+def legacy_gone(base):
+    """True for an older-named folder that `migrate` moved away. Such a
+    folder counts only while it still holds runs/: a stray log or result
+    written there after the move does not bring it back."""
+    base = Path(base)
+    return base.name == LEGACY_NAME and not (base / "runs").is_dir()
+
+
 def follow_migration(base):
     """The folder a default legacy base was migrated to while a command ran,
     else base unchanged. RS_DATA_DIR is never redirected."""
     base = Path(base)
-    if base.exists() or not migration_advice(base):
+    if not legacy_gone(base) or not migration_advice(base):
         return base
     moved = base.with_name(PRODUCT_NAME)
     return moved if moved.is_dir() else base
@@ -84,7 +92,21 @@ def legacy_data_dirs():
 
 
 def ensure_layout(base=None):
+    """Create the data folder and its subfolders; returns the folder used.
+
+    An older-named folder is never created again: once `migrate` moved it,
+    the new folder next to it is used instead."""
     base = Path(base or data_dir())
+    if base.name == LEGACY_NAME:
+        try:
+            if not legacy_gone(base):
+                # no parents=True: a folder moved away meanwhile stays gone
+                for name in ("runs", "results", "log", "media"):
+                    (base / name).mkdir(exist_ok=True)
+                return base
+        except FileNotFoundError:
+            pass
+        base = base.with_name(PRODUCT_NAME)
     base.mkdir(mode=0o700, parents=True, exist_ok=True)
     for name in ("runs", "results", "log", "media"):
         (base / name).mkdir(exist_ok=True)

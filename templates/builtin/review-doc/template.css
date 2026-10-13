@@ -9,6 +9,8 @@
 .rd__summary { max-width: var(--rs-measure); }
 .rd__meta { font-size: var(--rs-fs-sm); color: var(--rs-muted); font-variant-numeric: tabular-nums; }
 .rd__request { display: flex; flex-direction: column; gap: var(--space-1); max-width: var(--rs-measure); }
+.rd__request-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.rd__request-links { display: flex; flex-wrap: wrap; gap: var(--space-4); }
 
 /* ---- the document ---- */
 .rd__doc {

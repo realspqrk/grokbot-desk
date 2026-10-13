@@ -13,14 +13,19 @@
 - A template's summary, intro, context or notes becomes the banner's why only
   when it fits whole (three sentences, 360 characters); otherwise it stays in
   the report. Line breaks are kept, German abbreviations (`z. B.`, `ca.`,
-  `Nr.`) and ordinals no longer end a sentence, while `...`, a year or a
-  version number at the end still do, and a cut falls between words.
+  `Nr.`), ordinals and dates (`15.`, `31.12.`) no longer end a sentence,
+  while `...`, `…` and a year (`2026.`) still do, and a cut falls between
+  words.
 - A list of the bot's actions says "Make your decisions, then <bot>
   continues" (one item: "Make your decision"); a choice label such as `Pay`
   no longer names the whole desk. A mixed preview's steps are one line
   ("Review the platforms, then <button>") and its footer reads "Send
   response". After "None of these" the banner says new options were
   requested, also when the report is reopened.
+- decide-list: the list's heading reads `Items` (`Einträge`) instead of
+  `Needs you`, so a sent list no longer announces open work.
+- review-doc: with section comments, Request changes no longer opens an
+  empty overall comment; it waits behind a quiet `Add a note`.
 - approve-one: `summary` is optional. Without it the banner's `task.why`
   and the facts carry the request.
 - Discard report moves from the footer into the `…` menu, behind the same
@@ -34,10 +39,12 @@
   Europe/Vienna. `RS_TZ` pins a zone (tests and screenshots).
 - New `migrate` command: on Windows it moves the older data folder
   `%LOCALAPPDATA%\spqrk-report-shell` to `%LOCALAPPDATA%\grokbot-desk`
-  while the desk is closed, and updates the media paths stored in open
-  reports and `config.json`. It refuses while a desk runs or starts. Until
-  then the older folder stays in use, and `paths`, `doctor` and `show` say
-  to run `python report_shell.py migrate`. `RS_DATA_DIR` is never moved.
+  while the desk is closed and no report in it is still open, and updates
+  `config.json` media folders under the old path. It refuses while a desk
+  runs or starts, or while a report waits for a decision. Until then the
+  older folder stays in use, and `paths`, `doctor` and `show` say to run
+  `python report_shell.py migrate`. A moved folder is never created again.
+  `RS_DATA_DIR` is never moved.
 - Breaking: the old webhook key variable `SPQRK_REPORT_SHELL_WEBHOOK_KEY` is
   gone. Use `GROKBOT_DESK_WEBHOOK_KEY`.
 

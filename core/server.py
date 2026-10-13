@@ -29,7 +29,7 @@ from .launch_coordination import (
 from .media import IMAGE_EXTENSIONS, MediaError, open_validated_media
 from .page import build_page
 from .migrate import DataDirBusy, hold_server_lock, migration_pending
-from .paths import LEGACY_NAME, ensure_layout, load_config
+from .paths import ensure_layout, legacy_gone, load_config
 from .platform import (
     ALLOW_REUSE_ADDRESS,
     ClipboardBusy,
@@ -1031,13 +1031,17 @@ def _maintenance(server):
 
 def run_server(data_dir, port, repo_root):
     data_dir = Path(data_dir)
-    if data_dir.name == LEGACY_NAME and not data_dir.exists():
+    if legacy_gone(data_dir):
         # spawned for the older folder just before `migrate` moved it
         raise DataDirBusy(f"{data_dir} was migrated; start the desk again")
-    data_dir = ensure_layout(data_dir)
+    if ensure_layout(data_dir) != data_dir:
+        raise DataDirBusy(f"{data_dir} was migrated; start the desk again")
     # held until this process ends; `migrate` refuses while it is held
-    lock = hold_server_lock(data_dir)
-    if migration_pending(data_dir):
+    try:
+        lock = hold_server_lock(data_dir)
+    except FileNotFoundError:
+        raise DataDirBusy(f"{data_dir} was migrated; start the desk again") from None
+    if migration_pending(data_dir) or legacy_gone(data_dir):
         if lock is not None:
             os.close(lock)
         raise DataDirBusy("migrate is moving this data folder; start the desk again after it")

@@ -37,6 +37,7 @@
   // A tag body needs a letter or "_" (a bare number is no tag); a "#" right
   // after "/" or inside a URL is a fragment. components.js TAG_RE matches the same.
   var HASHTAG_RE = /(^|[^\p{L}\p{M}\p{N}_&#\/])#+(?=[\p{L}\p{M}\p{N}_]*[\p{L}_])/gu;
+  var TAG_BODY_RE = /^[\p{L}\p{M}\p{N}_]+/u;
   var PATH_CHAR_RE = /[a-z0-9!\*';:=+,\.$\/%#\[\]\-\u2013_~@\|&\xC0-\xD6\xD8-\xF6\xF8-\xFF\u0100-\u024F\u0253\u0254\u0256\u0257\u0259\u025B\u0263\u0268\u026F\u0272\u0289\u028B\u02BB\u0300-\u036F\u1E00-\u1EFF\u0400-\u04FF]/i;
   var PATH_END_RE = /[+\-a-z0-9=_#\/\xC0-\xD6\xD8-\xF6\xF8-\xFF\u0100-\u024F\u0253\u0254\u0256\u0257\u0259\u025B\u0263\u0268\u026F\u0272\u0289\u028B\u02BB\u0300-\u036F\u1E00-\u1EFF\u0400-\u04FF]/i;
   var QUERY_CHAR_RE = /[a-z0-9!?\*'@();:&=+\$\/%#\[\]\-_\.,~|]/i;
@@ -528,20 +529,25 @@
     return best;
   }
 
-  function hashtags(s) {
-    var n = 0;
+  /* The counted hashtags' bodies, lower-cased, in text order (repeats kept). */
+  function hashtagTags(s) {
+    var tags = [];
     var ranges = s.indexOf('#') >= 0 ? urlRanges(s) : [];
     var m;
     HASHTAG_RE.lastIndex = 0;
     while ((m = HASHTAG_RE.exec(s))) {
       var at = m.index + m[1].length;
       var inUrl = ranges.some(function (r) { return r[0] <= at && at < r[1]; });
-      if (!inUrl) n++;
+      if (inUrl) continue;
+      var body = TAG_BODY_RE.exec(s.slice(HASHTAG_RE.lastIndex));
+      tags.push((body ? body[0] : '').toLowerCase());
     }
-    return n;
+    return tags;
   }
 
-  /** count(text, platform) -> {count, limit, over, fold?, hashtags?, hashtagLimit?} */
+  /** count(text, platform) -> {count, limit, over, fold?, hashtags?, hashtagLimit?, tags?}
+      tags: the bodies of the counted hashtags, lower-cased, so a caller
+      decides "already in the text" with the same rules. */
   function count(text, platform) {
     var p = platformCfg(platform);
     var s = norm(text);
@@ -549,7 +555,8 @@
     var out = { count: n, limit: p.limit, over: n > p.limit };
     if (p.fold) out.fold = p.fold;
     if (p.hashtag_limit !== undefined) {
-      out.hashtags = hashtags(s);
+      out.tags = hashtagTags(s);
+      out.hashtags = out.tags.length;
       out.hashtagLimit = p.hashtag_limit;
       if (out.hashtags > p.hashtag_limit) out.over = true;
     }

@@ -3,7 +3,7 @@
 Built-in template for one document the person should read and then approve, or send back with comments: a draft, an announcement, a report, a reply. The agent's short lead sits on top, then quiet reading facts (`640 words · 3 min read · 5 sections`), then the document itself in a 72ch reading column.
 
 - **Looks good** (*Passt*) is the primary for a plain review, or Approve & post / send / continue when `action` is set (Ctrl+Enter).
-- **Request changes** (*Änderungen anfordern*) is the footer's quiet alternative. It opens one overall comment (*What should change?*, with *Cancel*), and the primary becomes *Send request*.
+- **Request changes** (*Änderungen anfordern*) is the footer's quiet alternative. It opens one overall comment (*What should change?*, with *Cancel*), and the primary becomes *Send request*. With section comments the request can go as it is: the empty overall comment stays behind a quiet *Add a note*.
 - **Comment on a section:** every section heading carries a *Comment* action that shows on hover or keyboard focus. It opens a comment field under that heading. An empty field closes again when it loses focus (or with Esc). Section comments go with either decision; the status line says how many go with an approval. Without section comments the status line stays empty: the banner and the buttons already say what is open.
 - The overflow menu (`…`) has *Copy Markdown* (or *Copy text*) for the whole source.
 
@@ -71,7 +71,7 @@ When the document has at least two headings of level 1–2, each of those headin
 
 ## Strings
 
-English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `rd_doc_label` (Document / Dokument), `rd_words` ({n} words / {n} Wörter), `rd_words_one` (1 word / 1 Wort), `rd_minutes` ({n} min read / {n} Min. Lesezeit), `rd_sections`, `rd_sections_one`, `rd_comment` (Comment / Kommentieren), `rd_comment_for` (accessible name of the action), `rd_comment_label` (Comment on “{what}” / Kommentar zu „{what}“), `rd_with_comments`, `rd_with_comments_one`, `rd_copy_markdown`, `rd_image_missing`, `rd_callout_note`, `rd_callout_tip`, `rd_callout_important`, `rd_callout_warning`, `rd_callout_caution` (Note, Tip, Important, Warning, Caution / Hinweis, Tipp, Wichtig, Warnung, Vorsicht); shared: `looks_good`, `request_changes` (Request changes / Änderungen anfordern), `request_changes_label`, `send_request`, `cancel`, `comment_required`, `copy_text`, `copied`, `copy_failed`, `clipboard_busy`, `sep_list`.
+English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `rd_doc_label` (Document / Dokument), `rd_words` ({n} words / {n} Wörter), `rd_words_one` (1 word / 1 Wort), `rd_minutes` ({n} min read / {n} Min. Lesezeit), `rd_sections`, `rd_sections_one`, `rd_comment` (Comment / Kommentieren), `rd_comment_for` (accessible name of the action), `rd_comment_label` (Comment on “{what}” / Kommentar zu „{what}“), `rd_with_comments`, `rd_with_comments_one`, `rd_copy_markdown`, `rd_image_missing`, `rd_callout_note`, `rd_callout_tip`, `rd_callout_important`, `rd_callout_warning`, `rd_callout_caution` (Note, Tip, Important, Warning, Caution / Hinweis, Tipp, Wichtig, Warnung, Vorsicht); shared: `looks_good`, `request_changes` (Request changes / Änderungen anfordern), `request_changes_label`, `add_a_note`, `send_request`, `cancel`, `comment_required`, `copy_text`, `copied`, `copy_failed`, `clipboard_busy`, `sep_list`.
 
 ## Fixtures
 
@@ -88,4 +88,4 @@ English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `rd_doc_la
 
 ## Keyboard path (golden, one report open)
 
-Tab ×5 reaches *Comment* on section 4 (after the `…` menu and the actions of sections 1–3). Space opens the comment and focuses it; type. Tab ×3 passes section 5 and reaches *Request changes*; Space opens the overall comment and focuses it; type. Ctrl+Enter sends. Arrow keys are not needed anywhere.
+Tab ×5 reaches *Comment* on section 4 (after the `…` menu and the actions of sections 1–3). Space opens the comment and focuses it; type. Tab ×3 passes section 5 and reaches *Request changes*; Space opens the request. Tab reaches *Add a note*; Space opens the overall comment and focuses it; type. Ctrl+Enter sends. Arrow keys are not needed anywhere.

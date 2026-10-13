@@ -45,7 +45,8 @@
               "comment": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               }
             }
           }
@@ -98,7 +99,8 @@
               "comment": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               }
             }
           }
@@ -151,7 +153,8 @@
               "comment": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               }
             }
           }
@@ -206,7 +209,8 @@
               "comment": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000
+                "maxLength": 2000,
+                "pattern": "\\S"
               }
             }
           }

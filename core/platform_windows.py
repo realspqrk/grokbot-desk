@@ -49,8 +49,9 @@ def default_data_dir(product_name):
     legacy = local / "spqrk-report-shell"
     # A legacy folder in use stays in use until the new one holds runs of its
     # own: an empty grokbot-desk folder (made by a look, a tool or a test)
-    # must not silently hide the open reports and results.
-    if legacy.is_dir() and not _holds_runs(current) and (
+    # must not silently hide the open reports and results. A legacy folder
+    # without runs/ is one `migrate` moved away.
+    if (legacy / "runs").is_dir() and not _holds_runs(current) and (
         not current.exists() or _holds_runs(legacy)
     ):
         return legacy

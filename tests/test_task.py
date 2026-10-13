@@ -203,6 +203,11 @@ def test_split_why_keeps_three_sentences_and_folds_the_rest():
         "Wir nehmen z.B. den zweiten Raum.",
         "We pick e.g. the second room.",
         "Signed by Mr. Smith today.",
+        "Zum 100. Geburtstag laden wir ein.",
+        "Am 31.12. bleibt der Laden geschlossen.",
+        "Wir liefern Version 2.4. Danach prüfen wir.",
+        # accepted: a count before a full stop reads like an ordinal
+        "Es sind 12. Nicht deployen.",
     ],
 )
 def test_a_german_abbreviation_or_ordinal_never_ends_a_sentence(text):
@@ -221,8 +226,8 @@ def test_sentences_still_split_after_a_real_end_and_keep_closing_quotes():
         ("Fertig... Nicht deployen. Erst pruefen. Sonst stoppen.",
          ["Fertig...", "Nicht deployen.", "Erst pruefen.", "Sonst stoppen."]),
         ("Fertig… Nicht deployen.", ["Fertig…", "Nicht deployen."]),
-        ("Wir liefern Version 2.4. Danach prüfen wir.", ["Wir liefern Version 2.4.", "Danach prüfen wir."]),
         ("Das war 2026. Jetzt kommt 2027.", ["Das war 2026.", "Jetzt kommt 2027."]),
+        ("Das war im Jahr 2026. Danach kam mehr.", ["Das war im Jahr 2026.", "Danach kam mehr."]),
         ("Siehe example.com. Dort steht mehr.", ["Siehe example.com.", "Dort steht mehr."]),
         ("Der 1. Schritt ist erledigt. Am 15. Mai folgt der Rest.",
          ["Der 1. Schritt ist erledigt.", "Am 15. Mai folgt der Rest."]),
