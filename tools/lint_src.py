@@ -275,8 +275,9 @@ def _scan_calm(root):
 
 
 # A local virtualenv or node_modules (both gitignored) holds third-party
-# code, not ours: never lint it, never count its modules as local.
-ENVIRONMENT_DIRS = {".git", "__pycache__", ".venv", "venv", "env", "ENV", "node_modules"}
+# code, not ours; .claude may hold agent worktrees (copies of this repo).
+# Never lint them, never count their modules as local.
+ENVIRONMENT_DIRS = {".git", "__pycache__", ".venv", "venv", "env", "ENV", "node_modules", ".claude"}
 
 
 def _in_environment(relative):
