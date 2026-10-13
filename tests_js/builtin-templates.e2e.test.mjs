@@ -763,6 +763,11 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       await reload(page);
       assert.equal(await page.isVisible('[data-pp="request"]'), true);
       assert.equal(await page.inputValue('#pp-comment'), 'Use the shop front photo instead');
+      await page.click('[data-pp="request-cancel"]');
+      assert.equal(await page.evaluate(() => document.activeElement.textContent), de.request_changes,
+        'Cancel returns focus to the button that opened the request');
+      await page.click('#rs-alt');
+      assert.equal(await page.inputValue('#pp-comment'), 'Use the shop front photo instead', 'the text is kept');
       await page.keyboard.press('Control+Enter');
       const note = 'Use the shop front photo instead';
       assert.deepEqual(await submitted(page, run), {

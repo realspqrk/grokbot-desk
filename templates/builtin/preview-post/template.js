@@ -616,7 +616,9 @@ function setRequesting(on, focus) {
   requesting = on;
   requestBox.hidden = !on;
   update(true);
-  if (focus) (on ? comment : tabs[selected]).focus();
+  if (!focus) return;
+  if (on) comment.focus();
+  else RS.focusAlternative(RS.cta('request_changes'));
 }
 part('request-cancel').addEventListener('click', function () { setRequesting(false, true); });
 
@@ -654,4 +656,3 @@ platforms.forEach(function (p) {
 comment.addEventListener('input', function () { update(true); });
 
 update(false);
-if (draft && !sent) (requesting ? comment : tabs[selected]).focus();
