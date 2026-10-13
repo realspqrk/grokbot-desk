@@ -12,6 +12,7 @@ import pytest
 
 from core.check import contract_findings
 from core.registry import scan_registry
+from core.rules import check_data
 from core.schema import SchemaError, validate
 
 
@@ -25,6 +26,8 @@ FIXTURES = {
             "invalid-too-many-items": "/items",
             "invalid-bad-choice": "/items/1/choices/0",
             "invalid-duplicate-ids": "/items/1/id",
+            "invalid-duplicate-labels": "/items/1/labels/reject",
+            "invalid-impossible-due": "/items/1/due",
         },
         "expect": ("golden", "edge-unicode", "edge-max"),
     },
@@ -107,7 +110,7 @@ def test_fixture_set_is_exactly_the_documented_list(template):
 
 @pytest.mark.parametrize("template, name", [(t, n) for t in IDS for n in FIXTURES[t]["valid"]])
 def test_valid_fixtures_validate(template, name):
-    validate(fixture(template, name), schema(template))
+    check_data(template, validate(fixture(template, name), schema(template)))
 
 
 @pytest.mark.parametrize("template, name, pointer", [
@@ -115,7 +118,7 @@ def test_valid_fixtures_validate(template, name):
 ])
 def test_invalid_fixtures_are_rejected_with_the_pointer(template, name, pointer):
     with pytest.raises(SchemaError) as error:
-        validate(fixture(template, name), schema(template))
+        check_data(template, validate(fixture(template, name), schema(template)))
     assert error.value.pointer == pointer
 
 

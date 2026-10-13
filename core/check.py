@@ -8,6 +8,7 @@ from .jsonutil import loads
 from .lint import lint_template
 from .paths import data_dir as default_data_dir
 from .registry import RegistryError, scan_registry
+from .rules import check_data
 from .schema import SchemaError, check_schema, validate
 
 
@@ -147,14 +148,15 @@ def contract_findings(registry, repo_root, selected=None, run_expect_backend=Fal
             findings.append(f"{template.id}: at least two edge fixtures are required")
         if len(invalid) < 2:
             findings.append(f"{template.id}: at least two invalid fixtures are required")
+        rules = template.extends or template.id
         for relative in [Path("fixtures/golden.json"), *edges]:
             try:
-                validate(_read_template_json(template, relative), data_schema)
+                check_data(rules, validate(_read_template_json(template, relative), data_schema))
             except (ValueError, SchemaError) as error:
                 findings.append(f"{relative.name}: expected valid: {error}")
         for relative in invalid:
             try:
-                validate(_read_template_json(template, relative), data_schema)
+                check_data(rules, validate(_read_template_json(template, relative), data_schema))
             except SchemaError:
                 pass
             except ValueError as error:

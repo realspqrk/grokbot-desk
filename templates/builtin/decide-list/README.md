@@ -49,7 +49,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 |---|---|
 | `intro` | optional, 1–300 characters, plain text |
 | `action` | optional `post`, `send` or `continue` (default): what the bot does with the bot items you approve. Names the bot's banner line (Approve and the bot sends; in a mixed list `Inbox Agent sends after approval: 3 items`). The footer stays Send decisions. The result does not change |
-| `labels` | optional `{approve?, reject?, defer?}`, each plain text of 1–24 characters (no line break, no leading or trailing space): the bot items' button labels, e.g. `{"approve": "Pay", "reject": "Dispute"}`. `labels.approve` also leads the banner (`Pay, then the bot continues`); rows and the status use the labels. The result keeps `approve`, `reject`, `defer` |
+| `labels` | optional `{approve?, reject?, defer?}`, each plain text of 1–24 characters (no line break, no leading or trailing space): the bot items' button labels, e.g. `{"approve": "Pay", "reject": "Dispute"}`. `labels.approve` also leads the banner (`Pay, then the bot continues`); rows and the status use the labels. The result keeps `approve`, `reject`, `defer`. Each choice of an item needs its own label: a label that repeats another choice of that item (its own, top-level or default label such as `Reject` / `Ablehnen`) is rejected at show, at that `labels` entry |
 | `items[]` | required, 1–12 items, shown in this order. Each is a bot item (no `actor`, or `bot`) or a user item (`actor: user`) |
 | `items[].id` | `^[a-z0-9-]{1,40}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/items/1/id`; echoed in the result |
 | `items[].kind` | optional, 1–24 (a short category above the title, e.g. `Expense`) |
@@ -59,7 +59,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | `items[].actor` | optional `bot` (default) or `user`. `bot`: Approve, Reject, Defer. `user`: the person does it. The choices are Done ✓, Skip and Later unless `content` is `post` or `reply` (Posted ✓) or `task.kind` is `post_yourself`. Results stay `done`, `skipped`, `later`. The bot never acts on a user item |
 | `items[].content` | optional `post` or `reply`. Marks the item as something the person publishes, so the done choice reads Posted ✓. Without it a user item reads Done ✓ |
 | `items[].url` | optional http(s) address, 8–2048 characters. A hostname is required. No backslash or control character. Credentials are rejected only in the authority (`user@host`); `@` may appear in the path, query or fragment. Shown as one link on its own line (that link opens the post) when it can be opened. The same address is not linked again in the title or detail. A URL the opener would reject is plain text |
-| `items[].due` | optional `YYYY-MM-DD` (shown as `due Oct 14` / `fällig 14.10.`) |
+| `items[].due` | optional `YYYY-MM-DD`, a real calendar day (shown as `due Oct 14` / `fällig 14.10.`); `2026-02-31` is rejected at show at `/items/<n>/due` |
 | `items[].copy[]` | optional, at most 4 of `{label 1–24, text 1–5000}`; each value is shown in full next to its button (long or multi-line values on their own line, clamped with *Show all*) |
 | `items[].labels` | optional, bot items only: `{approve?, reject?, defer?}` as top-level `labels`; wins over them for this item. A user item with `labels` is rejected at `/items/<n>/labels` |
 | `items[].choices` | optional, 1–3 unique, in this order. Bot item: of `approve`, `reject`, `defer` (default all three). User item: of `done`, `skipped`, `later` (default all three). A value from the other side is rejected at `/items/<n>/choices/<m>` |
@@ -77,7 +77,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 }
 ```
 
-`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`), whatever the labels say. For a `user` item, `choice` is one of its `choices` (`done`, `skipped`, `later`). `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Done (Fertig): it reports the status back, and the banner steps say `Do or skip each item, then press Done` (`Post or skip each reply…` for replies). Otherwise it reads Send decisions (Entscheidungen senden). A mix of user and bot items gives each actor one banner line, the person first, counted: `You post: 2 replies` / `Inbox Agent sends after approval: 3 items` (the verb from the optional top-level `action`: `post`, `send` or `continue`, which also names the footer, e.g. Approve & send). A skipped, deferred or rejected item leaves its line; a side with nothing left says so (`Inbox Agent sends nothing`), and the decided banner says what each side did. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
+`items` has one entry per payload item, in payload order. For a `bot` item, `choice` is one of that item's `choices` (`approve`, `reject`, `defer`), whatever the labels say. For a `user` item, `choice` is one of its `choices` (`done`, `skipped`, `later`). `note` ≤500 (may be empty). The overall `note` is ≤2000 (may be empty). When every item is `actor: user`, the footer primary reads Done (Fertig): it reports the status back, and the banner steps say `Do or skip each item, then press Done` (`Post or skip each reply…` for replies). Otherwise it reads Send decisions (Entscheidungen senden). A mix of user and bot items gives each actor one banner line, the person first, counted: `You post: 2 replies` / `Inbox Agent sends after approval: 3 items` (the verb from the optional top-level `action`: `post`, `send` or `continue`; the footer still reads Send decisions). A skipped, deferred or rejected item leaves its line; a side with nothing left says so (`Inbox Agent sends nothing`), and the decided banner says what each side did. A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
 
 ## Strings used (`core/i18n/en.json`, `de.json`)
 
@@ -124,5 +124,7 @@ Tab ×5 passes the `…` menu and the two copy icons of the first card and reach
 | `fixtures/invalid-too-many-items.json` | 13 items, rejected at `/items` |
 | `fixtures/invalid-bad-choice.json` | rejected at `/items/1/choices/0` |
 | `fixtures/invalid-duplicate-ids.json` | rejected at `/items/1/id` (two different items share the id `travel-workshop`) |
+| `fixtures/invalid-duplicate-labels.json` | rejected at `/items/1/labels/reject` (the item's Reject reads Pay, like the top-level approve label) |
+| `fixtures/invalid-impossible-due.json` | rejected at `/items/1/due` (`2026-02-31` is no calendar day) |
 | `fixtures/expect/golden.json` | copies, `flow`, `keyboard`, `result` |
 | `fixtures/expect/edge-unicode.json`, `edge-max.json` | every copy string |

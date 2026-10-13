@@ -40,7 +40,7 @@
           "description": "Label of the defer choice instead of Defer. The result value stays defer."
         }
       },
-      "description": "Optional button labels for bot items, plain text of 1-24 characters each, e.g. {\"approve\": \"Pay\", \"defer\": \"Next week\"}. An item's own labels win. The banner, the rows and the status use them. The result keeps approve, reject and defer."
+      "description": "Optional button labels for bot items, plain text of 1-24 characters each, e.g. {\"approve\": \"Pay\", \"defer\": \"Next week\"}. An item's own labels win. The banner, the rows and the status use them. The result keeps approve, reject and defer. Each choice of an item needs its own label: a label that repeats another choice of that item, also a default label such as Reject, is rejected at show."
     },
     "items": {
       "type": "array",
@@ -99,7 +99,7 @@
               "due": {
                 "type": "string",
                 "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
-                "description": "Optional due date YYYY-MM-DD."
+                "description": "Optional due date YYYY-MM-DD, a real calendar day (2026-02-31 is rejected)."
               },
               "copy": {
                 "type": "array",
@@ -156,7 +156,7 @@
                     "description": "Label of the defer choice instead of Defer. The result value stays defer."
                   }
                 },
-                "description": "Optional labels for this item's choices; they win over the top-level labels."
+                "description": "Optional labels for this item's choices; they win over the top-level labels. Each choice needs its own label (checked at show)."
               },
               "choices": {
                 "type": "array",
@@ -218,7 +218,7 @@
               "due": {
                 "type": "string",
                 "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
-                "description": "Optional due date YYYY-MM-DD."
+                "description": "Optional due date YYYY-MM-DD, a real calendar day (2026-02-31 is rejected)."
               },
               "copy": {
                 "type": "array",

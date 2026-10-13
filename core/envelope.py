@@ -5,6 +5,7 @@ import secrets
 from datetime import timedelta, timezone
 
 from .jsonutil import JSONBoundaryError, loads
+from .rules import check_data
 from .schema import SchemaError, validate
 from .tasks import TaskError, apply_kind, validate_task
 from .timeutil import to_local, local_now
@@ -124,6 +125,7 @@ def validate_payload(payload, registry, used_ids=(), warnings=None):
     try:
         schema = loads(template.read_text("schema.json"))
         validate(payload["data"], schema, "/data")
+        check_data(template.extends or template.id, payload["data"], "/data")
     except SchemaError as error:
         raise EnvelopeError(error.pointer, error.message) from error
     data = payload["data"]
