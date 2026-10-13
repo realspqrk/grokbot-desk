@@ -1040,7 +1040,10 @@ def run_server(data_dir, port, repo_root):
     try:
         lock = hold_server_lock(data_dir)
     except FileNotFoundError:
-        raise DataDirBusy(f"{data_dir} was migrated; start the desk again") from None
+        raise DataDirBusy(
+            f"{data_dir} does not exist (moved by migrate, or never created); "
+            "start the desk again"
+        ) from None
     if migration_pending(data_dir) or legacy_gone(data_dir):
         if lock is not None:
             os.close(lock)

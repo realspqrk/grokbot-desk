@@ -346,14 +346,16 @@ def test_an_explicit_data_dir_with_the_old_name_is_used_as_given(tmp_path, monke
     assert served == [explicit] and (explicit / "runs").is_dir()
 
 
-def test_a_fresh_explicit_data_dir_at_the_old_location_is_served(tmp_path, monkeypatch):
+def test_an_explicit_data_dir_at_the_old_location_is_served_when_nothing_moved(tmp_path, monkeypatch):
     """Nothing was migrated (no new folder with runs): RS_DATA_DIR naming the
-    old default location is a fresh folder, and serve uses it."""
+    old default location, as an existing folder, is served as given. The old
+    location itself is never created by layout (that would race migrate)."""
     from core import server
 
     local = tmp_path / "local"
     monkeypatch.setenv("LOCALAPPDATA", str(local))
     explicit = local / "spqrk-report-shell"
+    explicit.mkdir(parents=True)
     monkeypatch.setenv("RS_DATA_DIR", str(explicit))
     assert not paths.legacy_gone(explicit)
 

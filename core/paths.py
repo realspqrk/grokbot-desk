@@ -130,10 +130,8 @@ def ensure_layout(base=None):
     if is_legacy_location(base):
         try:
             if not legacy_gone(base):
-                # nothing was moved (the new folder holds no runs): a fresh
-                # folder here is created like any other
-                base.parent.mkdir(parents=True, exist_ok=True)
-                base.mkdir(mode=0o700, exist_ok=True)
+                # no parents=True and no mkdir of base itself: a folder that
+                # migrate moved away meanwhile must stay gone (startup race)
                 for name in ("runs", "results", "log", "media"):
                     (base / name).mkdir(exist_ok=True)
                 return base
