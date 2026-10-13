@@ -373,7 +373,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
     assert.equal(data.items.length, 12);
     const { ctx, page, log, run } = await open('decide-list', 'edge-many');
     try {
-      assert.equal(await page.textContent('#rs-task .rs-task__what'), t('task_line_label_continue', { label: data.labels.approve }));
+      assert.equal(await page.textContent('#rs-task .rs-task__what'), t('task_line_label_continue', { label: data.labels.approve, bot: t('task_the_bot') }));
       const labels = (id) => page.$$eval(`rs-action-row[data-item="${id}"] button`, (els) => els.map((b) => [b.value, b.textContent]));
       assert.deepEqual(await labels('inv-paper'), [['approve', 'Pay'], ['reject', 'Dispute'], ['defer', 'Next week']]);
       assert.equal(await page.$eval('#dl-todo-h', (h) => h.getBoundingClientRect().width <= 1), true, 'one group: no visible heading');

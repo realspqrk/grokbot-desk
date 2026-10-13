@@ -758,10 +758,13 @@
   /* "An Release Bot senden": the bot by its display name while it fits;
      a bare bot id or a long name reads "An Bot senden" */
   var SUBMIT_NAME_MAX = 24;
-  function defaultSubmitLabel(run) {
+  function botNameOf(run) {
     var name = run ? identityOf(run).name : '';
-    var named = name && name !== run.bot && Array.from(name).length <= SUBMIT_NAME_MAX;
-    return named ? t('submit_to', { bot: name }) : t('submit');
+    return name && name !== run.bot && Array.from(name).length <= SUBMIT_NAME_MAX ? name : '';
+  }
+  function defaultSubmitLabel(run) {
+    var name = botNameOf(run);
+    return name ? t('submit_to', { bot: name }) : t('submit');
   }
   function currentSubmitLabel(run) {
     return state.submitLabel || defaultSubmitLabel(run || state.active);
@@ -785,7 +788,7 @@
     var line = document.createElement('p');
     line.className = 'rs-task__line';
     var whatKey = TASKS.lineKey(task, run.state);
-    var what = textNode('span', 'rs-task__what', whatKey ? t(whatKey, { label: task.label || '' }) : '');
+    var what = textNode('span', 'rs-task__what', whatKey ? t(whatKey, { label: task.label || '', bot: botNameOf(run) || t('task_the_bot') }) : '');
     if (!whatKey) {
       fillActors(what, run);
       line.setAttribute('data-actors', '');

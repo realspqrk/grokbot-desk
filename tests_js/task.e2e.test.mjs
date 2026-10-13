@@ -293,7 +293,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         } else {
           const data = fixture(template, 'golden');
           const label = template === 'approve-one' && data.approve_label ? data.approve_label : '';
-          assert.equal(view.what, t(TASKS.lineKey({ ...task, label }), { label }), template);
+          assert.equal(view.what, t(TASKS.lineKey({ ...task, label }), { label, bot: t('task_the_bot') }), template);
           assert.equal(view.steps, null, `${template}: no steps that repeat the line`);
         }
         const bar = await footer(page);
@@ -608,6 +608,28 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
   for (const lang of ['de', 'en']) {
     const tl = lang === 'en' ? tIn(en) : t;
     const on = () => (lang === 'en' ? serverEn : server);
+
+    test(`${lang}: the approve line names the bot by its display name, the bot while it has none or a long one`, async () => {
+      const srv = on();
+      const data = fixture('approve-one', 'golden');
+      const cases = [
+        [{ name: 'Release Agent' }, 'Release Agent'],
+        [{ name: 'A very long display name for a bot' }, null],
+        [undefined, null],
+      ];
+      for (const [identity, name] of cases) {
+        await srv.clearRuns();
+        const run = srv.show(data, { template: 'approve-one', version: 1, title: 'Deploy', bot: 'release-agent', identity });
+        const { ctx, page } = await open(`&run=${run.run_id}`, { server: srv });
+        try {
+          const label = data.approve_label || '';
+          const key = TASKS.lineKey({ kind: 'approve_bot_acts', base: 'approve_bot_acts', verb: 'continue', label });
+          const text = (await banner(page)).what;
+          if (name) assert.equal(text, tl(key, { label, bot: name }));
+          else assert.equal(text, tl(key, { label, bot: tl('task_the_bot') }));
+        } finally { await ctx.close(); }
+      }
+    });
 
     test(`${lang}: a mixed preview names you first and the bot by name, in every tick state and once decided`, async () => {
       const srv = on();
