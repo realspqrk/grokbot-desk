@@ -69,6 +69,8 @@ A bot list's banner is "Make your decisions, then <bot> continues" (`action` `po
 
 Minimal data: `{"items":[{"id":"hosting","title":"Hosting, October, 89 EUR","due":"2026-10-16"}]}`
 
+A reply the user posts: `{"id":"r1","title":"Reply to a question about opening hours","actor":"user","content":"reply","url":"https://example.com/post/1","copy":[{"label":"Reply","text":"We open at 7 on weekdays."}]}`. `copy` is a list of `{label, text}`; `label` names the copy button. `labels` is only for bot choices.
+
 ### review-doc
 
 "Looks good" and "Request changes". With `action`, the primary follows the shared bot rule. Section comments may ride on `approve`. `request_changes` needs the overall comment or one section comment. `fyi` has no section comments. `doc` is markdown unless `format` is `text` (max 60,000 characters). Callouts: `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`. Raw HTML stays text. Images need `images` keys. Result `{decision, comment, comments}`. `comment` is `""` on approve. A section comment is `{section, heading, comment}`.
@@ -98,7 +100,7 @@ On macOS, `/usr/bin/python3` is 3.9. Use `./report-shell` (Python 3.11+) or `pyt
 1. Write UTF-8 JSON. `created` is the current local time with its offset. `bot` is `^[a-z0-9-]{1,40}$`. `version` matches the template. Omit `run_id`. `expires_minutes` is 5–10080, default 240. Other `task` fields: `why`, `steps` (one line, max 140 characters, kept for the whole open desk), `eta_min` (1–120), `due` (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` with optional seconds, milliseconds, and `Z` or `±HH:MM`). Other date forms are rejected. A long `task.why` warns on `show` (exit 0). The banner keeps the first three sentences and folds the rest past 360 characters.
 
 ```json
-{"schema":"report-shell/payload@1","template":"decide-list","version":1,"bot":"office-bot","title":"Two invoices this week","created":"2026-10-10T09:00:00+02:00","task":{"kind":"approve_bot_acts","why":"Hosting is due Friday."},"data":{"labels":{"approve":"Pay","reject":"Don't pay","defer":"Next week"},"items":[{"id":"hosting","title":"Hosting, October, 89 EUR"},{"id":"toner","title":"Toner, 132.90 EUR","choices":["approve","defer"]}]}}
+{"schema":"report-shell/payload@1","template":"decide-list","version":1,"bot":"office-bot","identity":{"name":"Office Bot","avatar_shape":"blob","avatar_color":"orange"},"title":"Two invoices this week","created":"2026-10-10T09:00:00+02:00","task":{"kind":"approve_bot_acts","why":"Hosting is due Friday."},"data":{"labels":{"approve":"Pay","reject":"Don't pay","defer":"Next week"},"items":[{"id":"hosting","title":"Hosting, October, 89 EUR"},{"id":"toner","title":"Toner, 132.90 EUR","choices":["approve","defer"]}]}}
 ```
 
 2. `python report_shell.py show <id> --data payload.json` returns `run_id`, `url`, `result_path` and `data_dir`. It opens the window, or delivers quietly if one is open. `--focus` only when the user asked. Desks share one window. A new desk never covers the one on screen. Then `status`. If `window_alive` or `up` is false, no window is waiting. If your runtime kills child processes when a command ends, ask the user to keep `python report_shell.py serve` running, then `show` again.
@@ -127,7 +129,7 @@ The webhook stays off unless enabled with `GROKBOT_DESK_WEBHOOK_KEY` and an allo
 
 ## Identity
 
-`name` is the name the user knows. Pass `avatarShape` and `avatarColor` as `avatar_shape` and `avatar_color`. Omit an empty value. Shapes: blob, squircle, pebble, teardrop, hex, tablet. Colours: blue, orange, yellow, magenta, red, violet, black, green, gray. Optional `avatar` is PNG, JPEG, WebP or GIF, max 256 KB, never SVG. Payload paths are relative to the template (`%RS_TEMPLATE%/...`). Registry paths are relative to the registry folder. Absolute paths must sit inside the data directory. `media_roots` does not cover avatars. Optional `accent` is `#RRGGBB`. A bad value falls back and does not reject the desk. The payload wins over `bots.json`.
+Everything here sits in the envelope's optional `identity` object, never at the top level: `"identity":{"name":"Office Bot","avatar_shape":"blob","avatar_color":"orange"}`. `name` is the name the user knows. Pass `avatarShape` and `avatarColor` as `avatar_shape` and `avatar_color`. Omit an empty value. Shapes: blob, squircle, pebble, teardrop, hex, tablet. Colours: blue, orange, yellow, magenta, red, violet, black, green, gray. Optional `avatar` is PNG, JPEG, WebP or GIF, max 256 KB, never SVG. Payload paths are relative to the template (`%RS_TEMPLATE%/...`). Registry paths are relative to the registry folder. Absolute paths must sit inside the data directory. `media_roots` does not cover avatars. Optional `accent` is `#RRGGBB`. A bad value falls back and does not reject the desk. The payload wins over `bots.json`.
 
 ## Safety
 
