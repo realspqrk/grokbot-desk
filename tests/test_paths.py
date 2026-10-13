@@ -199,8 +199,10 @@ def test_migrate_refuses_while_a_desk_runs_or_starts(tmp_path, how):
         assert not (legacy / "migrate.pending").exists()
 
 
-def test_a_server_does_not_start_while_migrate_runs(tmp_path):
+def test_a_server_does_not_start_while_migrate_runs(tmp_path, monkeypatch):
     from core.server import run_server
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
     base = paths.ensure_layout(tmp_path / "data")
     (base / "migrate.pending").write_text("1")
@@ -251,6 +253,7 @@ def test_cli_migrate_never_touches_rs_data_dir(tmp_path, monkeypatch, capsys):
 
 def test_paths_names_migrate_while_the_legacy_folder_is_in_use(tmp_path, monkeypatch):
     monkeypatch.delenv("RS_DATA_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     report = paths.data_dir_report(tmp_path / "spqrk-report-shell")
     assert report["source"] == "legacy"
     assert "report_shell.py migrate" in report["warning"]
@@ -261,6 +264,7 @@ def test_paths_names_migrate_while_the_legacy_folder_is_in_use(tmp_path, monkeyp
 
 def test_wait_follows_a_migrated_default_folder(tmp_path, monkeypatch):
     monkeypatch.delenv("RS_DATA_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
     assert paths.follow_migration(legacy) == legacy
     current.mkdir()
@@ -290,10 +294,41 @@ def test_a_migrated_old_folder_is_never_created_again(tmp_path, monkeypatch):
     assert not (legacy / "runs").exists()
 
 
+def test_an_explicit_data_dir_with_the_old_name_is_used_as_given(tmp_path, monkeypatch, capsys):
+    """Only the real default old folder is redirected. A custom RS_DATA_DIR
+    that happens to carry the old name is a new, empty folder like any
+    other: new, show (ensure_layout) and serve all use it."""
+    from core import cli, server
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    explicit = (tmp_path / "custom" / "spqrk-report-shell").resolve()
+    monkeypatch.setenv("RS_DATA_DIR", str(explicit))
+
+    assert paths.data_dir() == explicit
+    assert paths.ensure_layout(paths.data_dir()) == explicit
+    assert (explicit / "runs").is_dir() and not (explicit.parent / "grokbot-desk").exists()
+    assert paths.follow_migration(explicit) == explicit
+    assert paths.migration_advice(explicit) is None
+    assert paths.data_dir_report(explicit)["source"] == "RS_DATA_DIR"
+
+    assert cli.main(["new", "example/review-test"]) == 0
+    capsys.readouterr()
+    assert (explicit / "templates" / "review-test").is_dir()
+    assert "review-test" in _scan(explicit)
+
+    served = []
+    monkeypatch.setattr(server, "_serve", lambda base, port, root: served.append(Path(base)))
+    for name in ("runs", "results"):
+        os.rmdir(explicit / name)  # a fresh folder: serve lays it out itself
+    server.run_server(explicit, 18923, paths.ROOT)
+    assert served == [explicit] and (explicit / "runs").is_dir()
+
+
 def test_wait_reads_a_result_moved_by_migrate_after_it_was_seen(tmp_path, monkeypatch, capsys):
     from core import cli
 
     monkeypatch.delenv("RS_DATA_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     _legacy_with_run(tmp_path)
     legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
     run_id = "20261011-093000-bot-0123456789ab"

@@ -24,27 +24,47 @@ MIGRATE_ADVICE = (
 )
 
 
+def _same_path(a, b):
+    try:
+        a, b = Path(a).resolve(), Path(b).resolve()
+    except OSError:
+        a, b = Path(a), Path(b)
+    return os.path.normcase(str(a)) == os.path.normcase(str(b))
+
+
+def is_legacy_location(base):
+    """base is the older Windows folder itself (spqrk-report-shell under
+    %LOCALAPPDATA%), not just any folder of that name."""
+    local = os.environ.get("LOCALAPPDATA")
+    return bool(local) and _same_path(base, Path(local) / LEGACY_NAME)
+
+
+def is_default_legacy(base):
+    """base is the older Windows folder, in use by default (RS_DATA_DIR
+    unset). Only such a folder is followed, redirected or named for migrate."""
+    return not os.environ.get("RS_DATA_DIR") and is_legacy_location(base)
+
+
 def migration_advice(base):
     """The advice to run migrate, when base is the older Windows folder in
     use by default (never for RS_DATA_DIR)."""
-    if os.environ.get("RS_DATA_DIR") or Path(base).name != LEGACY_NAME:
-        return None
-    return MIGRATE_ADVICE
+    return MIGRATE_ADVICE if is_default_legacy(base) else None
 
 
 def legacy_gone(base):
-    """True for an older-named folder that `migrate` moved away. Such a
-    folder counts only while it still holds runs/: a stray log or result
-    written there after the move does not bring it back."""
+    """True for the older Windows folder after `migrate` moved it away. It
+    counts only while it still holds runs/: a stray log or result written
+    there after the move does not bring it back. Location only, so a server
+    spawned for that folder (RS_DATA_DIR set to it) is caught too."""
     base = Path(base)
-    return base.name == LEGACY_NAME and not (base / "runs").is_dir()
+    return is_legacy_location(base) and not (base / "runs").is_dir()
 
 
 def follow_migration(base):
     """The folder a default legacy base was migrated to while a command ran,
     else base unchanged. RS_DATA_DIR is never redirected."""
     base = Path(base)
-    if not legacy_gone(base) or not migration_advice(base):
+    if not is_default_legacy(base) or not legacy_gone(base):
         return base
     moved = base.with_name(PRODUCT_NAME)
     return moved if moved.is_dir() else base
@@ -56,7 +76,7 @@ def data_dir_report(base=None):
     base = Path(base or data_dir())
     if os.environ.get("RS_DATA_DIR"):
         source = "RS_DATA_DIR"
-    elif base.name == LEGACY_NAME:
+    elif is_legacy_location(base):
         source = "legacy"
     else:
         source = "default"
@@ -94,10 +114,13 @@ def legacy_data_dirs():
 def ensure_layout(base=None):
     """Create the data folder and its subfolders; returns the folder used.
 
-    An older-named folder is never created again: once `migrate` moved it,
-    the new folder next to it is used instead."""
+    The older Windows folder is never created again: once `migrate` moved
+    it, the new folder next to it is used instead, unless RS_DATA_DIR names
+    it (a server spawned for it); then it is returned as is, and that
+    server refuses to start. Any other folder, whatever its name, is used
+    as given."""
     base = Path(base or data_dir())
-    if base.name == LEGACY_NAME:
+    if is_legacy_location(base):
         try:
             if not legacy_gone(base):
                 # no parents=True: a folder moved away meanwhile stays gone
@@ -106,6 +129,8 @@ def ensure_layout(base=None):
                 return base
         except FileNotFoundError:
             pass
+        if os.environ.get("RS_DATA_DIR"):
+            return base
         base = base.with_name(PRODUCT_NAME)
     base.mkdir(mode=0o700, parents=True, exist_ok=True)
     for name in ("runs", "results", "log", "media"):
