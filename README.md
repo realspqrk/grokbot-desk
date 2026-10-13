@@ -220,7 +220,7 @@ The macOS launcher searches Edge, then Chrome, in `~/Applications` and `/Applica
 
 ## Privacy and security
 
-The server listens only on `127.0.0.1`. The page loads no remote images, fonts, or sites. Payloads, results, and action logs stay on this machine. On Windows the default folder is `%LOCALAPPDATA%\grokbot-desk`. `RS_DATA_DIR` overrides it. An existing legacy data folder is reused when the new folder is absent. The optional webhook is off unless you enable it, set a key, and allow-list an HTTPS URL. At server startup, files in `runs`, `results`, and `log` older than 30 days are removed. Media and browser profiles are kept.
+The server listens only on `127.0.0.1`. The page loads no remote images, fonts, or sites. Payloads, results, and action logs stay on this machine. On Windows the default folder is `%LOCALAPPDATA%\grokbot-desk`. `RS_DATA_DIR` overrides it. An older Windows data folder is moved to that name once, the next time the server starts (or `paths` runs) and no server is using it. The optional webhook is off unless you enable it, set a key, and allow-list an HTTPS URL. At server startup, files in `runs`, `results`, and `log` older than 30 days are removed. Media and browser profiles are kept.
 
 ## Contributing
 

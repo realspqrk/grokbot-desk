@@ -1712,9 +1712,9 @@ def test_finding_3_unloadable_run_record_logs_error(tmp_path, content):
 
 def test_webhook_requires_config_env_and_allowlist(monkeypatch):
     config = {"webhook": {"enabled": True, "allow_prefixes": ["https://hooks.example/allowed/"]}}
-    monkeypatch.delenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", raising=False)
+    monkeypatch.delenv(webhook.WEBHOOK_KEY_ENV, raising=False)
     assert not webhook_enabled(config)
-    monkeypatch.setenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", "secret")
+    monkeypatch.setenv(webhook.WEBHOOK_KEY_ENV, "secret")
     assert webhook_enabled(config)
     validate_webhook_url("https://hooks.example/allowed/42", config)
     with pytest.raises(ValueError):
@@ -1724,6 +1724,13 @@ def test_webhook_requires_config_env_and_allowlist(monkeypatch):
             "webhook": {"allow_prefixes": ["http://hooks.example/allowed/"]}
         })
     assert "secret" not in json.dumps(config)
+
+
+def test_webhook_ignores_the_removed_legacy_key_name(monkeypatch):
+    config = {"webhook": {"enabled": True, "allow_prefixes": ["https://hooks.example/"]}}
+    monkeypatch.delenv(webhook.WEBHOOK_KEY_ENV, raising=False)
+    monkeypatch.setenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", "secret")
+    assert not webhook.webhook_enabled(config)
 
 
 def test_webhook_redirect_rejects_disallowed_destination_before_forwarding_key():
@@ -1757,7 +1764,7 @@ def test_webhook_redirect_rejects_disallowed_destination_before_forwarding_key()
 
 def test_webhook_non_success_response_logs_failure(monkeypatch, tmp_path):
     config = {"webhook": {"enabled": True, "allow_prefixes": ["https://hooks.example/"]}}
-    monkeypatch.setenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", "secret")
+    monkeypatch.setenv(webhook.WEBHOOK_KEY_ENV, "secret")
     events = []
     action_log = type("Log", (), {"write": lambda self, run_id, event, detail: events.append(event)})()
     response = type(

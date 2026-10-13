@@ -84,7 +84,7 @@ Catch up on decisions you did not wait for: `python report_shell.py results --si
 
 ## Data directory, dedupe, created
 
-Bots always use the CLI (`result`, `wait`, `results --since`, `paths`) and never guess the data directory. `paths` prints the directory in use, why (`RS_DATA_DIR`, `legacy` or `default`), and any unused legacy directory. On Windows a legacy `%LOCALAPPDATA%\spqrk-report-shell` stays in use until `%LOCALAPPDATA%\grokbot-desk` holds runs of its own. An empty new folder does not hide the legacy one. `RS_DATA_DIR` overrides both.
+Bots always use the CLI (`result`, `wait`, `results --since`, `paths`) and never guess the data directory. `paths` prints the directory in use, why (`RS_DATA_DIR`, `legacy` or `default`), and any unused older directory. On Windows an older data folder is moved once to `%LOCALAPPDATA%\grokbot-desk`, when the server starts or `paths` runs and no server is using it. `paths` then shows `reason: "migrated"` once. If a server still runs in the old folder, or the move fails, the old folder stays in use and `paths` shows a `reason` and a `warning`. Nothing is lost. `RS_DATA_DIR` is used as given and never moved.
 
 Optional `dedupe_key` (1–120 printable ASCII characters) on the payload: the same bot and key returns the existing run instead of opening a second one, while that run is open or was submitted or cancelled within `dedupe_hours` (integer 1–168, default 24). `show` then prints `deduped: true` and `state`. An expired run never dedupes.
 
