@@ -47,7 +47,7 @@ Shared buttons for `approve-one` and `review-doc`. The bot primary is "Approve &
 
 ### approve-one
 
-One footer click. `Reject`, `Request changes` (only with `allow_changes`) and the approve button are separate buttons. Not a segmented control. Reject sends at once. `approve_label` (1–24 characters) replaces the bot primary. At most six facts; a label may be 32 characters. With `checks`, a summary line is shown before the facts. Result `{decision, comment}`. `request_changes` needs a comment.
+`summary` is optional; without it, put the question in `task.why`. One footer click. `Reject`, `Request changes` (only with `allow_changes`) and the approve button are separate buttons. Not a segmented control. Reject sends at once. `approve_label` (1–24 characters) replaces the bot primary. At most six facts; a label may be 32 characters. With `checks`, a summary line is shown before the facts. Result `{decision, comment}`. `request_changes` needs a comment.
 
 ### pick-option
 

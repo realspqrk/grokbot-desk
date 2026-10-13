@@ -29,8 +29,8 @@ FIXTURES = {
         "expect": ("golden", "edge-unicode", "edge-max"),
     },
     "approve-one": {
-        "valid": ("golden", "edge-access", "edge-de", "edge-minimal", "edge-max"),
-        "invalid": {"invalid-no-summary": "/summary", "invalid-check-state": "/checks/1/state"},
+        "valid": ("golden", "edge-access", "edge-de", "edge-minimal", "edge-max", "edge-no-summary"),
+        "invalid": {"invalid-blank-summary": "/summary", "invalid-check-state": "/checks/1/state"},
         "expect": ("golden", "edge-access", "edge-de", "edge-max"),
     },
     "preview-post": {

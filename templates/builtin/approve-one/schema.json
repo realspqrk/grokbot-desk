@@ -1,9 +1,8 @@
 {
   "type": "object",
-  "required": ["summary"],
   "additionalProperties": false,
   "properties": {
-    "summary": {"type": "string", "minLength": 1, "maxLength": 600, "description": "The question or summary sentence, shown first (plain text, newlines kept). http(s) addresses in the text become links."},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 600, "pattern": "\\S", "description": "Optional question or summary sentence, shown first (plain text, newlines kept). http(s) addresses in the text become links. Without it the banner's task.why and the facts carry the request."},
     "actor": {"enum": ["bot", "user", "none"], "default": "bot", "description": "Who acts next. bot (default): the primary Approve & continue, or Approve & post / send when action is set; the quiet alternatives Reject and, when allow_changes is set, Request changes. Each sends with one click; Request changes first asks for the comment. Results approve, reject, request_changes. user: the person does it and reports back. The mark names what they did: Posted when task.kind is post_yourself, Sent when action is send, Done only when there is no specific content or action. Results stay done / skipped. The hint names those choices. Request changes stays available when allow_changes is set. none: info only (Got it, plus one optional collapsed note that is kept as a draft; result acknowledged). The bot never acts on user or none."},
     "action": {"type": "string", "minLength": 1, "maxLength": 24, "pattern": "^[a-z][a-z0-9-]{0,23}$", "description": "Optional verb. For the bot: post becomes Approve & post, send becomes Approve & send, any other verb (including deploy) becomes Approve & continue. For the user, send becomes Sent."},
     "approve_label": {"type": "string", "minLength": 1, "maxLength": 24, "description": "Optional label of the approving primary for the bot, e.g. \"Approve deploy\". Wins over action. Without it the primary is Approve & post, Approve & send, or Approve & continue, from action. There is no plain Approve default."},

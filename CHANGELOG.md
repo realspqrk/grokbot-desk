@@ -21,6 +21,8 @@
   ("Review the platforms, then <button>") and its footer reads "Send
   response". After "None of these" the banner says new options were
   requested, also when the report is reopened.
+- approve-one: `summary` is optional. Without it the banner's `task.why`
+  and the facts carry the request.
 - Discard report moves from the footer into the `…` menu, behind the same
   confirmation. The footer holds the status, up to two quiet alternatives
   (`RS.setAlternatives`) and the one primary.

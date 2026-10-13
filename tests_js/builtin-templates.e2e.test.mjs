@@ -108,7 +108,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
 
   for (const [id, valid] of [
     ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies', 'edge-many']],
-    ['approve-one', ['golden', 'edge-access', 'edge-de', 'edge-minimal', 'edge-max']],
+    ['approve-one', ['golden', 'edge-access', 'edge-de', 'edge-minimal', 'edge-max', 'edge-no-summary']],
     ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-max']],
   ]) {
     test(`${id}: expect.flow (mouse) and expect.keyboard (keys only) write expect.result`, async () => {
@@ -540,6 +540,18 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
       assert.deepEqual(present, []);
       assert.equal(await minimal.page.textContent('#rs-submit-label'), de.approve_continue);
     } finally { await minimal.ctx.close(); }
+    /* summary is optional: the banner's why and the facts carry the request */
+    const why = 'Production deploy tonight; staging passed.';
+    const bare = await open('approve-one', 'edge-no-summary', {
+      envelope: { task: { kind: 'approve_bot_acts', why } },
+    });
+    try {
+      assert.equal(await bare.page.locator('[data-ao="summary"]').count(), 0);
+      assert.equal(await bare.page.textContent('#rs-task .rs-task__why'), why);
+      assert.equal(await bare.page.textContent('#rs-submit-label'), 'Approve deploy');
+      assert.equal(await bare.page.isDisabled('#rs-submit'), false);
+      assert.deepEqual(bare.log.errors, []);
+    } finally { await bare.ctx.close(); }
   });
 
   test('approve-one: the checks are summed up in one line before the facts, warnings and failures by name', async () => {
