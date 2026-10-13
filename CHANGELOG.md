@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Breaking: on Windows an older data folder is moved once to
+  `%LOCALAPPDATA%\grokbot-desk` when the server starts (or `paths` runs),
+  if the new folder is missing or empty and no server is using the old one.
+  If the move fails or a server still runs there, the old folder stays in
+  use and `paths` says so (`reason`, `warning`). `RS_DATA_DIR` is never moved.
+- Breaking: the old webhook key variable `SPQRK_REPORT_SHELL_WEBHOOK_KEY` is
+  gone. Use `GROKBOT_DESK_WEBHOOK_KEY`.
+
 ## 1.0.0-beta.2 (2026-10-12)
 
 - macOS is supported: its CI jobs are blocking like the Windows ones.

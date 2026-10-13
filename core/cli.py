@@ -27,7 +27,15 @@ from .launch_coordination import (
     try_acquire_launch_lock,
 )
 from .media import MediaError, replace_media
-from .paths import ROOT, data_dir, data_dir_report, ensure_layout, load_config, selected_port
+from .paths import (
+    ROOT,
+    data_dir,
+    data_dir_report,
+    ensure_layout,
+    load_config,
+    migrate_legacy_data_dir,
+    selected_port,
+)
 from .platform import (
     BrowserLaunchError,
     BrowserNotFound,
@@ -874,6 +882,9 @@ def main(argv=None):
         return command_check(args)
     if args.command == "new":
         return command_new(args)
+    if args.command in ("serve", "paths", "show"):
+        # show too: it starts the server, which would move the folder under it
+        migrate_legacy_data_dir()
     base = ensure_layout(data_dir())
     try:
         config = load_config(base)

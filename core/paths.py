@@ -1,6 +1,8 @@
 """Repository and writable data-directory paths."""
 import json
 import os
+import socket
+import sys
 from pathlib import Path
 
 from .jsonutil import loads
@@ -16,13 +18,79 @@ def data_dir():
     return default_data_dir(PRODUCT_NAME)
 
 
+LEGACY_NAME = "spqrk-report-shell"
+
+# What the last migrate_legacy_data_dir call did in this process: None (nothing
+# to do), "migrated", "live" (a server still owns the legacy dir) or "failed".
+MIGRATION = {"state": None, "warning": None}
+_warned = False
+
+
+def _only_empty_dirs(base):
+    return not any(files for _, _, files in os.walk(base))
+
+
+def _server_owns(base):
+    """True when a server recorded in base/state.json still listens."""
+    try:
+        port = int(loads((base / "state.json").read_text(encoding="utf-8")).get("port"))
+        with socket.create_connection(("127.0.0.1", port), timeout=.3):
+            return True
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def migrate_legacy_data_dir(local=None):
+    """Move the old Windows data folder to the product name, once.
+
+    Runs only when the old folder exists and the new one is missing or holds
+    no files. Never while a server still owns the old folder. On any failure
+    the old folder stays in use and nothing is lost. RS_DATA_DIR is never
+    migrated. Returns and records the outcome in MIGRATION."""
+    global _warned
+    MIGRATION.update(state=None, warning=None)
+    if os.environ.get("RS_DATA_DIR"):
+        return MIGRATION
+    if local is None:
+        if sys.platform != "win32" or not os.environ.get("LOCALAPPDATA"):
+            return MIGRATION
+        local = os.environ["LOCALAPPDATA"]
+    local = Path(local)
+    legacy, current = local / LEGACY_NAME, local / PRODUCT_NAME
+    try:
+        if not legacy.is_dir():
+            return MIGRATION
+        if current.exists() and not (current.is_dir() and _only_empty_dirs(current)):
+            return MIGRATION
+        if _server_owns(legacy):
+            MIGRATION.update(
+                state="live",
+                warning="a running server still uses the old data folder; it moves after that server stops",
+            )
+            return MIGRATION
+        if current.exists():
+            for folder, _, _ in os.walk(current, topdown=False):
+                os.rmdir(folder)
+        os.replace(legacy, current)
+        MIGRATION["state"] = "migrated"
+    except OSError as exc:
+        MIGRATION.update(
+            state="failed",
+            warning=f"could not move the old data folder, still using it: {exc.strerror or exc}",
+        )
+        if not _warned:
+            _warned = True
+            print(f"report-shell: {MIGRATION['warning']}", file=sys.stderr)
+    return MIGRATION
+
+
 def data_dir_report(base=None):
     """The data dir in use, where it came from, and any other candidate that
     holds data (a legacy folder that is not in use, for example)."""
     base = Path(base or data_dir())
     if os.environ.get("RS_DATA_DIR"):
         source = "RS_DATA_DIR"
-    elif base.name == "spqrk-report-shell":
+    elif base.name == LEGACY_NAME:
         source = "legacy"
     else:
         source = "default"
@@ -43,6 +111,10 @@ def data_dir_report(base=None):
     }
     if others:
         report["unused_data_dirs"] = others
+    if MIGRATION["state"]:
+        report["reason"] = MIGRATION["state"]
+        if MIGRATION["warning"]:
+            report["warning"] = MIGRATION["warning"]
     return report
 
 
@@ -51,7 +123,7 @@ def legacy_data_dirs():
     local = os.environ.get("LOCALAPPDATA")
     if not local:
         return []
-    return [Path(local) / "spqrk-report-shell", Path(local) / PRODUCT_NAME]
+    return [Path(local) / LEGACY_NAME, Path(local) / PRODUCT_NAME]
 
 
 def ensure_layout(base=None):

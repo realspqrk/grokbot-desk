@@ -11,11 +11,10 @@ from .jsonutil import dumps
 from .product import PRODUCT_NAME, RUNNER_ID
 
 WEBHOOK_KEY_ENV = f"{PRODUCT_NAME.upper().replace('-', '_')}_WEBHOOK_KEY"
-LEGACY_WEBHOOK_KEY_ENV = "SPQRK_REPORT_SHELL_WEBHOOK_KEY"
 
 
 def _webhook_key():
-    return os.environ.get(WEBHOOK_KEY_ENV) or os.environ.get(LEGACY_WEBHOOK_KEY_ENV)
+    return os.environ.get(WEBHOOK_KEY_ENV)
 
 def webhook_enabled(config):
     webhook = config.get("webhook", {})
