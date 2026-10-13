@@ -32,6 +32,7 @@ const SHOTS = {
     fixtures: {
       golden: 'Deploy web shop v2.4.0 to production?',
       'edge-access': 'Read access to the reporting database',
+      'edge-de': 'Webshop v2.4.0 in Produktion ausrollen?',
     },
   },
   'preview-post': {

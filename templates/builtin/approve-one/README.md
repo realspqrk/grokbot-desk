@@ -9,13 +9,14 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 ## What the person sees
 
-- The `summary` first (as the why of the task banner above the title, unless the payload brings its own `task.why` or the summary has a link), then the key `facts` as label/value pairs and the `copy` values next to copy icons.
-- Right below: one segmented choice, `Approve` / `Reject` (plus `Request changes` with `allow_changes`). Nothing is preselected; the primary stays disabled with `Please approve or reject` until a choice is made. A user action says `Choose Done or Skip`, `Choose Sent or Skip`, or `Choose Posted or Skip`, matching the choices on screen.
-- The primary names what will be sent: `Approve & post`, `Approve & send` or `Approve & continue` (from `action`; `approve_label` overrides that phrase), `Send rejection` or `Send request`. There is no plain `Approve` default. Ctrl+Enter sends too.
-- `Add note` (shown on hover and keyboard focus) opens an optional note for Approve or Reject. Picking `Request changes` opens the same field as a required comment (`What should change?`); click, Enter or Space on it moves the focus there, the arrow keys only change the choice. While the comment is empty the primary is disabled and the status reads `Please write a comment to request changes`.
-- What is visible is what is sent: a note that is not shown is never part of the result.
-- Below the decision: `points` as a quiet list (heading `points_title`, default `Details`), `checks` with status dots (ok, needs a look, failed) and the `reference` text behind a closed disclosure with its own copy icon.
-- The decision and the comment are kept as a draft and come back after a reload, including the information-only note (its disclosure may stay closed). A sent report shows the sent decision and comment, read-only.
+- The `summary` first (as the why of the task banner above the title, unless the payload brings its own `task.why` or the summary has a link). With `checks`, one line sums them up before the facts: `3 ok · 1 warning: Bundle size`. Warnings and failures are named there, so nothing that needs a look waits below the fold. Then the key `facts` as label/value pairs and the `copy` values next to copy icons.
+- The footer is the decision, one click each. The primary approves: `Approve & post`, `Approve & send` or `Approve & continue` (from `action`; `approve_label` overrides that phrase). There is no plain `Approve` default. The quiet alternatives are `Reject` and, with `allow_changes`, `Request changes`. Ctrl+Enter presses the primary.
+- `Reject` sends at once and needs no reason.
+- `Request changes` opens the comment field (`What should change?`) and moves the focus there. The primary becomes `Send request`; `Cancel` goes back. While the comment is empty the primary is disabled and the status reads `Please write a comment to request changes`.
+- A user action (`actor: user`): the primary is the mark (`Posted ✓`, `Sent ✓` or `Done ✓`), the alternative `Skip`, plus `Request changes` with `allow_changes`. Information only (`actor: none`): just `Got it`.
+- `Add note` (shown on hover and keyboard focus, below the report) opens an optional note. It travels with whichever button is pressed while it is shown. What is visible is what is sent: a note that is not shown is never part of the result.
+- The report: `points` as a quiet list (heading `points_title`, default `Details`), `checks` with status dots (ok, needs a look, failed; never behind a disclosure) and the `reference` text behind a closed disclosure with its own copy icon.
+- A started change request, its comment and a shown note are kept as a draft and come back after a reload, including the information-only note (its disclosure may stay closed). A sent report shows the sent comment or note, read-only.
 
 ## Payload `data` (`schema.json`)
 
@@ -40,16 +41,16 @@ py -3 report_shell.py wait <run_id> --timeout 120
 | `summary` | required, 1–600, plain text (newlines kept). An http(s) address in the text becomes a link |
 | `actor` | optional `bot` (default), `user` or `none`. `user`: the mark names what the person did. Posted ✓ for a post (`task.kind` `post_yourself`), Sent ✓ when `action` is `send`, Done ✓ only when there is no specific content or action. Results stay `done` / `skipped`. `allow_changes` adds Request changes. `none`: only Got it, sent at once (`acknowledged`), plus one collapsed note. The bot never acts on `user` or `none`. A payload `task.kind` sets the actor when left out (`post_yourself` = `user`, `fyi` = `none`) |
 | `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. For a bot decision, `post` labels the primary Approve & post, `send` labels it Approve & send, any other verb labels it Approve & continue. For a user decision, `send` labels the choice Sent ✓ |
-| `approve_label` | optional, 1–24; overrides the action phrase (Approve & continue, or Approve & post / send) once Approve is picked. There is no plain Approve default |
-| `allow_changes` | optional boolean, default `false`; offers `Request changes` |
-| `facts[]` | optional, at most 6 of `{label 1–24, value 1–120, mono?}` |
+| `approve_label` | optional, 1–24; the label of the approving primary for the bot, instead of the action phrase (Approve & continue, or Approve & post / send). There is no plain Approve default |
+| `allow_changes` | optional boolean, default `false`; offers `Request changes` as a second quiet alternative |
+| `facts[]` | optional, at most 6 of `{label 1–32, value 1–120, mono?}` |
 | `copy[]` | optional, at most 3 of `{label 1–24, text 1–2000}`; each value is shown in full next to its button |
 | `points_title` | optional, 1–40 |
 | `points[]` | optional, at most 8 strings of 1–160 |
-| `checks[]` | optional, at most 8 of `{label 1–80, detail? 1–120, state ok\|warn\|fail}` |
+| `checks[]` | optional, at most 8 of `{label 1–80, detail? 1–120, state ok\|warn\|fail}`; summed up in one line before the facts |
 | `reference` | optional `{title 1–40, label 1–24, text 1–2000, mono?}`; behind a closed disclosure |
 
-Empty sections are not rendered.
+Empty sections are not rendered. Payload text keeps its language: the window does not translate it, so write it in the person's language (see `fixtures/edge-de.json`).
 
 ## Result `data` (`result.schema.json`, oneOf)
 
@@ -61,7 +62,7 @@ Empty sections are not rendered.
 { "decision": "request_changes", "comment": "Please deploy after the Friday sale ends." }
 ```
 
-- `approve` or `reject` (actor `bot`): `comment` 0–2000 (the optional note; `""` when no note was shown).
+- `approve` or `reject` (actor `bot`): `comment` 0–2000 (the optional note; `""` when no note was shown). Reject needs no reason.
 - `done` or `skipped` (actor `user`), and `acknowledged` (actor `none`): `comment` 0–2000.
 - `request_changes` (bot or user, only with `allow_changes`; not offered for information only): `comment` 1–2000 with at least one non-whitespace character. Information only may include the optional note as `comment`.
 - A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
@@ -70,13 +71,13 @@ Empty sections are not rendered.
 
 | Key | English | German |
 |---|---|---|
-| `choice_approve`, `choice_reject`, `request_changes` | Approve, Reject, Request changes | Freigeben, Ablehnen, Änderungen anfordern |
-| `decision_label` | Decision (name of the choice row) | Entscheidung |
-| `decision_pick` | Please approve or reject | Bitte freigeben oder ablehnen |
-| `decision_pick_user` | Choose {choice} or {skip} (Done, Sent or Posted, matching the choices) | Wähle {choice} oder {skip} |
-| `add_note`, `note` | Add note, Note | Notiz hinzufügen, Notiz |
+| `approve_post`, `approve_send`, `approve_continue` | Approve & post, Approve & send, Approve & continue | Freigeben & posten, Freigeben & senden, Freigeben & weiter |
+| `choice_reject`, `request_changes` | Reject, Request changes | Ablehnen, Änderungen anfordern |
+| `posted`, `sent_mark`, `done_mark`, `skip`, `got_it` | Posted ✓, Sent ✓, Done ✓, Skip, Got it | Gepostet ✓, Gesendet ✓, Erledigt ✓, Überspringen, Verstanden |
+| `request_send`, `cancel` | Send request, Cancel | Anfrage senden, Abbrechen |
+| `add_note`, `add_a_note`, `note` | Add note, Add a note, Note | Notiz hinzufügen, Notiz hinzufügen, Notiz |
 | `request_changes_label`, `comment_required` | What should change?; Please write a comment to request changes | Was soll sich ändern?; Für Änderungen bitte einen Kommentar schreiben |
-| `send_rejection`, `send_request` | Send rejection, Send request | Ablehnung senden, Änderungen senden |
+| `ao_checks_ok`, `ao_checks_warn_one`, `ao_checks_warn`, `ao_checks_fail_one`, `ao_checks_fail` | {n} ok; 1 warning: {names}; {n} warnings: {names}; 1 failed: {names}; {n} failed: {names} | {n} ok; 1 Warnung: {names}; {n} Warnungen: {names}; 1 fehlgeschlagen: {names}; {n} fehlgeschlagen: {names} |
 | `section_details`, `section_checks` | Details, Checks | Details, Prüfungen |
 | `check_ok`, `check_warn`, `check_fail` | passed, needs a look, failed (spoken names of the dots) | bestanden, bitte ansehen, fehlgeschlagen |
 
@@ -85,11 +86,12 @@ Copy labels, fact labels, `points_title`, `reference.title` and `approve_label` 
 ## Test hooks
 
 - Copies: `data-copy-id="copy-<n>"` (1-based) and `data-copy-id="reference"` (inside the disclosure).
-- Choice row `rs-action-row[data-item="decision"]` with `button[value="approve|reject|request_changes"]`; the note/comment `#ao-comment` behind `[data-ao="note-open"]`.
+- The checks line `[data-ao="checksum"]`; the note/comment `#ao-comment` behind `[data-ao="note-open"]`.
+- The footer alternatives in order: `#rs-alt` (Reject or Skip), `#rs-alt-2` (Request changes, with `allow_changes`); in a change request `#rs-alt` is Cancel.
 
 ## Keyboard path (golden, one open report)
 
-Tab ×2 passes the `…` menu and reaches the choice row (on `Approve`). ArrowRight ×2 moves to `Request changes` and opens the comment field; Space confirms and moves the focus into it; type the comment; Ctrl+Enter sends. For an approval: Tab ×2, Space, Ctrl+Enter.
+Tab ×5 passes the `…` menu, the `Rollback` disclosure, `Add note` and `Reject`, and reaches `Request changes`. Space opens the comment field and moves the focus into it; type the comment; Ctrl+Enter sends the request. For an approval: Ctrl+Enter alone.
 
 ## Files
 
@@ -100,9 +102,10 @@ Tab ×2 passes the `…` menu and reaches the choice row (on `Approve`). ArrowRi
 | `schema.json`, `result.schema.json` | payload and result (oneOf) |
 | `fixtures/golden.json` | a production deploy with changes allowed: facts, points, checks, rollback reference |
 | `fixtures/edge-access.json` | an access request (yes/no only): copies, points, checks with a warning |
+| `fixtures/edge-de.json` | the golden deploy written in German (`Deployment freigeben`) |
 | `fixtures/edge-minimal.json` | the summary only |
 | `fixtures/edge-max.json` | every field at its maximum |
 | `fixtures/invalid-no-summary.json` | rejected (missing `summary`) |
 | `fixtures/invalid-check-state.json` | rejected at `/checks/1/state` |
 | `fixtures/expect/golden.json` | copy, `flow`, `keyboard`, `result` |
-| `fixtures/expect/edge-access.json`, `edge-max.json` | every copy string |
+| `fixtures/expect/edge-access.json`, `edge-de.json`, `edge-max.json` | every copy string |

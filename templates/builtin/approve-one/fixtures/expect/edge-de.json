@@ -1,0 +1,6 @@
+{
+  "copies": {
+    "reference": "deploy rollback --to v2.3.7"
+  },
+  "counters": {}
+}

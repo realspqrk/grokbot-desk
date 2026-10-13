@@ -542,12 +542,11 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       const view = await banner(page);
       assert.equal(view.what, t('task_line_do'));
       assert.equal(view.steps, null, 'the line and the Done button say it all');
-      assert.equal(await page.textContent('#rs-status'), t('decision_pick_user', {
-        choice: de.done_mark.replace(/ ✓$/, ''), skip: de.skip,
-      }));
-      const labels = await page.$$eval('[data-ao="choice"] button', (buttons) => buttons.map((b) => b.textContent));
-      assert.deepEqual(labels, [t('done_mark'), t('skip'), t('request_changes')]);
-      await page.click('[data-ao="choice"] button[value="request_changes"]');
+      assert.equal(await page.textContent('#rs-status'), '', 'the buttons say it: no hint that repeats them');
+      assert.equal(await page.textContent('#rs-submit-label'), t('done_mark'));
+      const labels = await page.$$eval('#rs-submitbar .rs-btn--quiet', (buttons) => buttons.filter((b) => !b.hidden).map((b) => b.textContent));
+      assert.deepEqual(labels, [t('skip'), t('request_changes')]);
+      await page.locator('#rs-submitbar .rs-btn--quiet', { hasText: t('request_changes') }).click();
       assert.equal(await page.isDisabled('#rs-submit'), true, 'a change request still needs a comment');
       await page.fill('#ao-comment', 'Use the new address.');
       const table = TASKS.allowed('post_yourself', { verb: 'continue' });
@@ -869,9 +868,9 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       });
       const sentPage = await open(`&run=${sent.run_id}`, { server: srv });
       try {
-        const word = (lang === 'de' ? de : en).sent_mark.replace(/ ✓$/, '');
-        assert.equal(await sentPage.page.textContent('#rs-status'), tl('decision_pick_user', { choice: word, skip: tl('skip') }));
+        assert.equal(await sentPage.page.textContent('#rs-status'), '');
         assert.equal(await sentPage.page.textContent('#rs-submit-label'), tl('sent_mark'));
+        assert.equal(await sentPage.page.textContent('#rs-alt'), tl('skip'));
         assert.deepEqual(sentPage.errors, []);
       } finally { await sentPage.ctx.close(); }
 
@@ -880,7 +879,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
       });
       const changesPage = await open(`&run=${changes.run_id}`, { server: srv });
       try {
-        await changesPage.page.click('[data-ao="choice"] button[value="request_changes"]');
+        await changesPage.page.locator('#rs-submitbar .rs-btn--quiet', { hasText: tl('request_changes') }).click();
         assert.equal(await changesPage.page.isDisabled('#rs-submit'), true);
         await changesPage.page.fill('#ao-comment', 'Use the new address.');
         const table = TASKS.allowed('post_yourself', { verb: 'continue' });

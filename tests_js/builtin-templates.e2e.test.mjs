@@ -108,7 +108,7 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
 
   for (const [id, valid] of [
     ['decide-list', ['golden', 'edge-single', 'edge-unicode', 'edge-max', 'edge-replies']],
-    ['approve-one', ['golden', 'edge-access', 'edge-minimal', 'edge-max']],
+    ['approve-one', ['golden', 'edge-access', 'edge-de', 'edge-minimal', 'edge-max']],
     ['preview-post', ['golden', 'edge-no-image', 'edge-x-limit', 'edge-x-long', 'edge-max']],
   ]) {
     test(`${id}: expect.flow (mouse) and expect.keyboard (keys only) write expect.result`, async () => {
@@ -129,7 +129,8 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
           const { ctx, page, log } = await open(id, name, { colorScheme });
           try {
             const data = fixture(id, name);
-            assert.equal(await page.isDisabled('#rs-submit'), true, `${name}: nothing is decided at rest`);
+            /* approve-one: the footer is the decision, its primary approves in one click */
+            assert.equal(await page.isDisabled('#rs-submit'), id !== 'approve-one', `${name}: nothing is decided at rest`);
             if (id === 'preview-post') {
               const manual = (item) => item && item.mode === 'manual';
               const want = data.platforms.every(manual) ? de.posted : data.platforms.some(manual) ? de.submit_mixed : de.approve_post;
@@ -216,11 +217,15 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
 
   test('shell: opening a disclosure that turns the fade on keeps the held focus ring clear; closing does not scroll', async () => {
     const data = fixture('approve-one', 'golden');
-    data.points = data.points.slice(0, 2);
+    data.points = data.points.slice(0, 4);
     /* the fade mechanics at a known height: the summary stays in the report
        (the banner gets its own why) and the banner is taken out */
     const envelope = { task: { kind: 'approve_bot_acts', why: 'Staging passed.' } };
-    const withoutBanner = (page) => page.evaluate(() => { document.getElementById('rs-task').hidden = true; });
+    const withoutBanner = (page) => page.evaluate(() => {
+      document.getElementById('rs-task').hidden = true;
+      /* the reference disclosure is the last thing in the report */
+      document.querySelector('[data-ao="note"]').hidden = true;
+    });
     for (const colorScheme of ['light', 'dark']) {
       const { ctx, page, log } = await open('approve-one', 'golden', { data, envelope, colorScheme, viewport: { width: 1280, height: 720 } });
       try {
@@ -396,71 +401,109 @@ describe('built-in templates (served, headless Edge)', { skip }, () => {
   });
 
   /* ------------------------------------------------------------ approve-one */
-  test('approve-one: the primary names the decision; a note only travels when it is shown', async () => {
+  /* the visible quiet alternatives of the footer, in order */
+  const alternatives = (page) => page.$$eval('#rs-submitbar .rs-btn--quiet',
+    (b) => b.filter((x) => !x.hidden && x.getClientRects().length > 0).map((x) => x.textContent));
+  const alternative = (page, text) => page.locator('#rs-submitbar .rs-btn--quiet', { hasText: text }).click();
+
+  test('approve-one: the footer is the decision; approve is one click and a shown note travels with it', async () => {
     const data = fixture('approve-one', 'golden');
     const { ctx, page, run } = await open('approve-one', 'golden');
     try {
-      assert.equal(await page.textContent('#rs-status'), de.decision_pick);
-      assert.deepEqual(await page.$$eval('[data-ao="choice"] button', (b) => b.map((x) => [x.value, x.getAttribute('aria-checked')])),
-        [['approve', 'false'], ['reject', 'false'], ['request_changes', 'false']]);
-      await page.click('[data-ao="choice"] button[value="request_changes"]');
+      assert.equal(await page.locator('#rs-mount rs-action-row').count(), 0, 'no choice row in the report');
+      assert.equal(await page.textContent('#rs-submit-label'), data.approve_label);
+      assert.equal(await page.isDisabled('#rs-submit'), false, 'the primary approves at once');
+      assert.deepEqual(await alternatives(page), [de.choice_reject, de.request_changes]);
+      assert.equal(await page.textContent('#rs-status'), '');
+      await page.click('[data-ao="note-open"]');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'ao-comment');
+      await page.fill('#ao-comment', 'Watch the error rate after 18:00');
+      await page.click('#rs-submit');
+      assert.deepEqual(await submitted(page, run), { decision: 'approve', comment: 'Watch the error rate after 18:00' });
+    } finally {
+      await page.evaluate(() => localStorage.clear());
+      await ctx.close();
+    }
+  });
+
+  test('approve-one: Reject sends at once without a reason; yes/no only without allow_changes', async () => {
+    const { ctx, page, run } = await open('approve-one', 'edge-access');
+    try {
+      assert.deepEqual(await alternatives(page), [de.choice_reject]);
+      await alternative(page, de.choice_reject);
+      assert.deepEqual(await submitted(page, run), { decision: 'reject', comment: '' });
+    } finally {
+      await page.evaluate(() => localStorage.clear());
+      await ctx.close();
+    }
+  });
+
+  test('approve-one: Request changes asks for the comment, Cancel goes back, a request survives a reload; empty sections are not rendered', async () => {
+    const { ctx, page, run } = await open('approve-one', 'golden');
+    try {
+      await alternative(page, de.request_changes);
       assert.equal(await page.evaluate(() => document.activeElement.id), 'ao-comment', 'Request changes moves to the comment');
-      assert.equal(await page.textContent('#rs-submit-label'), de.send_request);
+      assert.equal(await page.textContent('#rs-submit-label'), de.request_send);
+      assert.deepEqual(await alternatives(page), [de.cancel]);
       assert.equal(await page.isDisabled('#rs-submit'), true);
       assert.equal(await page.textContent('#rs-status'), de.comment_required);
       await page.fill('#ao-comment', '   ');
       assert.equal(await page.isDisabled('#rs-submit'), true, 'whitespace is not a comment');
-      await page.fill('#ao-comment', 'Not before Friday');
-      assert.equal(await page.isDisabled('#rs-submit'), false);
-      await page.click('[data-ao="choice"] button[value="reject"]');
-      assert.equal(await page.textContent('#rs-submit-label'), de.send_rejection);
-      assert.equal(await page.isHidden('[data-ao="comment-box"]'), true, 'the change request text hides with its mode');
-      await page.click('[data-ao="choice"] button[value="approve"]');
-      assert.equal(await page.textContent('#rs-submit-label'), data.approve_label);
-      await page.click('#rs-submit');
-      assert.deepEqual(await submitted(page, run), { decision: 'approve', comment: '' });
-    } finally {
-      await page.evaluate(() => localStorage.clear());
-      await ctx.close();
-    }
-  });
-
-  test('approve-one: yes/no only without allow_changes; a shown note is sent with a rejection', async () => {
-    const { ctx, page, run } = await open('approve-one', 'edge-access');
-    try {
-      assert.deepEqual(await page.$$eval('[data-ao="choice"] button', (b) => b.map((x) => x.value)), ['approve', 'reject']);
-      await page.click('[data-ao="choice"] button[value="reject"]');
-      await page.click('[data-ao="note-open"]');
-      assert.equal(await page.evaluate(() => document.activeElement.id), 'ao-comment');
-      await page.fill('#ao-comment', 'Use the weekly export for now');
-      await page.keyboard.press('Control+Enter');
-      assert.deepEqual(await submitted(page, run), { decision: 'reject', comment: 'Use the weekly export for now' });
-    } finally {
-      await page.evaluate(() => localStorage.clear());
-      await ctx.close();
-    }
-  });
-
-  test('approve-one: a change request survives a reload and never turns into an approval; empty sections are not rendered', async () => {
-    const { ctx, page } = await open('approve-one', 'golden');
-    try {
-      await page.click('[data-ao="choice"] button[value="request_changes"]');
       await page.fill('#ao-comment', 'Wait for the sale to end');
+      assert.equal(await page.isDisabled('#rs-submit'), false);
       await reload(page);
-      assert.equal(await page.getAttribute('[data-ao="choice"] button[value="request_changes"]', 'aria-checked'), 'true');
       assert.equal(await page.inputValue('#ao-comment'), 'Wait for the sale to end');
       assert.equal(await page.evaluate(() => document.activeElement.id), 'ao-comment');
-      assert.equal(await page.textContent('#rs-submit-label'), de.send_request);
+      assert.equal(await page.textContent('#rs-submit-label'), de.request_send);
+      await alternative(page, de.cancel);
+      assert.equal(await page.isHidden('[data-ao="comment-box"]'), true, 'the change request text hides with its mode');
+      assert.equal(await page.textContent('#rs-submit-label'), fixture('approve-one', 'golden').approve_label);
+      await alternative(page, de.request_changes);
+      assert.equal(await page.inputValue('#ao-comment'), 'Wait for the sale to end', 'the text is kept');
+      await page.keyboard.press('Control+Enter');
+      assert.deepEqual(await submitted(page, run), { decision: 'request_changes', comment: 'Wait for the sale to end' });
     } finally {
       await page.evaluate(() => localStorage.clear());
       await ctx.close();
     }
     const minimal = await open('approve-one', 'edge-minimal');
     try {
-      const present = await minimal.page.evaluate(() => ['facts', 'copies', 'points-box', 'checks-box', 'reference-box']
+      const present = await minimal.page.evaluate(() => ['facts', 'copies', 'points-box', 'checks-box', 'reference-box', 'checksum']
         .filter((name) => document.querySelector(`[data-ao="${name}"]`)));
       assert.deepEqual(present, []);
+      assert.equal(await minimal.page.textContent('#rs-submit-label'), de.approve_continue);
     } finally { await minimal.ctx.close(); }
+  });
+
+  test('approve-one: the checks are summed up in one line before the facts, warnings and failures by name', async () => {
+    const golden = await open('approve-one', 'golden');
+    try {
+      const view = await golden.page.evaluate(() => {
+        const sum = document.querySelector('[data-ao="checksum"]');
+        const facts = document.querySelector('[data-ao="facts"]');
+        return {
+          text: sum.textContent,
+          before: !!(sum.compareDocumentPosition(facts) & Node.DOCUMENT_POSITION_FOLLOWING),
+          lines: Math.round(sum.getBoundingClientRect().height / parseFloat(getComputedStyle(sum).lineHeight)),
+          listed: document.querySelectorAll('[data-ao="checks"] > li').length,
+        };
+      });
+      assert.equal(view.text, [t('ao_checks_ok', { n: '3' }), t('ao_checks_warn_one', { names: 'Bundle size' })].join(' · '));
+      assert.deepEqual([view.before, view.lines, view.listed], [true, 1, 4]);
+    } finally { await golden.ctx.close(); }
+    const data = fixture('approve-one', 'golden');
+    data.checks = [
+      { label: 'Unit tests', state: 'fail' }, { label: 'Smoke test', state: 'fail' },
+      { label: 'Bundle size', state: 'warn' }, { label: 'Lint', state: 'warn' },
+    ];
+    const failing = await open('approve-one', 'golden', { data });
+    try {
+      assert.equal(await failing.page.textContent('[data-ao="checksum"]'), [
+        t('ao_checks_warn', { n: '2', names: 'Bundle size, Lint' }),
+        t('ao_checks_fail', { n: '2', names: 'Unit tests, Smoke test' }),
+      ].join(' · '), 'no ok part when none passed');
+      assert.equal(await failing.page.locator('details [data-ao="checks"]').count(), 0, 'never behind a disclosure');
+    } finally { await failing.ctx.close(); }
   });
 
   /* ----------------------------------------------------------- preview-post */

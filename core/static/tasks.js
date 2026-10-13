@@ -30,7 +30,7 @@
       secondary: ['skipped', 'request_changes'],
       items: { done: 'posted', skipped: 'skip', later: 'later' },
       discard: true,
-      variants: ['footer_done', 'done_mark', 'sent_mark', 'request_changes', 'send_request']
+      variants: ['footer_done', 'done_mark', 'sent_mark', 'request_changes', 'send_request', 'request_send', 'cancel']
     },
     approve_bot_acts: {
       primary: 'approve',
@@ -38,15 +38,16 @@
       secondary: ['request_changes', 'reject'],
       items: { approve: 'choice_approve', reject: 'choice_reject', defer: 'choice_defer' },
       discard: true,
-      variants: ['send_request', 'send_rejection', 'posted', 'submit', 'submit_mixed']
+      variants: ['send_request', 'send_rejection', 'posted', 'submit', 'submit_mixed', 'request_send', 'cancel']
     },
     pick: {
       primary: 'choose',
-      labels: { choose: 'po_choose_idle' },
-      secondary: [],
+      /* request_changes is "None of these" (a required note, no pick) */
+      labels: { choose: 'po_choose_idle', request_changes: 'po_none' },
+      secondary: ['request_changes'],
       items: {},
       discard: true,
-      variants: ['po_choose']
+      variants: ['po_choose', 'request_send', 'cancel']
     },
     fyi: {
       primary: 'acknowledged',

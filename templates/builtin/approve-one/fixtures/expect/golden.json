@@ -5,7 +5,7 @@
   "counters": {},
   "flow": [
     {
-      "click": "rs-action-row[data-item=\"decision\"] button[value=\"request_changes\"]"
+      "click": "#rs-alt-2"
     },
     {
       "fill": [
@@ -19,12 +19,8 @@
   ],
   "keyboard": [
     {
-      "repeat": 2,
+      "repeat": 5,
       "press": "Tab"
-    },
-    {
-      "repeat": 2,
-      "press": "ArrowRight"
     },
     {
       "press": "Space"

@@ -1,0 +1,59 @@
+{
+  "summary": "Version 2.4.0 des Webshops hat die Abnahme bestanden. Heute Abend in Produktion ausrollen?",
+  "approve_label": "Deployment freigeben",
+  "allow_changes": true,
+  "facts": [
+    {
+      "label": "Version",
+      "value": "v2.3.7 → v2.4.0",
+      "mono": true
+    },
+    {
+      "label": "Änderungen",
+      "value": "9 Commits, 12 Dateien, +412 −87"
+    },
+    {
+      "label": "Wartungsfenster",
+      "value": "Heute 18:00 bis 18:20, wenig Verkehr"
+    },
+    {
+      "label": "Angefordert von",
+      "value": "Web-Team"
+    }
+  ],
+  "points_title": "Was sich ändert",
+  "points": [
+    "Neuer Bestellablauf mit gespeicherten Adressen",
+    "Schnellere Suche: Ergebnisse 5 Minuten zwischengespeichert",
+    "Behoben: Rechnungen zeigten für manche EU-Kunden die falsche Währung",
+    "Datenbank-Migration ergänzt 2 Spalten (abwärtskompatibel)"
+  ],
+  "checks": [
+    {
+      "label": "Unit- und Integrationstests",
+      "detail": "214 bestanden in 3 min 12 s",
+      "state": "ok"
+    },
+    {
+      "label": "Smoke-Test auf Staging",
+      "detail": "Alle 18 Abläufe in Ordnung",
+      "state": "ok"
+    },
+    {
+      "label": "Sicherheitsscan",
+      "detail": "0 kritisch, 0 hoch",
+      "state": "ok"
+    },
+    {
+      "label": "Bundle-Größe",
+      "detail": "+18 KB (Grenze +25 KB)",
+      "state": "warn"
+    }
+  ],
+  "reference": {
+    "title": "Rollback",
+    "label": "Rollback-Befehl kopieren",
+    "text": "deploy rollback --to v2.3.7",
+    "mono": true
+  }
+}

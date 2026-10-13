@@ -61,7 +61,7 @@ const TEMPLATES = {
   'approve-one': {
     dir: 'templates/builtin/approve-one',
     draft: async (page) => {
-      await page.click('rs-action-row[data-item="decision"] button[value="request_changes"]');
+      await page.locator('#rs-submitbar .rs-btn--quiet', { hasText: read('core/i18n', 'de.json').request_changes }).click();
       await page.fill('#ao-comment', 'LOCAL');
     },
     sent: () => ({ decision: 'request_changes', comment: 'AUTHORITATIVE' }),
