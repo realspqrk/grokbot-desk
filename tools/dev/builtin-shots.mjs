@@ -1,6 +1,7 @@
 // Screenshots of the shipped built-in templates on the real served shell
 // (isolated server, temp data dir, headless Edge, English UI by default).
-// One open report per shot (no strip), at rest: no hover, no focus. Each
+// One open report per shot (no strip), at rest: no hover, no focus, scrolled
+// to the top (any offset is reset and named in the log). Each
 // fixture in light + dark at 1280x720 and 1920x1080. /copy is answered by
 // page.route, so the real clipboard is never touched.
 // Writes <out>/<template>/<fixture>-<theme>-<w>x<h>.png and prints console
@@ -111,6 +112,21 @@ try {
           await page.mouse.move(width - 2, height - 2);
           await page.evaluate(() => document.activeElement?.blur());
           await page.waitForTimeout(300);
+          /* at rest means scrolled to the top: one review render once came
+             out with the page shifted up (byline cut off) and it did not
+             reproduce. Reset every offset and name it, so a real scroll by
+             the product still shows up in the log. */
+          const shifted = await page.evaluate(() => {
+            const moved = [];
+            for (const node of [document.scrollingElement, ...document.querySelectorAll('*')]) {
+              if (node && (node.scrollTop || node.scrollLeft)) {
+                moved.push(`${node.id || node.tagName.toLowerCase()} ${node.scrollTop}`);
+                node.scrollTop = 0;
+                node.scrollLeft = 0;
+              }
+            }
+            return moved;
+          });
           const scroll = await page.evaluate(() => {
             const mount = document.getElementById('rs-mount');
             return mount ? { scroll: mount.scrollHeight, client: mount.clientHeight } : null;
@@ -120,6 +136,7 @@ try {
           written.push(file);
           console.error(`${id}/${fixture} ${theme} ${width}x${height}: `
             + (scroll ? `content ${scroll.scroll}/${scroll.client}${scroll.scroll > scroll.client ? ' scrolls' : ''}` : 'no mount')
+            + (shifted.length ? ` scroll reset: ${shifted.join(', ')}` : '')
             + (errors.length ? ` console: ${errors.join(' | ')}` : ''));
           await page.evaluate(() => localStorage.clear());
           await ctx.close();
