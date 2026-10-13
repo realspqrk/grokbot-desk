@@ -1,144 +1,128 @@
 ---
 name: grokbot-desk
-description: Ask the user for a decision or approval in a local desktop pop-up instead of in chat. Use when a task needs the user's yes/no, a choice between options, approval of a draft or post, or decisions on a short list of items, and the user has grokbot-desk installed on their computer.
+description: Open a desk instead of answering in chat whenever the user should decide or should read a report. Use for a yes or no, a choice, a list of items, a draft or post to approve, and any status, results, weekly summary or research outcome. grokbot-desk is a local window on their computer. You send JSON, they act there, and you read the result.
 ---
 
 # grokbot-desk
 
-grokbot-desk opens a small window on the user's own desktop. You send a JSON payload, the user decides there, and you read the decision as JSON. Use it instead of chat when a decision deserves a clear, calm view.
+You send JSON. The user decides or reads it in a local window (a desk). You read the result JSON.
 
-## When to use it
+## Desk or chat?
 
-Use a pop-up when:
-- you need a decision before you continue (deploy, send, publish, buy, delete);
-- the user should compare options or review a draft, a post, or a list;
-- the answer must be exact (approved items, chosen option), not free chat.
+Open a desk for any decision, approval, choice, list of items to decide, draft or post to approve, and any report (status, results, weekly summary, research outcome) longer than about five lines.
 
-Stay in chat for quick questions, small talk, or anything that needs no decision.
+Chat only for small talk, a quick clarifying question, or a one-line acknowledgement. If you cannot run commands on their computer, say so and ask in chat.
 
-## Where commands run
+## Write a good desk
 
-Run every command on the user's own computer, in the folder where grokbot-desk was cloned. The window must open on the user's desktop. Do not run it in a headless VM, container, or remote box: nobody will see the window there, and `wait` will block until the report expires.
+- Title: the decision or the report, about 60 characters (the field allows 80).
+- Why: one or two sentences, why this and why now. The banner holds at most three sentences and 360 characters.
+- Pick the template whose buttons match the task. Use labels the user would say ("Pay", "Don't pay").
+- Never restate who acts or which button to press. Never repeat the title.
+- Write in the user's language. The window does not translate your text. Its own buttons are German unless `RS_LANG=en` was set before the server started.
 
-If you cannot run commands on the user's computer, tell the user and ask in chat instead.
+`summary`, `intro`, `context` and `notes` become the why only when the whole text fits (three sentences, 360 characters) and has no link. The body then omits it. Longer text, or text with an `http` link, stays in the body. Label a link as information ("Open PDF").
 
-On macOS, `/usr/bin/python3` is 3.9 and too old: replace every `python report_shell.py` command with `./report-shell` from the clone folder (it finds Python 3.11 or newer), or with a 3.11+ interpreter such as `python3.12`. Use forward-slash paths and shell `export` syntax for environment variables. The default data directory is `~/Library/Application Support/grokbot-desk`; `RS_DATA_DIR` overrides it.
+The title leads. Above it, a quiet line has the bot avatar and name, the open count, and the `…` menu. Under the title, the banner is one task line (effort and due stay quiet) plus the why. Steps show only for your `task.steps`, a mixed list or preview, or a list's "decide each, then <button>". Discard is in the `…` menu, and missing on an information-only desk. The footer is a status, up to two quiet alternatives, and one primary.
 
-## Built-in templates first
+Times use the machine's time zone. A due date of today or earlier, or `blocking`, turns the banner red.
 
-Pick a built-in before writing your own:
+## Templates
 
-| Template | Use for |
-| --- | --- |
-| `approve-one` | One yes/no decision, optionally with a request for changes. |
-| `pick-option` | Compare 2 to 4 options and pick one. |
-| `decide-list` | Approve, reject or defer up to 5 items, one by one. |
-| `review-doc` | Review a draft or report; approve or request changes. |
-| `preview-post` | Preview one social post per platform and approve it; per platform `auto` (you post it) or `manual` (the user posts it). |
+Use a built-in first (`python report_shell.py templates`). Read `templates/builtin/<id>/schema.json`, `result.schema.json` and `fixtures/golden.json`. See `docs/GUIDE.md`. `new <namespace>/<id>` only when none fits. A template that does not extend a built-in accepts only `review` and `blocking`.
 
-`python report_shell.py templates` lists what is installed. For a built-in's fields and examples, read `templates/builtin/<id>/schema.json`, `result.schema.json`, and `fixtures/golden.json`. `docs/GUIDE.md` describes the template contract. Use `new <namespace>/<id>` only when no built-in fits.
+| Template | Use for | Task kinds |
+| --- | --- | --- |
+| `approve-one` | One yes or no, or a short note with a few facts | `approve_bot_acts`, `post_yourself`, `fyi`, `blocking` |
+| `pick-option` | One choice among 2 to 4 options | `pick`, `blocking` |
+| `decide-list` | Decisions on 1 to 12 items | `approve_bot_acts`, `post_yourself`, `blocking` |
+| `review-doc` | A draft to approve, or a report to read | `review`, `approve_bot_acts`, `post_yourself`, `fyi`, `blocking` |
+| `preview-post` | One social post, approved per platform | `approve_bot_acts`, `post_yourself`, `blocking` |
 
-`show`, `wait`, `result`, `templates`, and `new` need only Python at runtime. `check` is a development check: it also needs Node.js, an existing playwright-core installation (set `RS_PLAYWRIGHT_CORE` to its entry point), and a supported browser. The check uses `py -3` unless `RS_PYTHON` names a working Python executable; for example, in PowerShell: `$env:RS_PYTHON = (Get-Command python).Source`.
+Set `task.kind` from that row. A mismatch, or a kind that contradicts `data` (`fyi` with `"actor": "bot"`), is rejected. `blocking` keeps the buttons and turns the banner red. With no `task`: a pick is `pick`; bot work on a list or post is `approve_bot_acts`; work the user does entirely is `post_yourself`; a document is `review` unless `actor` or `action` says otherwise.
+
+`show`, `wait`, `result`, `templates` and `new` need only Python. `check` also needs Node.js, playwright-core (`RS_PLAYWRIGHT_CORE`) and a supported browser. It uses `py -3` unless `RS_PYTHON` names Python. PowerShell: `$env:RS_PYTHON = (Get-Command python).Source`.
+
+Shared buttons for `approve-one` and `review-doc`. The bot primary is "Approve & post", "Approve & send" or "Approve & continue" from `action` (`post`, `send`, or any other verb). There is no plain "Approve". The user primary is "Posted ✓" for `post_yourself`, "Sent ✓" when `action` is `send`, and "Done ✓" otherwise, plus "Skip". Results stay `done` or `skipped`. `fyi` or `actor` `none`: only "Got it", an optional collapsed note, no Request changes, no Discard. "Request changes" opens a comment and the primary becomes "Send request".
+
+### approve-one
+
+One footer click. `Reject`, `Request changes` (only with `allow_changes`) and the approve button are separate buttons. Not a segmented control. Reject sends at once. `approve_label` (1–24 characters) replaces the bot primary. At most six facts; a label may be 32 characters. With `checks`, a summary line is shown before the facts. Result `{decision, comment}`. `request_changes` needs a comment.
+
+### pick-option
+
+Two to four cards, nothing preselected. `suggested` is only a mark. The primary names the option and stays off until one is picked. `question` is omitted when it repeats the title. Repeat the same fact labels in the same order (label up to 32 characters).
+
+`allow_none` defaults to true and offers "None of these". `false` hides it. That path requires a note and returns `{"decision":"request_changes","note":"..."}` with no `choice`. Offer new options or ask. A pick is `{"choice":"<id>","note":""}`.
+
+### decide-list
+
+1–12 items, one at a time, nothing preselected. Top-level and per-item `labels` are `{approve, reject, defer}`, 1–24 characters, no line break or extra space. An item's labels win. Results stay `approve`, `reject`, `defer`. User items take no `labels`. Their `choices` are `done`, `skipped`, `later`. Bot `choices` are `approve`, `reject`, `defer`.
+
+`action` (`post`, `send`, `continue`) names only the bot's banner line. Any bot item: footer "Send decisions" ("Send decision" if there is one item). Every item the user's: footer "Done". The button sends the choices and approves nothing by itself. `content` `post` or `reply`, or kind `post_yourself`, shows "Posted ✓" instead of "Done ✓". Add `url` and `copy` when they reply. Do not act on a user item. A mix gives each side one banner line, the user first. Result: `items` of `{id, choice, note}` in order, plus `note`.
+
+### review-doc
+
+"Looks good" and "Request changes". With `action`, the primary follows the shared bot rule. Section comments may ride on `approve`. `request_changes` needs the overall comment or one section comment. `fyi` has no section comments. `doc` is markdown unless `format` is `text` (max 60,000 characters). Callouts: `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`. Raw HTML stays text. Images need `images` keys. Result `{decision, comment, comments}`. `comment` is `""` on approve. A section comment is `{section, heading, comment}`.
+
+### preview-post
+
+Tabs `x`, `linkedin`, `instagram`, `facebook`. A plain id is `auto` (you post after approval). `{"platform":"x","mode":"manual"}` means the user posts it. Use `manual` where you cannot post. `variants.<platform>` is `{text?, hashtags?}` with at least one field. Hashtags omit `#`. Auto Instagram allows at most five hashtags and needs an image or a video. Ratios include `3:4` and `9:16` (`1:1`, `4:5`, `1.91:1`, `16:9` too). `video` replaces `image`. Optional `target` is a quote or reply. X ignores `target.url`. URLs in `text` weigh 23.
+
+Limits: X 25,000 weighted (Premium long posts; the preview folds at 280, "Long post (X Premium)"), LinkedIn 3,000, Instagram 2,200, Facebook 63,206. A limit never blocks a manual platform. An over-limit `auto` platform cannot be approved. There is no "skip all". The primary stays off until one platform is ticked. An all-manual desk still offers "Request changes"; its primary reads "Posted ✓" once one is ticked. A mix reads "Submit", "Approve & post" or "Posted ✓" from what is ticked. On approval, an unticked manual platform is `skipped`.
+
+Post only `platforms` whose `per_platform` decision is `approved`. Never post `manual`. `done` means the user posted it. `not_approved` and `skipped` mean stop. `changes_requested` carries the note. Read `per_platform`. A `results` summary is not permission to post.
+
+## Report style
+
+A status, weekly summary or research outcome is `review-doc` with `task.kind` `fyi`. In `data.doc`: a bold one-line TL;DR, a facts table, checks as `- [x]` and `- [ ]`, at most one callout, details last, about 400 words, no wall of prose.
+
+```json
+{"task":{"kind":"fyi","why":"Packaging is late. Stock lasts until Friday."},"data":{"doc":"**Sites ran normally; one delivery is late.**\n\n## Key figures\n\n| Measure | This week |\n|---|--:|\n| Orders shipped | 1,284 |\n\n## Checks\n\n- [x] Nightly backups finished\n- [ ] Supplier confirms the new date\n\n> [!WARNING]\n> Wednesday's packaging has not arrived.\n\n## Details\n\nThe autumn promotion ends Sunday."}}
+```
+
+On `fyi`, an omitted `actor` becomes `none`. A verdict uses `review` in this same shape.
 
 ## The flow
 
-1. Write the payload to a file (UTF-8 JSON):
+Run every command on the user's computer, in the clone folder. The window must open on their desktop. Do not run it on a headless VM, a container or a remote box.
+
+On macOS, `/usr/bin/python3` is 3.9. Use `./report-shell` (Python 3.11+) or `python3.12`, forward slashes, and `export`. Default data directory: `~/Library/Application Support/grokbot-desk` (`RS_DATA_DIR` overrides it). `--focus` does nothing there. Without Edge or Chrome the page may open as a normal tab.
+
+1. Write UTF-8 JSON. `created` is the current local time with its offset. `bot` is `^[a-z0-9-]{1,40}$`. `version` matches the template. Omit `run_id`. `expires_minutes` is 5–10080, default 240. Other `task` fields: `why`, `steps` (one line, max 140 characters, kept for the whole open desk), `eta_min` (1–120), `due` (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` with optional seconds, milliseconds, and `Z` or `±HH:MM`). Other date forms are rejected. A long `task.why` warns on `show` (exit 0): the banner keeps the first three sentences, cuts at a word past 360 characters, and folds the rest.
 
 ```json
-{
-  "schema": "report-shell/payload@1",
-  "template": "decide-list",
-  "version": 1,
-  "bot": "office-bot",
-  "title": "Invoices to approve this week",
-  "created": "2026-10-10T09:00:00+02:00",
-  "identity": {"name": "Office Bot", "avatar_shape": "blob", "avatar_color": "orange"},
-  "data": {
-    "intro": "Pay these two invoices this week? Approve = I pay it, Reject = I don't pay and ask the sender, Defer = ask me again next week.",
-    "items": [
-      {"id": "hosting", "title": "Server hosting October, 89.00 EUR", "source": "Hosting provider"},
-      {"id": "toner", "title": "Toner for the office printer, 132.90 EUR", "choices": ["approve", "defer"]}
-    ]
-  }
-}
+{"schema":"report-shell/payload@1","template":"decide-list","version":1,"bot":"office-bot","title":"Two invoices this week","created":"2026-10-10T09:00:00+02:00","task":{"kind":"approve_bot_acts","why":"Hosting is due Friday."},"data":{"labels":{"approve":"Pay","reject":"Don't pay","defer":"Next week"},"items":[{"id":"hosting","title":"Hosting, October, 89 EUR"},{"id":"toner","title":"Toner, 132.90 EUR","choices":["approve","defer"]}]}}
 ```
 
-   Use the current time with its offset for `created`. Make the `title` say what is decided, and keep the body consistent with it. The intro or title must say what Approve means in this case (and what Reject and Defer mean, if it is not obvious). A link or file reference is information, never an action: label it plainly, e.g. "Open PDF".
+2. `python report_shell.py show <id> --data payload.json` returns `run_id`, `url`, `result_path` and `data_dir`. It opens the window, or delivers quietly if one is open. `--focus` only when the user asked. Desks share one window and an avatar strip. A new desk never covers the one on screen. A burst is announced once. Then `status`. If `window_alive` or `up` is false, no window is waiting. If your runtime kills child processes at the end of a command, ask the user to keep `python report_shell.py serve` running, then `show` again.
 
-2. Show it: `python report_shell.py show decide-list --data payload.json`
-   It returns one JSON line containing `run_id`, `url` and `result_path`. It opens the window if needed; an existing window receives the report quietly. Use `--focus` only when the user asked to bring it forward. Several open reports share one window with an avatar strip on top, one avatar per bot with a count. A new report never replaces the one the user is reading, and a burst of reports is announced once; there is no need to space out several `show` calls or to add `--focus` for them.
-   Then run `python report_shell.py status` and check `window_alive`. If it is `false` (or `up` is `false`), no window is waiting: do not tell the user there is one. Read the warning `show` printed; if your runtime ends child processes when a command finishes, ask the user to start `python report_shell.py serve` in a terminal that stays open, then run `show` again.
+3. One chat line says a desk is waiting. Do not repeat the desk. Then:
+   - `python report_shell.py wait RUN_ID --timeout 60`. Exit 0 is `submitted`, `cancelled` or `expired`.
+   - Exit 5: still open. If a finished background task wakes you, hand it `python report_shell.py wait RUN_ID --until-expiry`. Background shells may not wake you, so do not rely on one. Otherwise use `results --since` next turn.
+   - `wait` ends by itself at expiry plus 2 minutes. Exit 7 means nothing was written. Treat it as expired. A run from before 1.0.0-beta.2, or one with no readable expiry, has no such deadline, so only `--timeout` ends that wait.
+   - Never use `--timeout 0` from a bot. `--until-expiry` together with `--timeout` is an error.
 
-3. Tell the user in chat that a decision is waiting, then wait for it:
-   - First a short wait: `python report_shell.py wait RUN_ID --timeout 60`. Exit 0 means `submitted`, `cancelled` or `expired`: go to step 4.
-   - Exit 5 means the user has not decided yet. If your runtime wakes you when a background subagent or task finishes, hand the wait to one: it runs `python report_shell.py wait RUN_ID --until-expiry`, blocks on it, then reports the exit code and `result`. Background shells may not wake you, so do not rely on one. Otherwise, check on your next turn with `results --since` (below).
-   - `wait` ends by itself at the run's expiry plus 2 minutes at the latest. Exit 7 means no result was written by then: treat it as expired. (Only a run record without a readable expiry, from before 1.0.0-beta.2, waits until `--timeout`.)
-   - Never use `--timeout 0` from a bot.
+4. `python report_shell.py result RUN_ID`. Act only on it. `cancelled` or `expired`: do nothing, and ask in chat if it still matters. Exit 6: unknown run, or no result yet.
 
-4. Read: `python report_shell.py result RUN_ID`
-   Act only on what the result says. `cancelled` or `expired` means: do nothing, and ask in chat if it still matters.
+5. One chat line: topic + OK (for example "Invoices: hosting paid, toner next week, OK"). Start work the result asks for. Otherwise stop.
 
-5. Acknowledge in your own chat with one short line: topic + OK (for example "X replies: 5x posted, OK"). If the result asks for work, start it right away; otherwise that one line is all.
+Catch up with `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID ...]`, oldest first. Pass `cursor` and `seen` back unchanged. `CURSOR` is ISO 8601 with an offset. Items have `run_id`, `bot`, `template`, `status`, `decided`, `result_path`, and `title` when known. `summary`, when present: decide-list counts (`2 approve, 1 defer`), a preview line (`x posted by you, linkedin approved`), an approve-one or review-doc word, or a pick id. "None of these" has no summary. Every answer includes `data_dir`. So does `paths`. Never guess the directory.
 
-Catch up on decisions you did not wait for: `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID ...]` lists results decided at or after `CURSOR` (ISO 8601 with offset), oldest first. Pass the `cursor` and `seen` from its last answer back as they came (`--since CURSOR`, `--seen` once per run id), so a decision in the same second is neither lost nor listed twice. Keep the newest `decided` as `cursor`. Each item has `run_id`, `bot`, `template`, `status`, `decided` and `result_path`, plus `title` when the run record still has one. That is enough for one acknowledgement line (topic from `title`). A submitted item also has `summary` when the decision is compact: decide-list counts per choice (`2 approve, 1 defer`), preview-post one decision per platform (`x done, linkedin approved`). Every answer names the `data_dir` in use; `paths` prints it too. Never guess the data directory.
+Exit 2: the payload is invalid. Fix the field the error names, then send it once more. Exit 3: no Edge or Chrome. Tell the user. Do not open another browser. Exit 4: port taken or the server did not start. `doctor` lists setup warnings. Retry once. Do not loop.
 
-## Data directory, dedupe, created
+## Data directory, dedupe, time
 
-Bots always use the CLI (`result`, `wait`, `results --since`, `paths`) and never guess the data directory. `paths` prints the directory in use, why (`RS_DATA_DIR`, `legacy` or `default`), and any unused older directory. On Windows an older data folder is moved once to `%LOCALAPPDATA%\grokbot-desk`, when the server starts or `paths` runs and no server is using it. `paths` then shows `reason: "migrated"` once. If a server still runs in the old folder, or the move fails, the old folder stays in use and `paths` shows a `reason` and a `warning`. Nothing is lost. `RS_DATA_DIR` is used as given and never moved.
+`paths` prints the directory and why (`RS_DATA_DIR`, `legacy`, `default`), plus any unused older directory. On Windows, `spqrk-report-shell` moves once to `%LOCALAPPDATA%\grokbot-desk` at server start or `paths`, when the new folder is missing or empty and no server is using the old one (`reason`: `migrated`). A live server or a failed move leaves the old folder (`reason` and `warning`). `RS_DATA_DIR` is never moved.
 
-Optional `dedupe_key` (1–120 printable ASCII characters) on the payload: the same bot and key returns the existing run instead of opening a second one, while that run is open or was submitted or cancelled within `dedupe_hours` (integer 1–168, default 24). `show` then prints `deduped: true` and `state`. An expired run never dedupes.
+The webhook stays off unless enabled with `GROKBOT_DESK_WEBHOOK_KEY` and an allow-listed `https` URL. Bots use `wait`. Startup drops `runs`, `results` and `log` files older than 30 days.
 
-`created` is the current time with its offset. A stamp more than 2 minutes ahead is clamped to now, and `show` includes a warning. Up to 2 minutes ahead is left as clock skew.
+`dedupe_key` (1–120 printable ASCII) returns the open, submitted or cancelled run for that bot and key within `dedupe_hours` (1–168, default 24). `show` adds `deduped: true` and `state`. Expired runs do not match. `created` more than two minutes ahead is clamped to now, with a warning. Up to two minutes ahead stays.
 
-If `show` fails, read its error. Correct the payload field named in the error; `doctor` checks registry/setup warnings. `check <template>` checks the template and requires the development tools described above. Try once more after fixing the cause; do not retry in a loop.
+## Identity
 
-## Labels say who acts next
-
-Rule: set `task.kind` and write a short `task.why` (<=3 sentences); labels say who acts next.
-
-Every report shows a task banner under its title: one line on what to do, why, and optional effort and due date. Steps show only when they add something (your own `steps`, a mixed list or preview). Add a top-level `task` to the payload:
-
-```json
-"task": {"kind": "approve_bot_acts", "why": "The hosting invoice is due Friday. The toner can wait a week.", "eta_min": 2, "due": "2026-10-14"}
-```
-
-- `kind`: `post_yourself` (the user posts it, then marks it posted), `approve_bot_acts` (you act after approval), `pick` (choose one option), `fyi` (information only, just Got it), `review` (read and give a verdict), `blocking` (you are stuck until the user answers; the banner turns red).
-- `why`: aim for at most 3 sentences and 360 characters. Longer text is a warning on `show` (exit 0), not a rejection: the banner shows the first three sentences, or up to 360 characters cut at a word, and folds the rest. Without `why`, your `summary` (or `intro`, `context`, `notes`) becomes the why only when it fits whole; otherwise it stays in the report body. `steps`: one line, at most 140 characters, only when the default steps do not fit. When you set it, that line stays for the whole open report; ticks and choices do not replace it. `eta_min`: 1-120 minutes. `due`: `YYYY-MM-DD`, or `YYYY-MM-DDTHH:MM[:SS[.fff]]Z` or with a `±HH:MM` offset. Other ISO forms are rejected. Today or past turns the banner red.
-- Without `task` the kind is derived from the template and `actor` (see `docs/GUIDE.md`, *Task banner*). A `kind` that contradicts `data` is rejected with a pointer, for example `fyi` with `"actor": "bot"`.
-
-Set `actor` from who actually does the next step (or let `task.kind` set it). `bot` means you act after the result. `user` means the person does it (posts it, sends it, finishes it). `none` means the report is information only.
-
-- On a `user` or `none` item, do not act. Record the result and stop.
-- `decide-list`: omit `actor` (or set `bot`) for Approve / Reject / Defer. Set `actor` to `user` when the person does the item. Set `content` to `post` or `reply` when they publish it: the choice then reads Posted ✓. Without `content` the choice reads Done ✓. Add `url` for the post they reply under, and `copy` for the text they paste. When every item is `user`, the footer says Done / Fertig: that reports the status back, it is not a new instruction to you. A mixed list gives each side its own banner line, the person first, counted: `You post: 2 replies` / `<your name> sends after approval: 3 items`. Set `action` (`post`, `send`, `continue`) to say what you do with the approved items; it also names the footer (Approve & send). Approve & … only when you act next.
-- `approve-one` and `review-doc`: omit `actor` for today's Approve / Reject (or Looks good / Changes). The bot primary is Approve & post, Approve & send, or Approve & continue from `action`; there is no plain Approve default. Set `user` when the person does the work. The mark names what they did: Posted ✓ for a post (`task.kind` `post_yourself`), Sent ✓ when `action` is `send`, Done ✓ only when there is no specific content or action. Results stay `done` / `skipped`. The hint names those choices (Choose Sent or Skip for a send). Set `none` for Got it (`acknowledged`); one collapsed note is optional and is kept if they reload, and there is no Request changes and no Discard. `allow_changes` on `approve-one` still offers Request changes for a user action, and the footer then reads Send request. An optional `action` of `post` or `send` names the bot's primary button when `actor` is `bot`; any other verb reads Approve & continue.
-- User result values are `done`, `skipped` and, on a list, `later`. Info-only is `acknowledged`. Bot values stay `approve`, `reject`, `request_changes`, `defer`.
-
-## Social posts: who posts where
-
-In `preview-post`, give each platform a `mode`: `{"platform": "linkedin", "mode": "auto"}` means you post it after the user approves; `{"platform": "x", "mode": "manual"}` means the user posts it by hand (the window shows copy buttons for the text, hashtags, comment and image, and the user marks it as posted). A plain id such as `"linkedin"` means `auto`.
-
-Optional `video` replaces `image` (the two cannot both be set): `{path, poster, alt, ratio}`. `path` is `.mp4` or `.webm`, at most 200 MB (`x-rs-media` is `"video"`); `poster` is an image, at most 20 MB, and is required. The preview shows the poster and plays the file inline. Images stay at most 20 MB. Media is served in ranges. On a manual platform the user gets `Copy file path` and `Show in folder` for the video. Instagram counts a video as the required media.
-
-Optional `target` is a quote or a reply: `{type: "quote"|"reply", url, excerpt?, author?: {name?, handle?}}`. `url` is `https`, at most 2048 characters. X shows a quote card under the post, or `Replying to @handle` plus the parent card above the post. LinkedIn and Facebook show a reshare card. The card's link opens in the system browser. A manual platform also gets `Copy link` for `target.url`. X does not count that URL: it is not part of the post text. A URL written inside `text` still weighs 23.
-
-- Decide the mode per platform from your own instructions and experience: who actually posts where. If you cannot post to a platform, or the user posts there themselves, mark it `manual`. A mix gives each side one banner line, the person first, you by your display name (`You post: X` / `<your name> posts after approval: LinkedIn`). An auto platform that cannot be approved (over its limit, or Instagram without an image or a video) is left out of that plan from the start, and out of the steps; it is not described as unticked. Once only the manual platforms are ticked, your line says you post nothing; the decided banner says what each side did. The steps say per side what is still open (`LinkedIn: tick Approve · X: copy, post, Posted ✓ · then Submit`). The two-platform line fits the reading measure; a longer list wraps. The primary reads `Submit` while both sides act, `Approve & post` when only your platforms are ticked, `Posted ✓` when only theirs are; the status reads `1 approved · 1 posted`. Nothing ticked leaves the primary disabled. The result is the same whatever the label: read `per_platform`.
-- Limits: X 25,000 weighted characters (X Premium long posts; the preview folds after 280 and says `Long post (X Premium)`), LinkedIn 3,000, Instagram 2,200 and at most 5 hashtags, Facebook 63,206. Over a limit, an `auto` platform cannot be approved and the window says what to cut; a `manual` platform can still be marked as posted, the limit is only advice there. If no platform can be approved, the user can only request changes. Give a platform its own text or hashtags with `variants.<platform>.text` / `variants.<platform>.hashtags` (for example fewer tags on X and Instagram). Image and video ratios: `1:1`, `4:5`, `3:4`, `9:16`, `1.91:1`, `16:9`.
-- Post only what the result lists in `platforms`: those are the `auto` platforms the user approved (`per_platform.<p>.decision` is `approved`).
-- Never post a platform marked `manual`. `done` means the user posted it: record that, do not post. `skipped` means they did not. `not_approved` means do nothing; `changes_requested` carries the user's `note`.
-
-## Your identity
-
-Set `identity` so the user sees who is asking:
-- `name`: your bot name as the user knows it.
-- `avatar_shape` and `avatar_color`: if your profile has `avatarShape` / `avatarColor`, pass them as `avatar_shape` / `avatar_color`. Shapes: blob, squircle, pebble, teardrop, hex, tablet. Colours: blue, orange, yellow, magenta, red, violet, black, green, gray. Leave a field out when your profile value is empty.
-- Optional `avatar`: PNG, JPEG, WebP or GIF only, at most 256 KB. For payload avatars, use a path relative to the template folder (or `%RS_TEMPLATE%/...`); registry paths are relative to the registry folder. Absolute avatar paths are allowed only inside the data directory. `media_roots` applies to report media, not to avatar paths. Optional `accent` is `#RRGGBB`. Never use SVG.
-
-A bad identity value never rejects the report; it falls back to initials or the default colour.
+`name` is the name the user knows. Pass `avatarShape` and `avatarColor` as `avatar_shape` and `avatar_color`, and omit an empty value. Shapes: blob, squircle, pebble, teardrop, hex, tablet. Colours: blue, orange, yellow, magenta, red, violet, black, green, gray. Optional `avatar` is PNG, JPEG, WebP or GIF, max 256 KB, never SVG. Payload paths are relative to the template (`%RS_TEMPLATE%/...`). Registry paths are relative to the registry folder. Absolute paths must be inside the data directory. `media_roots` does not cover avatars. Optional `accent` is `#RRGGBB`. A bad value falls back and does not reject the desk. The payload wins over `bots.json`.
 
 ## Safety
 
-- No secrets in payloads: no passwords, tokens, API keys, private keys or full card numbers. Payloads, results and logs are stored as plain files on the user's computer.
-- Show only what the user needs to decide. Link or summarize large documents.
-- Report images (at most 20 MB) and video (`.mp4` or `.webm`, at most 200 MB) must come from the template folder or an allowed `media_roots` folder. Avatar images follow the separate avatar rules above.
-- Never fake a decision, and never treat a missing result as approval.
-- Do not stop or kill the grokbot-desk server or its window; it closes itself when it is idle.
+No passwords, tokens, API keys, private keys or full card numbers. Files stay on the machine. The server listens only on `127.0.0.1`. Show only what the decision needs. A payload over 2 MB is rejected. Images (max 20 MB) and video (`.mp4` or `.webm`, max 200 MB) must be in the template folder or `media_roots`. Never invent a decision or treat a missing result as approval. On a `user` or `none` outcome, record it and stop. Do not stop the server or its window. It closes itself when idle.
