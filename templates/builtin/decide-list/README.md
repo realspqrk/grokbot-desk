@@ -9,7 +9,7 @@ py -3 report_shell.py wait <run_id> --timeout 120
 
 ## What the person sees
 
-- An optional `intro` line (shown as the why of the task banner above the title; it stays in the report, muted, when the payload brings its own `task.why` or the intro has a link), then **one item at a time**: the current item is a card with its source, kind and due date in a quiet line, the request itself, an optional detail, the values the person would otherwise retype next to copy icons, one segmented choice (`Approve`, `Reject`, `Defer`, or the payload's own `labels`) and an optional note (`Add note`, shown on hover and keyboard focus).
+- An optional `intro` line (shown as the why of the task banner above the title; it stays in the report, muted, when the payload brings its own `task.why` or the intro has a link), then **one item at a time**: the current item is a card with its source, kind and due date in a quiet line, the request itself, an optional detail, the values the person would otherwise retype next to copy icons, one segmented choice (`Approve`, `Reject`, `Defer`, or the payload's own `labels`) and an optional note (a quiet `Add note` link).
 - The other items are quiet rows: the request in ink (up to two lines), then the source and kind as a muted line. Open rows carry a ring, the due date and a chevron; decided rows a check, muted text and the chosen outcome. A row opens its card. When nothing was handled by the agent, the list has no visible heading (its accessible name stays).
 - Picking a choice by click, Enter or Space moves on to the first open item; the arrow keys only change the choice.
 - What the agent already handled (`done`) sits under one closed disclosure (`Sorted by your agent: 3 done`). The overall note sits behind `Add a note for your agent`.

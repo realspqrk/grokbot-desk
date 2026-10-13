@@ -8,7 +8,7 @@
    ring, the due date and a chevron, decided rows a check, muted text and the
    chosen outcome. Picking a choice by click, Enter or Space moves on to the
    first undecided item; arrow keys only change the choice. The card's copy icons are visible;
-   "Add note" shows on hover and keyboard focus. Only the current card is in
+   "Add note" is a quiet, always visible link. Only the current card is in
    the document, so every copy control on screen is reachable by Tab. */
 var data = RS.data;
 var source = data.items || [];
@@ -194,7 +194,7 @@ source.forEach(function (w, i) {
   choice.options = choiceValues(w).map(function (c) {
     return { value: c, label: choiceLabel(w, c) };
   });
-  var addNote = make('button', 'rs-link rs-on-hover dl-add-note');
+  var addNote = make('button', 'rs-link dl-add-note');
   addNote.type = 'button';
   addNote.appendChild(RS.icon('plus'));
   addNote.appendChild(make('span', null, RS.t('add_note')));
