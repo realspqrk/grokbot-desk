@@ -80,6 +80,20 @@ function composed(p) {
   return text.normalize('NFC');
 }
 
+/* The text whose hashtags count toward a hashtag limit (Instagram): the
+   composed text, plus, when the list is not appended, every listed tag the
+   text does not already carry. The approved post goes out with that list. */
+function tagCounted(p, text) {
+  if (appends(p)) return text;
+  var lower = text.toLowerCase();
+  var extra = tagsOf(p).filter(function (h) {
+    var at = lower.indexOf('#' + h.toLowerCase());
+    var next = at < 0 ? '' : lower.charAt(at + h.length + 1);
+    return at < 0 || /[\p{L}\p{M}\p{N}_]/u.test(next);
+  });
+  return extra.length ? text + '\n\n' + extra.map(function (h) { return '#' + h; }).join(' ') : text;
+}
+
 function slot(tag, name, text) {
   var el = document.createElement(tag);
   el.setAttribute('slot', name);
@@ -216,7 +230,9 @@ platforms.forEach(function (p) {
   frame.appendChild(slots);
 
   /* Counters count exactly the composed text. */
-  col.querySelectorAll('rs-counter[platform="' + p + '"]').forEach(function (c) { c.text = text; });
+  col.querySelectorAll('rs-counter[platform="' + p + '"]').forEach(function (c) {
+    c.text = c.getAttribute('kind') === 'hashtags' ? tagCounted(p, text) : text;
+  });
   var commentCounter = col.querySelector('rs-counter[platform="linkedin_comment"]');
   if (commentCounter) {
     if (data.first_comment) commentCounter.text = data.first_comment;
@@ -248,15 +264,12 @@ platforms.forEach(function (p) {
   /* Manual: the reviewer posts by hand, so copying comes first (in the DOM,
      hence the Tab order, as on screen), with the image as a picture, then
      Posted. Auto: the decision first, then the copies. */
-  var manualNote = part('manual-note', col);
   var copyImage = part('copy-image', col);
   var copyVideo = part('copy-video', col);
   var copyLink = part('copy-link', col);
   var decide = part('decide', col);
   col.setAttribute('data-mode', modes[p]);
   if (manual(p)) {
-    if (mixed) manualNote.textContent = RS.t('manual_note');
-    else manualNote.remove();
     if (video) {
       copyImage.remove();
       copyVideo.setAttribute('label', RS.t('copy_path'));
@@ -278,7 +291,6 @@ platforms.forEach(function (p) {
     }
     decide.parentNode.insertBefore(part('copies', col), decide);
   } else {
-    manualNote.remove();
     copyImage.remove();
     copyVideo.remove();
     copyLink.remove();
@@ -290,6 +302,7 @@ platforms.forEach(function (p) {
      style flags are one quiet note; X past 280 is a quiet long-post note. */
   var checked = text + '\n' + (data.first_comment || '').normalize('NFC');
   var res = RS.count(text, p);
+  if (res.hashtagLimit !== undefined) res.hashtags = RS.count(tagCounted(p, text), p).hashtags;
   var reasons = [];
   if (res.count > res.limit) {
     reasons.push(manual(p)

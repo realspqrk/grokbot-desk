@@ -674,7 +674,7 @@ describe('task banner and buttons per kind (served, headless Edge)', { skip }, (
         const side = await page.$$eval('#panel-x .pp__side button, #panel-x .pp__side input', (els) => els.map((e) => e.id || e.closest('[data-copy-id]')?.dataset.copyId));
         assert.deepEqual(side, ['x-text', 'x-hashtags', 'x-image', 'approve-x']);
         assert.equal(await page.textContent('#panel-x [data-pp="approve-label"]'), tl('posted'));
-        assert.equal(await page.textContent('#panel-x [data-pp="manual-note"]'), tl('manual_note'));
+        assert.equal(await page.$('#panel-x .pp__manual'), null, 'the lines and the tab say who posts');
         await page.check('#approve-x');
         assert.deepEqual(await lines(), [
           ['user', you], ['bot', tl('task_unticked', { line: tl('task_bot_none_post', { bot }), names: 'LinkedIn' })],
