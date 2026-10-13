@@ -175,6 +175,9 @@ if (actor === 'none') {
   note.appendChild(summary);
   note.appendChild(body);
   box.replaceWith(note);
+  /* a closed note keeps its field out of the layout, not just out of view */
+  body.hidden = true;
+  note.addEventListener('toggle', function () { body.hidden = !note.open; });
 }
 
 function noted() { return actor === 'none' || !box.hidden ? comment.value : ''; }
@@ -246,6 +249,10 @@ if (draft && typeof draft === 'object') {
   changes = allowChanges && draft.decision === 'request_changes';
   if (typeof draft.comment === 'string') comment.value = draft.comment.slice(0, 2000);
   noteShown = draft.note === true;
+}
+if (actor === 'none' && comment.value) {
+  note.open = true;
+  body.hidden = false;
 }
 render();
 update(false);
