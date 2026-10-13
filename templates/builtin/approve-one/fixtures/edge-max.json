@@ -4,32 +4,32 @@
   "allow_changes": true,
   "facts": [
     {
-      "label": "Fact 1 with a long labe.",
+      "label": "Fact 1 with a long label at the.",
       "value": "Value 1: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 1: v7.11.4-hotfix.2+bui.",
       "mono": false
     },
     {
-      "label": "Fact 2 with a long labe.",
+      "label": "Fact 2 with a long label at the.",
       "value": "Value 2: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 2: v7.11.4-hotfix.2+bui.",
       "mono": true
     },
     {
-      "label": "Fact 3 with a long labe.",
+      "label": "Fact 3 with a long label at the.",
       "value": "Value 3: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 3: v7.11.4-hotfix.2+bui.",
       "mono": false
     },
     {
-      "label": "Fact 4 with a long labe.",
+      "label": "Fact 4 with a long label at the.",
       "value": "Value 4: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 4: v7.11.4-hotfix.2+bui.",
       "mono": true
     },
     {
-      "label": "Fact 5 with a long labe.",
+      "label": "Fact 5 with a long label at the.",
       "value": "Value 5: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 5: v7.11.4-hotfix.2+bui.",
       "mono": false
     },
     {
-      "label": "Fact 6 with a long labe.",
+      "label": "Fact 6 with a long label at the.",
       "value": "Value 6: v7.11.4-hotfix.2+build.20261007 to v7.12.0+build.20261008, window 18:00 to 18:20 Value 6: v7.11.4-hotfix.2+bui.",
       "mono": true
     }

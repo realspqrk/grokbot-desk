@@ -2,12 +2,14 @@
    block comments only (the template lint reads a double slash as a URL).
    Every visible string comes from RS.t or from the payload.
 
-   One decision: a segmented choice (Approve, Reject, and Request changes
-   when the payload allows it) right under the summary, nothing preselected.
-   The core primary names what will be sent (the payload's approve label,
-   "Send rejection", "Send request"). A note is optional behind "Add note";
-   "Request changes" opens the same field as a required comment. What is
-   visible is what is sent: a hidden note is never part of the result.
+   One decision, made in the footer with one click: the primary approves
+   (the payload's approve label, or Approve & post / send / continue from
+   the action), the quiet alternatives reject and, when the payload allows
+   it, request changes. Request changes opens the comment field; the
+   primary then sends the request and Cancel goes back. A note is optional
+   behind "Add note" and travels with whichever button is pressed while it
+   is shown. What is visible is what is sent: a hidden note is never part
+   of the result.
 
    The task kind says who acts next and so which buttons exist (RS.cta,
    the shell's table): the bot acts once approved (Approve & verb, Reject,
@@ -17,7 +19,7 @@
 var data = RS.data;
 var actor = RS.task.base === 'post_yourself' ? 'user' : RS.task.base === 'fyi' ? 'none' : 'bot';
 function label(value) {
-  return value === 'approve' && data.approve_label ? data.approve_label : RS.cta(value);
+  return value === 'approve' && actor === 'bot' && data.approve_label ? data.approve_label : RS.cta(value);
 }
 var STATES = { ok: 'ok', warn: 'warn', fail: 'danger' };
 var CHECK_TEXT = { ok: 'check_ok', warn: 'check_warn', fail: 'check_fail' };
@@ -106,6 +108,36 @@ if (checks.length) {
   part('checks-box').remove();
 }
 
+/* One line before the facts: how many passed, then every warning and
+   failure by name, so nothing that needs a look waits below the fold. */
+function named(state) {
+  return checks.filter(function (c) { return c.state === state; }).map(function (c) { return c.label; });
+}
+if (checks.length) {
+  var sum = part('checksum');
+  var parts = [];
+  var ok = named('ok').length;
+  if (ok) parts.push(['ok', RS.t('ao_checks_ok', { n: RS.number(ok) })]);
+  ['warn', 'fail'].forEach(function (state) {
+    var names = named(state);
+    if (!names.length) return;
+    var key = 'ao_checks_' + state + (names.length === 1 ? '_one' : '');
+    parts.push([state, RS.t(key, { n: RS.number(names.length), names: names.join(', ') })]);
+  });
+  parts.forEach(function (entry, i) {
+    if (i) sum.appendChild(make('span', 'ao__sep', ' · '));
+    var piece = make('span', 'ao__sum');
+    var dot = make('span', 'rs-dot');
+    dot.setAttribute('data-rs-status', STATES[entry[0]]);
+    dot.setAttribute('aria-hidden', 'true');
+    piece.appendChild(dot);
+    piece.appendChild(make('span', null, entry[1]));
+    sum.appendChild(piece);
+  });
+} else {
+  part('checksum').remove();
+}
+
 if (data.reference) {
   part('reference-title').textContent = data.reference.title;
   var ref = part('reference');
@@ -117,20 +149,17 @@ if (data.reference) {
 }
 
 /* ---- the decision ---- */
-var choice = part('choice');
 var comment = root.querySelector('#ao-comment');
 var box = part('comment-box');
 var noteOpen = part('note-open');
 var noteShown = false;
-var values = actor === 'user' ? ['done', 'skipped']
-  : actor === 'none' ? []
-  : ['approve', 'reject'];
-if (actor !== 'none' && data.allow_changes === true) values.push('request_changes');
-if (values.length) {
-  choice.setAttribute('label', RS.t('decision_label'));
-  choice.options = values.map(function (v) { return { value: v, label: label(v) }; });
-} else {
-  part('decide').remove();
+var changes = false;
+var allowChanges = actor !== 'none' && data.allow_changes === true;
+var primary = actor === 'user' ? 'done' : actor === 'none' ? 'acknowledged' : 'approve';
+var quiet = actor === 'user' ? 'skipped' : actor === 'none' ? null : 'reject';
+
+if (actor === 'none') {
+  noteOpen.remove();
   var note = document.createElement('details');
   note.className = 'rs-disclosure';
   var summary = document.createElement('summary');
@@ -148,43 +177,55 @@ if (values.length) {
   box.replaceWith(note);
 }
 
+function noted() { return actor === 'none' || !box.hidden ? comment.value : ''; }
+
 function render() {
-  if (!values.length) return;
-  var changes = choice.value === 'request_changes';
+  if (actor === 'none') return;
   box.hidden = !(noteShown || changes);
   noteOpen.hidden = !box.hidden;
   part('label-note').hidden = changes;
   part('label-changes').hidden = !changes;
 }
 
+/* A quiet alternative sends at once (Reject, Skip). Should the send not
+   go through, the footer goes back to the primary's own result. */
+function sendNow(decision) {
+  RS.setResult({ decision: decision, comment: noted() });
+  RS.submit().then(function (ok) { if (!ok) update(false); });
+}
+
+function setChanges(on) {
+  changes = on;
+  render();
+  update(true);
+  if (on) comment.focus();
+  else RS.focusAlternative();
+}
+
 function update(save) {
-  if (!values.length) {
-    if (save && RS.run.state === 'open') RS.draft.set({ decision: 'acknowledged', comment: comment.value });
+  if (save && RS.run.state === 'open') {
+    RS.draft.set({ decision: changes ? 'request_changes' : null, comment: comment.value, note: noteShown });
+  }
+  if (actor === 'none') {
     RS.setSubmitLabel(label('acknowledged'));
-    var noted = /\S/.test(comment.value) ? comment.value : '';
-    RS.setResult({ decision: 'acknowledged', comment: noted });
+    RS.setAlternatives([]);
+    RS.setResult({ decision: 'acknowledged', comment: /\S/.test(comment.value) ? comment.value : '' });
     RS.setStatus(null);
     return;
   }
-  var decision = choice.value || null;
-  if (save && RS.run.state === 'open') RS.draft.set({ decision: decision, comment: comment.value, note: noteShown });
-  if (!decision) {
-    RS.setSubmitLabel(label(values[0]));
-    RS.setResult(null);
-    RS.setStatus(actor === 'user'
-      ? RS.t('decision_pick_user', { choice: label('done').replace(/ ✓$/, ''), skip: RS.t('skip') })
-      : RS.t('decision_pick'));
-    return;
-  }
-  if (decision === 'request_changes') {
+  if (changes) {
     var has = /\S/.test(comment.value);
-    RS.setSubmitLabel(RS.t('send_request'));
-    RS.setResult(has ? { decision: decision, comment: comment.value } : null);
+    RS.setSubmitLabel(RS.t('request_send'));
+    RS.setAlternatives([{ label: RS.t('cancel'), run: function () { setChanges(false); } }]);
+    RS.setResult(has ? { decision: 'request_changes', comment: comment.value } : null);
     RS.setStatus(has ? null : RS.t('comment_required'));
     return;
   }
-  RS.setSubmitLabel(decision === 'reject' ? RS.t('send_rejection') : label(decision));
-  RS.setResult({ decision: decision, comment: box.hidden ? '' : comment.value });
+  var alternatives = [{ label: label(quiet), run: function () { sendNow(quiet); } }];
+  if (allowChanges) alternatives.push({ label: RS.cta('request_changes'), run: function () { setChanges(true); } });
+  RS.setSubmitLabel(label(primary));
+  RS.setAlternatives(alternatives);
+  RS.setResult({ decision: primary, comment: noted() });
   RS.setStatus(null);
 }
 
@@ -195,33 +236,19 @@ noteOpen.addEventListener('click', function () {
   comment.focus();
 });
 
-/* Click, Enter or Space on "Request changes": straight to the comment.
-   Arrow keys only change the choice. */
-root.addEventListener('click', function (e) {
-  var btn = e.target.closest ? e.target.closest('[data-ao="choice"] > button') : null;
-  if (btn && choice.value === 'request_changes' && !box.hidden && !comment.disabled) comment.focus();
-});
-
 /* Restore a draft (window closed or reloaded), or show what a submitted
-   report sent: the decision and, when there was one, its comment. */
+   report sent: a change request with its comment, or the note. */
 var sent = RS.run.state === 'submitted' ? RS.run.result : null;
 var draft = sent
   ? { decision: sent.decision, comment: sent.comment || '', note: !!sent.comment }
   : (RS.run.state === 'open' ? RS.draft.get() : null);
 if (draft && typeof draft === 'object') {
-  if (values.indexOf(draft.decision) !== -1) choice.value = draft.decision;
+  changes = allowChanges && draft.decision === 'request_changes';
   if (typeof draft.comment === 'string') comment.value = draft.comment.slice(0, 2000);
   noteShown = draft.note === true;
 }
 render();
 update(false);
-if (draft && !sent && values.length) {
-  if (choice.value === 'request_changes' || (noteShown && !choice.value)) comment.focus();
-  else {
-    var checked = choice.buttons.filter(function (b) { return b.getAttribute('aria-checked') === 'true'; })[0];
-    if (checked) checked.focus();
-  }
-}
+if (draft && !sent && (changes || noteShown)) comment.focus();
 
-choice.addEventListener('change', function () { render(); update(true); });
 comment.addEventListener('input', function () { update(true); });

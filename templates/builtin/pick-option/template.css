@@ -12,6 +12,7 @@
   container-type: inline-size;
 }
 .po__lead { display: flex; flex-direction: column; gap: var(--space-1); }
+.po__question { font-size: var(--rs-fs-md); font-weight: var(--rs-fw-strong); max-width: var(--rs-measure); overflow-wrap: anywhere; }
 .po__context { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
 
 /* ---- the radio group: one grid column per option ---- */

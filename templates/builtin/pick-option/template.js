@@ -7,8 +7,11 @@
    A copy control, and any link taken from that option's text, sits in the
    same grid directly under its own card at every width, outside the radio
    button, and is named for the option. Nothing is preselected; the agent's
-   suggestion is only marked. The note sits behind "Add note"; the primary
-   names the picked option. */
+   suggestion is only marked. The question is the decision heading (left
+   out when it only repeats the title). The note sits behind "Add note"; the
+   primary names the picked option. "None of these" (a quiet alternative,
+   unless allow_none is false) clears the pick and asks what is missing:
+   the result is then a change request with that note and no choice. */
 var data = RS.data;
 function part(name) { return root.querySelector('[data-po="' + name + '"]'); }
 function make(tag, cls, text) {
@@ -23,7 +26,10 @@ var note = root.querySelector('#po-note');
 var noteOpen = part('note-open');
 var noteBox = part('note-box');
 
-RS.fillText(part('question'), data.question);
+/* the question leads unless it only repeats the title */
+function plain(text) { return String(text || '').toLowerCase().replace(/[\s.,:;!?…]+/g, ' ').trim(); }
+if (plain(data.question) === plain(RS.run.title)) part('question').remove();
+else RS.fillText(part('question'), data.question);
 if (data.context && RS.task.why_from !== 'context') RS.fillText(part('context'), data.context);
 else part('context').remove();
 
@@ -121,6 +127,11 @@ options.forEach(function (o, i) {
   }
 });
 
+var allowNone = data.allow_none !== false;
+var none = false;
+var before = '';
+var placeholder = note.getAttribute('placeholder') || '';
+
 function showNote(focus) {
   noteBox.hidden = false;
   noteOpen.hidden = true;
@@ -128,21 +139,54 @@ function showNote(focus) {
 }
 noteOpen.addEventListener('click', function () { showNote(true); });
 
+function render() {
+  part('label-note').hidden = none;
+  part('label-none').hidden = !none;
+  if (none) note.removeAttribute('placeholder');
+  else note.setAttribute('placeholder', placeholder);
+}
+
+/* None of these: the pick is put aside (Cancel brings it back), the note
+   becomes the required answer. Picking a card leaves this mode. */
+function setNone(on) {
+  none = on;
+  if (on) {
+    before = row.value || '';
+    row.value = '';
+    showNote(true);
+  } else {
+    row.value = before;
+  }
+  render();
+  update(true);
+  if (!on) {
+    var checked = row.buttons.filter(function (b) { return b.getAttribute('aria-checked') === 'true'; })[0];
+    if (checked) checked.focus();
+    else RS.focusAlternative();
+  }
+}
+
 /* Restore a half-done pick (window closed or reloaded), or show what was
    sent when a submitted report is reopened. */
 var sent = RS.run.state === 'submitted' ? RS.run.result : null;
 var draft = sent || (RS.run.state === 'open' ? RS.draft.get() : null);
 if (draft && typeof draft === 'object') {
-  if (typeof draft.choice === 'string' && Object.prototype.hasOwnProperty.call(byId, draft.choice)) row.value = draft.choice;
+  none = (allowNone || !!sent) && (draft.decision === 'request_changes' || draft.none === true);
+  if (!none && typeof draft.choice === 'string' && Object.prototype.hasOwnProperty.call(byId, draft.choice)) row.value = draft.choice;
   if (typeof draft.note === 'string' && draft.note) {
     note.value = draft.note;
     showNote(false);
   }
+  if (none) showNote(false);
   if (!sent) {
-    var checked = row.buttons.filter(function (b) { return b.getAttribute('aria-checked') === 'true'; })[0];
-    if (checked) checked.focus();
+    if (none) note.focus();
+    else {
+      var checked = row.buttons.filter(function (b) { return b.getAttribute('aria-checked') === 'true'; })[0];
+      if (checked) checked.focus();
+    }
   }
 }
+render();
 
 function update(save) {
   if (RS.run.state !== 'open') {
@@ -150,14 +194,28 @@ function update(save) {
     RS.setStatus(null);
     return;
   }
+  if (none) {
+    var has = /\S/.test(note.value);
+    if (save) RS.draft.set({ choice: '', note: note.value, none: true });
+    RS.setSubmitLabel(RS.t('request_send'));
+    RS.setAlternatives([{ label: RS.t('cancel'), run: function () { setNone(false); } }]);
+    RS.setResult(has ? { decision: 'request_changes', note: note.value } : null);
+    RS.setStatus(has ? null : RS.t('po_none_required'));
+    return;
+  }
   var picked = Object.prototype.hasOwnProperty.call(byId, row.value) ? byId[row.value] : null;
   var value = { choice: picked ? picked.id : '', note: note.value };
   if (save) RS.draft.set(value);
   RS.setSubmitLabel(picked ? RS.t('po_choose', { name: picked.name }) : RS.cta('choose'));
+  RS.setAlternatives(allowNone ? [{ label: RS.cta('request_changes'), run: function () { setNone(true); } }] : []);
   RS.setResult(picked ? value : null);
-  RS.setStatus(picked ? null : RS.t('po_pick', { n: RS.number(options.length) }));
+  /* the banner already says to pick one; the primary names the pick */
+  RS.setStatus(null);
 }
 
-row.addEventListener('change', function () { update(true); });
+row.addEventListener('change', function () {
+  if (none) { none = false; render(); }
+  update(true);
+});
 note.addEventListener('input', function () { update(true); });
 update(false);

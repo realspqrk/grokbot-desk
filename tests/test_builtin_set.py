@@ -29,9 +29,9 @@ FIXTURES = {
         "expect": ("golden", "edge-unicode", "edge-max"),
     },
     "approve-one": {
-        "valid": ("golden", "edge-access", "edge-minimal", "edge-max"),
+        "valid": ("golden", "edge-access", "edge-de", "edge-minimal", "edge-max"),
         "invalid": {"invalid-no-summary": "/summary", "invalid-check-state": "/checks/1/state"},
-        "expect": ("golden", "edge-access", "edge-max"),
+        "expect": ("golden", "edge-access", "edge-de", "edge-max"),
     },
     "preview-post": {
         "valid": ("golden", "edge-no-image", "edge-x-limit", "edge-x-long", "edge-max", "quote-video", "mixed-image"),
@@ -230,6 +230,15 @@ def test_approve_one_copy_ids_and_fixture_roles():
     assert "allow_changes" not in fixture("approve-one", "edge-access")
     assert set(fixture("approve-one", "edge-minimal")) == {"summary"}
     assert expect("approve-one", "golden")["result"]["decision"] == "request_changes"
+    german = fixture("approve-one", "edge-de")
+    assert german["approve_label"] == "Deployment freigeben"
+
+
+def test_approve_one_fact_labels_take_32_characters():
+    payload = schema("approve-one")
+    assert {len(f["label"]) for f in fixture("approve-one", "edge-max")["facts"]} == {32}
+    with pytest.raises(SchemaError):
+        validate({"summary": "Deploy?", "facts": [{"label": "x" * 33, "value": "v"}]}, payload)
 
 
 def _composed(data, platform):
@@ -498,3 +507,19 @@ def test_payload_text_reaches_the_page_only_as_text(template):
     js = (BUILTIN / template / "template.js").read_text(encoding="utf-8")
     assert "innerHTML" not in js and "insertAdjacentHTML" not in js
     assert "//" not in re.sub(r"/\*.*?\*/", "", js, flags=re.S).replace("'//'", "")
+
+
+def test_pick_option_none_of_these_is_a_change_request_without_a_pick():
+    result = schema("pick-option", "result.schema.json")
+    validate({"choice": "old-mill", "note": ""}, result)
+    validate({"decision": "request_changes", "note": "All three are too far."}, result)
+    for bad in (
+        {"decision": "request_changes", "note": ""},
+        {"decision": "request_changes", "note": "  "},
+        {"decision": "request_changes", "note": "x", "choice": "old-mill"},
+        {"decision": "approve", "note": "x"},
+        {"choice": "old-mill"},
+    ):
+        with pytest.raises(SchemaError):
+            validate(bad, result)
+    validate({**fixture("pick-option", "golden"), "allow_none": False}, schema("pick-option"))
