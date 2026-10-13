@@ -381,6 +381,8 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
   });
 
   test('pick-option: None of these asks what is missing and sends no pick; Cancel goes back; allow_none false hides it', async () => {
+    /* reports left open by earlier tests would take over the window after the send */
+    await server.clearRuns();
     const data = fixture('pick-option', 'golden');
     const run = show('pick-option', data);
     const { ctx, page, errors } = await open(run.run_id);
