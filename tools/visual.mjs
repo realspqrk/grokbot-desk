@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { browserChannel, startServer, loadChromium, ROOT } from './dev/rs-server.mjs';
+import { browserChannel, PYTHON, startServer, loadChromium, ROOT } from './dev/rs-server.mjs';
 import { isSameOriginPath } from './dev/browser-safety.mjs';
 import { resolvedTemplates } from './template-registry.mjs';
 
@@ -93,7 +93,7 @@ async function shot(browser, server, item, theme, destination) {
 }
 
 function compare(baseline, actual) {
-  const result = spawnSync('py', ['-3', path.join(ROOT, 'tools', 'pngdiff.py'), baseline, actual], {
+  const result = spawnSync(PYTHON, [path.join(ROOT, 'tools', 'pngdiff.py'), baseline, actual], {
     cwd: ROOT, encoding: 'utf8', windowsHide: true,
   });
   let body;

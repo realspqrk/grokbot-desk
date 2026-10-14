@@ -1046,9 +1046,9 @@ def main(argv=None):
     base = data_dir() if args.command == "serve" else ensure_layout(data_dir())
     try:
         config = load_config(base)
-    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+        port = selected_port(args.port, config)
+    except (OSError, UnicodeDecodeError, ValueError, TypeError, RecursionError) as exc:
         return error(f"invalid config: {exc}", 2)
-    port = selected_port(args.port, config)
     if not 1 <= port <= 65535:
         return error("port must be between 1 and 65535", 2)
     if args.command == "show":

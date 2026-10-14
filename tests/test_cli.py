@@ -1506,3 +1506,17 @@ def test_update_refuses_local_changes_and_leaves_the_clone_alone(clone, capsys):
 def test_update_outside_a_git_clone_says_how_to_update(tmp_path, capsys):
     assert cli_module.command_update(tmp_path) == 7
     assert "not a git clone" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("port", ['"not-a-port"', "[]", "null"])
+def test_a_config_port_that_is_no_number_is_an_invalid_config(tmp_path, port):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "config.json").write_text(f'{{"port": {port}}}', encoding="utf-8")
+    env = dict(os.environ, RS_DATA_DIR=str(data_dir))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "report_shell.py"), "status"],
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 2, result.stderr
+    assert "invalid config" in result.stderr and "Traceback" not in result.stderr

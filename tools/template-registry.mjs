@@ -1,18 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { resolvePythonExecutable } from './dev/rs-server.mjs';
 
-function pythonCommand() {
-  if (process.env.RS_PYTHON) return [process.env.RS_PYTHON, []];
-  return process.platform === 'win32' ? ['py', ['-3']] : ['python3', []];
-}
+let python = null;
 
 export function resolvedTemplates(root, selected = null) {
-  const [python, prefix] = pythonCommand();
+  python ??= resolvePythonExecutable();
   const result = spawnSync(
     python,
     [
-      ...prefix,
       path.join(root, 'report_shell.py'),
       'templates',
       '--json',
