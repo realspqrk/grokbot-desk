@@ -443,6 +443,24 @@ button, input, textarea, select { font: inherit; color: inherit; }
   color: var(--rs-muted);
 }
 
+/* doorbell setup page (?page=doorbell): two fields, Test and Save, the outcome */
+.rs-doorbell { display: grid; gap: var(--space-3); padding-top: var(--space-5); }
+.rs-doorbell p { margin: 0; }
+.rs-doorbell__state { color: var(--rs-muted); font-size: var(--rs-fs-sm); }
+.rs-doorbell__open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rs-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.rs-doorbell__form { display: grid; gap: var(--space-3); max-width: var(--rs-measure); }
+.rs-doorbell__buttons { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.rs-doorbell__outcome { min-height: var(--rs-control-h); color: var(--rs-ink); }
+.rs-doorbell__outcome[data-tone="warn"] { font-weight: var(--rs-fw-strong); }
+
 /* no report shown while some wait: one quiet row per report (avatar, bot,
    title, the task kind behind a small status dot) */
 .rs-overview { display: grid; gap: var(--space-3); padding-top: var(--space-5); }

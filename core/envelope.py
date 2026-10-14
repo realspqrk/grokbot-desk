@@ -21,6 +21,10 @@ FIELDS = {
     "expires_minutes", "notify", "data", "identity", "dedupe_key", "dedupe_hours",
     "task",
 }
+NOTIFY_IGNORED = (
+    "/notify: ignored; the desk rings the doorbell, set up once per device "
+    "(report_shell.py doorbell setup)"
+)
 DEDUPE_KEY_RE = re.compile(r"^[\x21-\x7e][\x20-\x7e]{0,119}$")
 # A created stamp this far ahead of the clock is a wrong offset or clock: it
 # is clamped to now (the result's duration_s would read 0 otherwise).
@@ -122,6 +126,8 @@ def validate_payload(payload, registry, used_ids=(), warnings=None):
     if "notify" in payload:
         if not isinstance(notify, dict) or set(notify) != {"webhook_url"} or not isinstance(notify["webhook_url"], str):
             raise EnvelopeError("/notify", "must contain only webhook_url")
+        if warnings is not None:
+            warnings.append(NOTIFY_IGNORED)
     try:
         schema = loads(template.read_text("schema.json"))
         validate(payload["data"], schema, "/data")

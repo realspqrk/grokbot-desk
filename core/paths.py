@@ -156,7 +156,6 @@ def default_config(base=None):
             str(user / "Downloads"),
             str(base / "media"),
         ],
-        "webhook": {"enabled": False, "allow_prefixes": []},
     }
 
 
@@ -172,8 +171,8 @@ def load_config(base=None):
     result.update(loaded)
     if isinstance(loaded.get("window"), dict):
         result["window"] = default_config(base)["window"] | loaded["window"]
-    if isinstance(loaded.get("webhook"), dict):
-        result["webhook"] = default_config(base)["webhook"] | loaded["webhook"]
+    # the notify webhook is gone (the doorbell replaced it); its old block is ignored
+    result.pop("webhook", None)
     return result
 
 

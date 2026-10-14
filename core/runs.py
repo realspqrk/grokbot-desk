@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 import base64
 from pathlib import Path
 
-from .identity import public_identity, resolve_identity
+from .doorbell import Doorbell
+from .identity import IdentityIssue, public_identity, resolve_identity, validate_name
 from .jsonutil import MAX_JSON_DEPTH, dumps, loads
 from .media import (
     MediaEntry,
@@ -20,7 +21,6 @@ from .results import ResultExists, write_result
 from .schema import SchemaError, validate
 from .tasks import task_brief, task_view
 from .timeutil import format_local, iso_now, to_local, local_now
-from .webhook import fire_after_result
 
 
 # preview-post summaries and submit checks. Only these mode/decision pairs
@@ -104,6 +104,14 @@ def preview_post_summary(data):
         if phrase:
             parts.append(f"{name} {phrase}")
     return ", ".join(parts) or None
+
+
+def _payload_name(payload):
+    identity = payload.get("identity")
+    try:
+        return validate_name(identity.get("name")) if isinstance(identity, dict) else None
+    except IdentityIssue:
+        return None
 
 
 def _identity_parts(value):
@@ -195,6 +203,7 @@ class RunStore:
         self.registry = registry
         self.config = config
         self.action_log = action_log
+        self.doorbell = Doorbell(self.data_dir, action_log)
         self.runs_dir = self.data_dir / "runs"
         self.results_dir = self.data_dir / "results"
         self.runs_dir.mkdir(parents=True, exist_ok=True)
@@ -404,6 +413,9 @@ class RunStore:
                 "state": "open",
                 "unread": True,
                 "seq": self._next_seq(),
+                # the doorbell names the bot as its payload did (the Grok Bot
+                # name), never a registry display name
+                "bot_name": _payload_name(payload),
                 "expires": expires.isoformat(timespec="seconds"),
                 "media": {
                     media_id: _stored_media(entry)
@@ -504,7 +516,9 @@ class RunStore:
             self._runs[run_id]["unread"] = False
             self._save(self._runs[run_id])
 
-    def decide(self, run_id, status, data=None):
+    def decide(self, run_id, status, data=None, by_bot=False):
+        """Write the result. Every end the bot did not cause itself (its own
+        `cancel` is by_bot) rings the doorbell."""
         with self._lock:
             try:
                 record = self._runs[run_id]
@@ -562,15 +576,15 @@ class RunStore:
             self._save(record)
             event = {"submitted": "submit", "cancelled": "cancel", "expired": "expire"}[status]
             self.action_log.write(run_id, event)
-            notify = payload.get("notify", {}).get("webhook_url")
-            body = {
-                "run_id": run_id,
-                "status": status,
-                "template": payload["template"],
-                "bot": payload["bot"],
-                "result_path": str(result_path),
-            }
-            fire_after_result(notify, body, result_path, self.config, run_id, self.action_log)
+            if not by_bot:
+                body = {
+                    "bot": payload["bot"],
+                    "bot_name": record.get("bot_name") or payload["bot"],
+                    "run_id": run_id,
+                    "status": status,
+                    "title": payload["title"],
+                }
+                self.doorbell.ring(run_id, body)
             return result_path
 
     def expire_due(self):

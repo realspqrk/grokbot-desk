@@ -28,6 +28,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
   <a href="#quick-start">Quick start</a> &middot;
   <a href="#your-first-desk">Your first desk</a> &middot;
   <a href="#use-with-grok-bot">Use with Grok Bot</a> &middot;
+  <a href="#desk-doorbell">Desk Doorbell</a> &middot;
   <a href="#templates">Templates</a> &middot;
   <a href="#platforms-and-limits">Platforms and limits</a> &middot;
   <a href="#privacy-and-security">Privacy and security</a> &middot;
@@ -161,7 +162,7 @@ python report_shell.py wait RUN_ID --timeout 60
 python report_shell.py result RUN_ID
 ```
 
-`wait` prints `status`, `result_path`, and `data_dir`. `result` prints the decision JSON. How a bot waits, catches up, and replies is in the [skill](skills/grokbot-desk/SKILL.md). The fields for this template are in its [template page](templates/builtin/decide-list/README.md).
+`wait` prints `status`, `result_path`, and `data_dir`. `result` prints the decision JSON. That wait is for this turn. A bot that should hear about the result later uses the [Desk Doorbell](#desk-doorbell). How a bot waits, catches up, and replies is in the [skill](skills/grokbot-desk/SKILL.md). The fields for this template are in its [template page](templates/builtin/decide-list/README.md).
 
 ## Use with Grok Bot
 
@@ -172,6 +173,29 @@ The skill is [`skills/grokbot-desk/SKILL.md`](skills/grokbot-desk/SKILL.md). A b
 3. Tell your bot: "When you need a decision from me, or you have a report for me, use grokbot-desk."
 
 You do not have to install a skill. Any bot that can run a command in the clone folder can follow [Your first desk](#your-first-desk). The skill is what makes that reliable: when a report beats chat, which template to pick, how to wait, and what never belongs in a payload.
+
+## Desk Doorbell
+
+Grok Bot does not wake a bot when a background command finishes. Desk Doorbell is one bot on this computer. Install it from the shared template. The steps are in [doorbell/README.md](doorbell/README.md).
+
+When a report is submitted, cancelled by you (discarded on the page), or expired, the desk POSTs `{bot, bot_name, run_id, status, title}` to that bot's webhook, with `Authorization: Bearer` and the key. Desk Doorbell then messages the bot named `bot_name`:
+
+```text
+Desk: <title> is <status>. Read the result with report_shell.py result <run_id>.
+```
+
+`bot_name` is the payload `identity.name` when the report gives one, otherwise the bot id. A name in the bot registry does not count. Set `identity.name` to the bot's exact name in Grok Bot. A bot's own `cancel` never rings, even when you asked the bot to cancel. The desk retries for about 4 minutes on rate limits, server errors, and a failed connection. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes the bot then. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. If a decision got no reaction, message the bot.
+
+The key stays in `doorbell.json` in the data folder. It is never printed, and it does not belong in a payload or in chat.
+
+```bash
+python report_shell.py doorbell
+python report_shell.py doorbell setup
+python report_shell.py doorbell test
+python report_shell.py doorbell off
+```
+
+`doorbell` prints `{"doorbell": "on" or "off", "host"}`. `host` is null when the doorbell is off. `on` means the address and key are saved. It does not prove a test reached Grok Bot. `doorbell setup` opens the setup page in the desk window. Paste the "POST to" URL and the "key" from Grok Bot, Desk Doorbell, Routines, the webhook routine. Save writes `doorbell.json` and sends a test ring. When the save worked and the test failed, the page says `Saved. The test did not reach Grok Bot: …`. Headless: `doorbell setup --url URL --key-stdin` (the key is one line on stdin). That write does not ring. `doorbell test` rings once. The body is `{"status": "test"}`. `doorbell test --to NAME` uses the exact Grok Bot name. The body is `{"status": "test", "bot_name": NAME}`. Exit 0 means the ring was accepted. Exit 4 means it failed. The failure includes `category`: `unreachable`, `refused` (check the address and the key), `busy` (a rate limit or a server error; try again in a minute), or `other`. Exit 2 means the doorbell is off. `doorbell off` deletes the file. `status` and `doctor` show `doorbell` as `on` or `off`. A plain test writes `Desk: doorbell test received.` in the doorbell's own chat. An addressed test sends `Desk: doorbell test.` to that bot.
 
 ## Templates
 
@@ -216,7 +240,7 @@ The desk listens only on `127.0.0.1`. The port is `18742` unless `config.json` s
 
 `RS_DATA_DIR` overrides that folder. `paths` prints the folder in use. On Windows an older folder, `%LOCALAPPDATA%\spqrk-report-shell`, stays in use until you move it. How to move it is in the [guide](docs/GUIDE.md#migrate). The rest of the folder rules are in the [guide](docs/GUIDE.md#data-folder-and-template-resolution).
 
-The webhook is off unless you enable it, set `GROKBOT_DESK_WEBHOOK_KEY`, and allow-list an HTTPS URL. When the desk starts, it deletes files in `runs`, `results`, and `log` that are older than 30 days. Media and browser profiles are kept.
+The doorbell is off until you save a URL and a key with `doorbell setup`. The key stays in `doorbell.json` in the data folder. The desk sends it only as `Authorization: Bearer` on that one webhook, and never prints it. An old `webhook` block in `config.json` is ignored. When the desk starts, it deletes files in `runs`, `results`, and `log` that are older than 30 days. Media and browser profiles are kept.
 
 ## Troubleshooting
 

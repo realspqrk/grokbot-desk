@@ -17,7 +17,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __version__
+from . import __version__, doorbell
 from .check import check_template_details
 from .envelope import EnvelopeError, MAX_PAYLOAD, validate_payload_bytes
 from .identity import registry_warnings
@@ -54,7 +54,6 @@ from .registry import ID_RE, RegistryError, scan_registry
 from .runs import preview_post_summary
 from .server import run_server
 from .timeutil import iso_now, to_local
-from .webhook import validate_webhook_url
 
 
 def output(value):
@@ -369,9 +368,6 @@ def command_show(args, base, port):
         warnings = []
         payload = _load_show_payload(args, template, registry, used_ids, warnings)
         config = load_config(base)
-        notify = payload.get("notify", {}).get("webhook_url")
-        if notify:
-            validate_webhook_url(notify, config)
         schema = json_loads(template.read_text("schema.json"))
         replace_media(
             payload["data"],
@@ -637,7 +633,9 @@ def command_results(args, base):
     second, including ones seen before), so passing both back as-is next time
     neither loses nor repeats a decision."""
     try:
-        since = to_local(args.since).astimezone(timezone.utc)
+        # whole seconds, like the stored `decided`: a cursor with a fraction
+        # must not skip a result decided earlier in the same second
+        since = to_local(args.since).astimezone(timezone.utc).replace(microsecond=0)
     except (TypeError, ValueError, OverflowError):
         return error("--since must be ISO 8601 with an offset", 2)
     deadline = time.monotonic() + max(0.0, min(args.wait, 3600.0))
@@ -705,11 +703,13 @@ def command_status(base, port):
             "open_runs": hello.get("open_runs", 0),
             "window_alive": hello.get("window_alive", False),
             "data_dir": str(Path(base)),
+            "doorbell": _doorbell_word(base),
         })
     else:
         output({
             "up": False, "port": port, "version": None, "pid": None, "open_runs": 0,
             "window_alive": False, "data_dir": str(Path(base)),
+            "doorbell": _doorbell_word(base),
         })
     return 0
 
@@ -747,11 +747,89 @@ def command_cancel(args, base, port):
         return error(f"unknown run: {args.run_id}", 6)
     try:
         _ensure_server(base, port)
-        value = _request(port, "/cancel", csrf=_csrf(port), body={"run_id": args.run_id})
+        csrf = _csrf(port)
+        try:
+            # by: bot, so the bot's own cancel rings no doorbell
+            value = _request(port, "/cancel", csrf=csrf, body={"run_id": args.run_id, "by": "bot"})
+        except ValueError as exc:
+            if "unknown_field" not in str(exc):
+                raise
+            # a desk from before the doorbell, still busy with open reports
+            value = _request(port, "/cancel", csrf=csrf, body={"run_id": args.run_id})
         output({"status": "cancelled", "result_path": value["result_path"]})
         return 0
     except (RuntimeError, ValueError, OSError) as exc:
         return error(str(exc), 6)
+
+
+def _doorbell_word(base):
+    return "on" if doorbell.describe(base)["on"] else "off"
+
+
+def _doorbell_state(base):
+    state = doorbell.describe(base)
+    return {"doorbell": "on" if state["on"] else "off", "host": state["host"]}
+
+
+def command_doorbell(args, base, port):
+    """Bare: on/off and the host. setup: the setup page in the desk window,
+    or headless with --url and --key-stdin. test: one POST now. off: delete
+    the file. The key is never printed."""
+    action = args.action
+    if action is None:
+        output(_doorbell_state(base))
+        return 0
+    if action == "off":
+        doorbell.remove(base)
+        output(_doorbell_state(base))
+        return 0
+    if action == "test":
+        if not doorbell.describe(base)["on"]:
+            return error("the doorbell is off; set it up with: doorbell setup", 2)
+        outcome = doorbell.Doorbell(base, None).test(args.to)
+        output({**outcome, "host": doorbell.describe(base)["host"]})
+        return 0 if outcome["ok"] else 4
+    if args.url is None and args.key_stdin:
+        return error("--key-stdin needs --url", 2)
+    if args.url is not None:
+        if not args.key_stdin:
+            return error("--url needs --key-stdin (the key is read from stdin, never an argument)", 2)
+        lines = sys.stdin.read(doorbell.MAX_KEY + 2).splitlines()
+        if len([line for line in lines if line.strip()]) != 1:
+            return error("stdin must hold the key on one line", 2)
+        try:
+            doorbell.save(base, args.url, next(line for line in lines if line.strip()))
+        except ValueError as exc:
+            return error(str(exc), 2)
+        except OSError as exc:
+            return error(f"cannot write the doorbell file: {exc.strerror or exc}", 7)
+        output(_doorbell_state(base))
+        return 0
+    # one desk window: an open one switches to the setup page; else the
+    # server keeps the page for the window that connects next (this launch,
+    # or one already starting), and the normal launch opens it there
+    url = f"http://127.0.0.1:{port}/?page=doorbell"
+    try:
+        _ensure_server(base, port)
+        state = _state(base)
+        shown = _request(port, "/doorbell/show", token=state.get("token"))
+        if shown.get("shown"):
+            focus_window(_browser_identity(state), shown.get("window_title"))
+            launch_status = None
+        else:
+            launch_status = _launch_window_once(base, url, load_config(base))
+    except (BrowserNotFound, BrowserLaunchError) as exc:
+        return error(str(exc).removeprefix("report-shell: "), 3)
+    except (RuntimeError, OSError, ValueError) as exc:
+        return error(str(exc), 4)
+    output({
+        "ok": True,
+        "opened": launch_status is WindowLaunchStatus.LAUNCHED,
+        "pending": launch_status is WindowLaunchStatus.PENDING,
+        "url": url,
+        **_doorbell_state(base),
+    })
+    return 0
 
 
 def command_list():
@@ -800,6 +878,7 @@ def command_doctor():
         "templates": len(registry),
         "warnings": list(registry.warnings),
         "identity_warnings": registry_warnings(data_dir()),
+        "doorbell": _doorbell_word(data_dir()),
         **({"data_dir_warning": advice} if (advice := migration_advice(data_dir())) else {}),
     })
     return 0
@@ -995,6 +1074,22 @@ def build_parser():
     command("open", "open the window for the reports that are open")
     cancel = command("cancel", "discard an open report (the result is cancelled)")
     cancel.add_argument("run_id", help="the run_id that show printed")
+    bell = command("doorbell", "show, set up, test or switch off the doorbell that wakes a bot after a decision")
+    bell_actions = bell.add_subparsers(dest="action", metavar="<action>")
+    setup = bell_actions.add_parser(
+        "setup", help="open the setup page in the desk window, or save --url and the key from stdin",
+        description="Open the setup page in the desk window, or save --url and the key from stdin.",
+    )
+    setup.add_argument("--url", help="the webhook's POST address (https only)")
+    setup.add_argument("--key-stdin", action="store_true", help="read the key as one line from stdin")
+    bell_test = bell_actions.add_parser(
+        "test", help="ring once now (status test) and print the HTTP status and why it failed",
+        description="Ring once now (status test), no retries, and print the HTTP status; "
+        "a failure names its category: unreachable, refused, busy or other.",
+    )
+    bell_test.add_argument("--to", metavar="NAME", help="the exact Grok Bot name the test ring is for")
+    bell_actions.add_parser("off", help="switch the doorbell off (deletes its file)",
+                            description="Switch the doorbell off (deletes its file).")
     command("list", "list templates as JSON")
     templates = command("templates", "list installed templates as a table")
     templates.add_argument("--json", action="store_true", help="print JSON instead of a table")
@@ -1069,6 +1164,8 @@ def main(argv=None):
         return command_open(base, port)
     if args.command == "cancel":
         return command_cancel(args, base, port)
+    if args.command == "doorbell":
+        return command_doorbell(args, base, port)
     if args.command == "stop":
         return command_stop(base, port)
     if args.command == "serve":

@@ -491,16 +491,17 @@ def test_wait_parser_rejects_until_expiry_with_any_timeout(argv):
 
 
 def test_docs_teach_the_same_wait_flow():
-    """GUIDE and SKILL give a bot one flow: a short wait first, a background
-    waiter only where the runtime wakes on it, never --timeout 0, catch-up
-    with results --since, and an acknowledgement. The README points at the
-    skill and does not teach that flow."""
+    """GUIDE and SKILL give a bot one flow: a short foreground wait, the
+    doorbell when it is on, catch-up with results --since, never --timeout 0,
+    and an acknowledgement. The README points at the skill and does not
+    teach that flow."""
     for name in ("docs/GUIDE.md", "skills/grokbot-desk/SKILL.md"):
         text = (ROOT / name).read_text(encoding="utf-8")
-        for needle in ("--timeout 60", "--until-expiry", "background shells may not wake",
-                       "`--timeout 0`", "results --since", "topic + OK"):
+        for needle in ("--timeout 60", "`--timeout 0`", "results --since",
+                       "topic + OK", "Desk:", "doorbell"):
             assert needle.lower() in text.lower(), (name, needle)
         assert "--timeout 120" not in text, name
+        assert "background shells may not wake" not in text.lower(), name
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "skills/grokbot-desk/SKILL.md" in readme
     assert "--timeout 120" not in readme

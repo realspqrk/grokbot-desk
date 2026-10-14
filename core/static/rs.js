@@ -51,6 +51,9 @@
     history.replaceState(history.state, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
   }
   var appWindow = false;
+  /* ?page=doorbell (CLI `doorbell setup`): the setup page stands in for the
+     empty state until a report is opened */
+  var doorbellPage = query.get('page') === 'doorbell';
   var THEME_KEY = 'rs-theme';
   var DRAFT_PREFIX = 'rs-draft:';
   var FOCUS_PREFIX = 'rs-focus:';
@@ -1726,6 +1729,7 @@
   function activate(runId, opts) {
     opts = opts || {};
     if (!runId) return Promise.resolve();
+    doorbellPage = false;
     state.requestGen += 1;
     var requestGen = state.requestGen;
     /* an accepted arrival or switch ends the done state at once, not only
@@ -1771,16 +1775,25 @@
     state.result = null;
     state.touched = false;
     state.listeners = [];
-    el.title.textContent = '';
+    el.title.textContent = doorbellPage ? t('doorbell_title') : '';
     renderBot(null);
     renderTask(null);
     el.meta.textContent = '';
     var focusedId = document.activeElement && el.mount.contains(document.activeElement)
       ? document.activeElement.getAttribute('data-run-id') : null;
-    el.mount.textContent = '';
     var waiting = openRuns();
-    if (waiting.length) el.mount.appendChild(renderOverview(waiting, focusedId));
-    else el.mount.appendChild(textNode('p', 'rs-empty', t('no_runs')));
+    if (doorbellPage) {
+      /* kept across runs updates: what the person typed stays */
+      if (!el.mount.querySelector('[data-rs-doorbell]')) {
+        el.mount.textContent = '';
+        el.mount.appendChild(renderDoorbell());
+      }
+      renderDoorbellWaiting(waiting);
+    } else {
+      el.mount.textContent = '';
+      if (waiting.length) el.mount.appendChild(renderOverview(waiting, focusedId));
+      else el.mount.appendChild(textNode('p', 'rs-empty', t('no_runs')));
+    }
     watchFold(null);
     renderBar();
     renderStrip();
@@ -1790,6 +1803,160 @@
       var again = el.mount.querySelector('[data-run-id="' + CSS.escape(focusedId) + '"]');
       if (again) again.focus();
     }
+  }
+
+  /* the doorbell setup page (?page=doorbell): where to find URL and key,
+     Save (writes the file, rings a test) and Test; the server never sends
+     the key back, so the key field always starts empty */
+  function renderDoorbell() {
+    var section = document.createElement('section');
+    section.className = 'rs-doorbell';
+    section.setAttribute('data-rs-doorbell', '');
+    var status = textNode('p', 'rs-doorbell__state', '');
+    status.id = 'rs-doorbell-state';
+    section.appendChild(status);
+    /* reports waiting meanwhile: the strip may be hidden (one report), so
+       the page names them and opens the first one */
+    var waitingRow = document.createElement('p');
+    waitingRow.className = 'rs-doorbell__waiting';
+    waitingRow.hidden = true;
+    var waitingBtn = document.createElement('button');
+    waitingBtn.type = 'button';
+    waitingBtn.className = 'rs-doorbell__open';
+    waitingBtn.id = 'rs-doorbell-waiting';
+    waitingBtn.addEventListener('click', function () {
+      var first = openRuns()[0];
+      if (first) activate(first.run_id);
+    });
+    waitingRow.appendChild(waitingBtn);
+    section.appendChild(waitingRow);
+    section.appendChild(textNode('p', '', t('doorbell_intro')));
+    section.appendChild(textNode('p', '', t('doorbell_where')));
+    var form = document.createElement('form');
+    form.className = 'rs-doorbell__form';
+    form.noValidate = true;
+    function field(id, key, type) {
+      var wrap = document.createElement('div');
+      var label = textNode('label', 'rs-label', t(key));
+      label.htmlFor = id;
+      var input = document.createElement('input');
+      input.className = 'rs-input';
+      input.id = id;
+      input.type = type;
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      wrap.appendChild(label);
+      wrap.appendChild(input);
+      form.appendChild(wrap);
+      return input;
+    }
+    var url = field('rs-doorbell-url', 'doorbell_url', 'url');
+    var key = field('rs-doorbell-key', 'doorbell_key', 'password');
+    var buttons = document.createElement('div');
+    buttons.className = 'rs-doorbell__buttons';
+    var test = textNode('button', 'rs-btn rs-btn--quiet', t('doorbell_test'));
+    test.type = 'button';
+    test.id = 'rs-doorbell-test';
+    var save = textNode('button', 'rs-btn rs-btn--primary', t('doorbell_save'));
+    save.type = 'submit';
+    save.id = 'rs-doorbell-save';
+    buttons.appendChild(test);
+    buttons.appendChild(save);
+    form.appendChild(buttons);
+    var outcome = textNode('p', 'rs-doorbell__outcome', '');
+    outcome.id = 'rs-doorbell-outcome';
+    outcome.setAttribute('role', 'status');
+    form.appendChild(outcome);
+    section.appendChild(form);
+
+    function show(info) {
+      status.textContent = info && info.on ? t('doorbell_on', { host: info.host }) : t('doorbell_off');
+      status.setAttribute('data-on', info && info.on ? 'true' : 'false');
+      test.disabled = !(info && info.on);
+    }
+    /* a refused field: marked invalid, tied to the visible message, focused;
+       typing in it clears the mark */
+    var FIELDS = { '/url': url, '/key': key };
+    function markInvalid(pointer) {
+      [url, key].forEach(function (input) {
+        var bad = FIELDS[pointer] === input;
+        if (bad) {
+          input.setAttribute('aria-invalid', 'true');
+          input.setAttribute('aria-describedby', outcome.id);
+        } else {
+          input.removeAttribute('aria-invalid');
+          input.removeAttribute('aria-describedby');
+        }
+      });
+      if (FIELDS[pointer]) FIELDS[pointer].focus();
+    }
+    [url, key].forEach(function (input) {
+      input.addEventListener('input', function () {
+        input.removeAttribute('aria-invalid');
+        input.removeAttribute('aria-describedby');
+      });
+    });
+    var REASONS = { unreachable: 'doorbell_reason_unreachable', refused: 'doorbell_reason_refused', busy: 'doorbell_reason_busy' };
+    var REFUSALS = { invalid_url: 'doorbell_invalid_url', missing_key: 'doorbell_missing_key', invalid_key: 'doorbell_invalid_key' };
+    function report(r, saved) {
+      if (r.ok) {
+        markInvalid(null);
+        show(r.body);
+        var rang = r.body.test;
+        outcome.setAttribute('data-tone', rang.ok ? 'ok' : 'warn');
+        if (rang.ok) {
+          outcome.textContent = t(saved ? 'doorbell_rang' : 'doorbell_test_rang', { status: rang.http_status });
+        } else {
+          var reason = t(REASONS[rang.category] || 'doorbell_reason_other');
+          outcome.textContent = t(saved ? 'doorbell_saved_test_failed' : 'doorbell_test_failed', { reason: reason });
+        }
+        if (saved) key.value = '';
+      } else {
+        outcome.setAttribute('data-tone', 'warn');
+        var code = r.body && r.body.error;
+        outcome.textContent = t(REFUSALS[code] || 'doorbell_error');
+        markInvalid(r.body && r.body.pointer);
+      }
+    }
+    function busy(on) {
+      save.disabled = on;
+      if (on) { test.disabled = true; outcome.removeAttribute('data-tone'); outcome.textContent = t('doorbell_ringing'); }
+    }
+    function refresh() {
+      return request('GET', '/api/doorbell').then(function (r) { if (r.ok) show(r.body); }, function () {});
+    }
+    function failed() {
+      outcome.setAttribute('data-tone', 'warn');
+      outcome.textContent = t('doorbell_error');
+      refresh();
+    }
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      busy(true);
+      post('/doorbell', { url: url.value.trim(), key: key.value }).then(function (r) {
+        busy(false);
+        report(r, true);
+        if (!r.ok) refresh();
+      }, function () { busy(false); failed(); });
+    });
+    test.addEventListener('click', function () {
+      busy(true);
+      post('/doorbell/test', {}).then(function (r) { busy(false); report(r, false); },
+        function () { busy(false); failed(); });
+    });
+    show(null);
+    refresh();
+    return section;
+  }
+
+  function renderDoorbellWaiting(waiting) {
+    var row = el.mount.querySelector('.rs-doorbell__waiting');
+    if (!row) return;
+    row.hidden = !waiting.length;
+    if (!waiting.length) return;
+    row.firstChild.textContent = waiting.length === 1
+      ? t('doorbell_waiting_one', { title: waiting[0].title })
+      : t('doorbell_waiting_many', { count: number(waiting.length) });
   }
 
   /* no report shown while some wait: what waits, from which bot, and what
@@ -1936,7 +2103,7 @@
     if (first) {
       // ?run=<id> selects that run (also a decided one); else the newest open run
       var wanted = query.get('run');
-      var newestId = runs[0] ? runs[0].run_id : null;
+      var newestId = runs[0] && !doorbellPage ? runs[0].run_id : null;
       if (wanted || newestId) {
         renderStrip();
         updateTitle();
@@ -1953,7 +2120,8 @@
        in the strip and the burst is announced once (noteArrivals). */
     if (fresh.length) {
       var oldest = fresh[fresh.length - 1];
-      var idle = !state.pending && (!a || a.state !== 'open');
+      /* the doorbell setup page stays until the person opens a report */
+      var idle = !doorbellPage && !state.pending && (!a || a.state !== 'open');
       noteArrivals(fresh, idle ? oldest.run_id : null);
       if (idle) { activate(oldest.run_id); return; }
     }
@@ -2095,6 +2263,15 @@
       appWindow = true;
       document.documentElement.dataset.rsAppWindow = '1';
       window.name = 'rs-app:' + appToken + ':' + sid;
+    });
+    /* `doorbell setup` while this window is open: show the setup page here;
+       open reports stay in the strip */
+    es.addEventListener('page', function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || msg.page !== 'doorbell') return;
+      doorbellPage = true;
+      showEmpty();
     });
     es.addEventListener('runs', function (ev) {
       try { applyRuns(JSON.parse(ev.data).runs || []); } catch (e) { console.error(e); }

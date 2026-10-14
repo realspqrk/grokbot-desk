@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Desk Doorbell. One bot per computer, installed from the template in [doorbell/README.md](doorbell/README.md). The desk rings when a report is submitted, cancelled by the person (discarded on the page), or expired. It POSTs `{bot, bot_name, run_id, status, title}` to that bot's webhook. `bot_name` is the payload `identity.name` when the report gives one, otherwise the bot id. A name in the bot registry does not count. The doorbell messages that bot: `Desk: <title> is <status>. Read the result with report_shell.py result <run_id>.` A bot's own `cancel` never rings, even when the person asked the bot to cancel. Retries run for about 4 minutes on rate limits, server errors, and a failed connection. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes the bot then. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. If a decision got no reaction, message the bot. The key is in `doorbell.json` in the data folder and is never printed.
+- `doorbell` prints `doorbell` (`on` or `off`) and `host`. `on` means the address and key are saved. `doorbell setup` opens the setup page. Save writes the file and sends a test ring. When the save worked and the test failed, the page says `Saved. The test did not reach Grok Bot: …`. `doorbell setup --url URL --key-stdin` writes the file from stdin and does not ring. `doorbell test` rings once. `doorbell test --to NAME` sends that exact Grok Bot name (`{"status": "test", "bot_name": NAME}`). Without `--to` the body is `{"status": "test"}`. A plain test writes `Desk: doorbell test received.` in the doorbell's own chat. An addressed test sends `Desk: doorbell test.` to that bot. Exit 0 means accepted, 4 means failed, 2 means the doorbell is off. A failure includes `category`: `unreachable`, `refused` (check the address and the key), `busy` (a rate limit or a server error; try again in a minute), or `other`. `doorbell off` deletes the file. `status` and `doctor` print `doorbell` as `on` or `off`. Details: [guide](docs/GUIDE.md#doorbell).
+
+### Changed
+
+- **Breaking:** payload `notify` is still accepted and ignored. `show` warns and exits 0. Leave it out.
+- Grok Bot does not wake a bot when a background command finishes. `wait RUN_ID --timeout 60` stays a foreground command for the current turn. Exit 5 means the report is still open. With the doorbell on, the bot ends the turn after one chat line. A chat message that starts with `Desk: ` is the wake. With the doorbell off, a decision after that wait needs a new chat message from the person. At the start of every turn the bot catches up with `results --since`.
+
+### Removed
+
+- The allow-listed result webhook. `config.json` no longer uses `webhook.enabled` or `webhook.allow_prefixes`. `GROKBOT_DESK_WEBHOOK_KEY` is not read. A leftover `webhook` object in `config.json` is ignored.
+
+### Fixed
+
+- `results --since` ignores fractional seconds. A cursor with milliseconds no longer misses a result decided earlier in that same second.
+
 ## [1.0.0-beta.3] - 2026-10-14
 
 The last planned beta before 1.0. The desk is calmer, and you decide in one click.

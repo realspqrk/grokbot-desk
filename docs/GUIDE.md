@@ -26,12 +26,13 @@ The rest of this guide uses `python report_shell.py`. On macOS, use `./report-sh
 - [Bot identity](#bot-identity)
 - [Data folder and template resolution](#data-folder-and-template-resolution)
 - [Configuration](#configuration)
+- [Doorbell](#doorbell)
 - [Commands](#commands)
 - [Exit codes](#exit-codes)
 
 ## How a desk works
 
-A bot runs `show` with a JSON payload for a template. The desk opens one Edge or Chrome app window on the person's computer. The person decides. The bot reads the result JSON with `wait`, `result`, or `results --since`. The desk is local. At runtime it needs Python 3.11 or newer and the standard library only. It runs on Windows and on macOS.
+A bot runs `show` with a JSON payload for a template. The desk opens one Edge or Chrome app window on the person's computer. The person decides. The bot reads the result JSON with `result`, after a [doorbell](#doorbell) message, a foreground `wait`, or `results --since`. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. The desk is local. At runtime it needs Python 3.11 or newer and the standard library only. It runs on Windows and on macOS.
 
 The shell draws the header, the task banner, and the footer. Your template fills the page. Prefer a built-in when it already fits. The five built-ins are linked from the [README](../README.md). The sixth folder, `_starter`, is the copy source for new templates.
 
@@ -162,13 +163,13 @@ Design `result.schema.json` first, then the UI. Keep it small. Echo the payload'
 
 Bots read the result file. Take the path from `result_path` in the `show` or `wait` output. `result` prints that same JSON, plus `data_dir` on stdout only. The file itself is unchanged. Never scrape the page, the run store, or the action log. A result file is written once, atomically, and never changes. Its `data` was validated against `result.schema.json` before it was written.
 
-Bots wait as described in the [skill](../skills/grokbot-desk/SKILL.md). The command and its exits are under [wait](#wait).
+Bots wait as described in the [skill](../skills/grokbot-desk/SKILL.md). The command and its exits are under [wait](#wait). With the doorbell on, a chat line that starts with `Desk: ` is the wake. The bot runs `result` and answers every time.
 
 | `status` | Meaning | The bot does |
 |---|---|---|
-| `submitted` | the person sent it | reads `data` and does the work. Acknowledges the decision in chat with topic + OK, for example "Invoices: hosting approved, toner next week, OK. Paying hosting now." Says the work is finished only after it succeeded. |
-| `cancelled` | the person discarded it, or `cancel` was run | does nothing with the decision. If the person asked for the cancel, records it and stops. Does not ask again. If the bot did not cause the cancel, asks in chat only when the task still needs an answer. No acknowledgement. |
-| `expired` | `expires_minutes` ran out (default 240, max 10080) | does nothing with the decision. Asks in chat only when the task still needs an answer. No acknowledgement. Shows it again later only if it still matters. |
+| `submitted` | the person sent it | reads `data` and does the work. Acknowledges the decision in chat with topic + OK, including a refusal, a note, or a comment. For example: "Invoices: hosting approved, toner next week, OK. Paying hosting now." Says the work is finished only after it succeeded. |
+| `cancelled` | the person discarded it, or `cancel` was run | does nothing with the decision. Records it in chat. No topic + OK. If the person asked for the cancel, stops and does not ask again. If the bot did not cause the cancel, asks in chat only when the task still needs an answer. The bot's own `cancel` never rings the doorbell, even when the person asked the bot to cancel. |
+| `expired` | `expires_minutes` ran out (default 240, max 10080) | does nothing with the decision. Records it in chat. No topic + OK. Asks in chat only when the task still needs an answer. Shows it again later only if it still matters. |
 
 Cancel a report only when the person asks, or to replace your own open report with a newer version of the same thing. Cancel, then `show` the new one. A `dedupe_key` never updates a report.
 
@@ -305,7 +306,7 @@ Every built-in README uses the same order: what it is for, what the person sees,
 | `title` | 1 to 80 characters. The window title is the title and the bot's display name. |
 | `created` | ISO 8601 with an offset. More than 2 minutes ahead is clamped to now, and `show` warns. |
 | `expires_minutes` | Optional integer 5 to 10080. Default 240. |
-| `notify` | Optional `{"webhook_url"}`. See [Configuration](#configuration). Bots normally use `wait`. |
+| `notify` | Optional `{"webhook_url"}`. Accepted and ignored. `show` warns: `/notify: ignored; the desk rings the doorbell, set up once per device (report_shell.py doorbell setup)`. Leave it out. |
 | `data` | Validated against the template's `schema.json`, then against the template's extra rules. |
 | `identity` | Optional. See [Bot identity](#bot-identity). Never rejects the report. |
 | `dedupe_key` | Optional. 1 to 120 printable ASCII characters, not starting with a space. The same bot and key returns the existing report. It does not change that report. |
@@ -417,7 +418,7 @@ A registry entry is `"inbox-agent": "Inbox Agent"` or an object `{"name", "avata
 
 | Field | Rule |
 |---|---|
-| `name` | Plain text, trimmed, 1 to 40 characters, no control characters and no bidi controls. Always rendered as text. |
+| `name` | Plain text, trimmed, 1 to 40 characters, no control characters and no bidi controls. Always rendered as text. On a payload, set it to the bot's exact name in Grok Bot. The doorbell's `bot_name` is that payload `identity.name` when the report gives one, otherwise the bot id. A name in the bot registry does not count. |
 | `avatar` | PNG, JPEG, WebP, or GIF. No SVG. At most 256 KB. Shown at 32 pixels, and at 24 pixels in the overflow menu. A `data:image/<type>;base64,...` URL, or a path relative to the template folder (payload; `%RS_TEMPLATE%/...` works) or to the registry's folder. No `..`, no UNC. Absolute paths only inside the data directory. The bytes must match the type. |
 | `avatar_shape` | `blob`, `squircle`, `pebble`, `hex`, `teardrop`, or `tablet`. |
 | `avatar_color` | `blue`, `orange`, `yellow`, `magenta`, `red`, `violet`, `black`, `green`, or `gray`. The page draws the shape from `core/static/avatar-shapes.json`. `black` is drawn white in dark mode. |
@@ -436,7 +437,7 @@ A registry entry is `"inbox-agent": "Inbox Agent"` or an object `{"name", "avata
 
 On Windows the older folder `%LOCALAPPDATA%\spqrk-report-shell` stays in use while it still has a `runs` directory, the new folder does not yet hold a run or a result file, and either the new folder does not exist or the old folder holds a run or a result file. An empty new folder does not hide reports that are still in the old folder. After `migrate`, the old folder is not created again for normal use. A desk started with `RS_DATA_DIR` pointed at the old folder after the move refuses to start.
 
-The folder holds `runs/`, `results/`, `log/`, `media/`, `config.json`, and `templates/` for templates you add with `new`.
+The folder holds `runs/`, `results/`, `log/`, `media/`, `config.json`, `doorbell.json` when the doorbell is on, and `templates/` for templates you add with `new`. `doorbell.json` holds the webhook URL and the key. The desk never prints the key.
 
 Template ids resolve in this order everywhere. The first match wins.
 
@@ -450,19 +451,15 @@ Every file read from a template is checked by canonical path. A symlink or junct
 
 ## Configuration
 
-`<data dir>/config.json` is optional. Missing keys use the defaults. `window` and `webhook` are merged onto the defaults, so a partial object keeps the other default fields. Other top-level keys are kept in memory and are not read.
+`<data dir>/config.json` is optional. Missing keys use the defaults. `window` is merged onto the defaults, so a partial object keeps the other default fields. Other top-level keys are kept in memory and are not read. An old `webhook` object is ignored.
 
-A command that reads the config for its settings (`show`, `wait`, `result`, `results`, `paths`, `status`, `open`, `cancel`, `stop`, `serve`) exits 2 when `config.json` cannot be read or is not an object. The stderr line is `report-shell: invalid config: ...`. A `port` that cannot be read as an integer, or a port outside 1 to 65535, exits 2 when that config port is the one selected. `--port` on the command uses the flag instead, so a bad config port is not read. A file that cannot be parsed still exits 2 with `--port`. `list`, `templates`, `doctor`, `check`, `new`, and `update` do not read `config.json`. `migrate` does not load it for a port or a window. On Windows, before the move, it reads the file and rewrites `media_roots` when those paths sit under the old folder. A file it cannot parse is left as it is.
+A command that reads the config for its settings (`show`, `wait`, `result`, `results`, `paths`, `status`, `open`, `cancel`, `doorbell`, `stop`, `serve`) exits 2 when `config.json` cannot be read or is not an object. The stderr line is `report-shell: invalid config: ...`. A `port` that cannot be read as an integer, or a port outside 1 to 65535, exits 2 when that config port is the one selected. `--port` on the command uses the flag instead, so a bad config port is not read. A file that cannot be parsed still exits 2 with `--port`. `list`, `templates`, `doctor`, `check`, `new`, and `update` do not read `config.json`. `migrate` does not load it for a port or a window. On Windows, before the move, it reads the file and rewrites `media_roots` when those paths sit under the old folder. A file it cannot parse is left as it is.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `port` | `18742` | Desk port, 1 to 65535. `--port` overrides it for one command. |
 | `window` | `{"x": 0, "y": 0, "width": 880, "height": 920}` | Window position and size. A non-positive width or height falls back to the default size. |
 | `media_roots` | The person's Downloads folder, and `<data dir>/media` | Absolute directories an ordinary media path must resolve under. A `%RS_TEMPLATE%` path is not checked against this list. |
-| `webhook.enabled` | `false` | Delivery is off unless this is true, `allow_prefixes` is non-empty, and the environment variable `GROKBOT_DESK_WEBHOOK_KEY` is set. |
-| `webhook.allow_prefixes` | `[]` | HTTPS prefixes. `notify.webhook_url` must use https and start with one of them, or `show` exits 2 with "webhook URL is not allowlisted". An empty list rejects every URL. |
-
-When delivery is on, the desk POSTs a short notice in the background with `Authorization: Bearer <key>`. The body is `run_id`, `status`, `template`, `bot`, and `result_path`. It does not include the result JSON. Read the result file at `result_path` for the decision. The desk tries three times, waiting 1 second after the first attempt and 2 seconds after the second. A redirect is checked against the same prefix list. Bots normally ignore the webhook and use `wait`.
 
 Environment variables the desk reads:
 
@@ -474,11 +471,28 @@ Environment variables the desk reads:
 | `RS_PYTHON` | Python for the Node tools that `check` starts, including the screenshot compare. `check` sets it to its own interpreter when it is unset. |
 | `RS_SERVER_START_TIMEOUT_MS` | How long the CLI waits for a new desk. Default 10 seconds. Bounded to 1 through 120 seconds. |
 | `RS_CLI_HTTP_TIMEOUT` | Timeout for CLI requests to the desk, other than the short hello. Default 3 seconds. Capped at 60. |
-| `GROKBOT_DESK_WEBHOOK_KEY` | Bearer token. Required before a webhook is sent. |
 | `RS_PLAYWRIGHT_CORE` | Where `check --visual` and the screenshot tools find Playwright. Set it when the package is not installed next to the tools. |
 | `REPORT_SHELL_PYTHON` | Replaces the `./report-shell` search. The only executable tried. A bad value exits 1 even when a suitable interpreter is installed. |
 
 The CLI waits up to 10 seconds for a new desk to answer. If this checkout's process is listening but not answering yet, it gets one more period of the same length. A port that opens as that wait ends is given 2 seconds to write `state.json` before it counts as another program.
+
+## Doorbell
+
+Grok Bot does not wake a bot when a background command finishes. The doorbell is one Desk Doorbell bot on this computer. Install it from the shared template. The texts and the install steps are in [doorbell/README.md](../doorbell/README.md).
+
+The doorbell is off until a URL and a key are saved. The file is `<data dir>/doorbell.json`. The key is never put in a payload, never written in chat, and never printed.
+
+The desk rings when a report is submitted, cancelled by the person (discarded on the page), or expired. A bot's own `cancel` never rings, even when the person asked the bot to cancel. The desk POSTs JSON to that webhook with `Authorization: Bearer` and the key. The body is `bot`, `bot_name`, `run_id`, `status`, and `title`. `status` is `submitted`, `cancelled`, or `expired`. `bot_name` is the payload `identity.name` when that report gives one, otherwise the bot id. A name in the bot registry does not count. The Desk Doorbell bot then messages the bot named `bot_name`:
+
+```text
+Desk: <title> is <status>. Read the result with report_shell.py result <run_id>.
+```
+
+That bot reads the result and answers.
+
+The desk retries for about 4 minutes on rate limits, server errors, and a failed connection. It does not follow a redirect, so the key is not sent to another address. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes the bot then. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. If a decision got no reaction, message the bot.
+
+`status` and `doctor` print `doorbell` as `on` or `off`. The commands are under [doorbell](#doorbell-command).
 
 ## Commands
 
@@ -492,6 +506,7 @@ The desk stops itself after 30 minutes with no open report and no page connected
 
 ```text
 show decide-list --data payload.json
+doorbell
 wait RUN_ID --timeout 60
 result RUN_ID
 ```
@@ -525,7 +540,7 @@ Stdout:
 | `data_dir` | Always. |
 | `deduped` | A duplicate `dedupe_key` was returned. The existing report is unchanged. |
 | `state` | With `deduped`: `open`, `submitted`, or `cancelled`. |
-| `warnings` | A clamped `created`, or a `task.why` past the fold limit. |
+| `warnings` | A clamped `created`, a `task.why` past the fold limit, or an ignored `notify`. |
 | `data_dir_warning` | The older Windows data folder is in use. The text names `migrate`. |
 
 A duplicate that is already decided does not open a second report and does not focus the window. If the window fails to launch after the report was registered, the command exits 3 and prints no JSON. The report may already be on the desk.
@@ -541,7 +556,7 @@ python report_shell.py wait <run_id> [--timeout <seconds>]
 python report_shell.py wait <run_id> --until-expiry
 ```
 
-A short wait is `wait RUN_ID --timeout 60`. Never use `--timeout 0`. Background shells may not wake the caller.
+A short wait is `wait RUN_ID --timeout 60`, in the foreground, while this turn lasts. Never use `--timeout 0`. Do not hand `wait` to a background task. Grok Bot does not wake a bot when a background command finishes. Exit 5 means the report is still open. With the doorbell on, end the turn instead of waiting. A chat line that starts with `Desk: ` is the wake. With the doorbell off, a decision after that wait needs a new chat message from the person. That message wakes the bot. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. If a decision got no reaction, message the bot. How a bot acknowledges is in the [skill](../skills/grokbot-desk/SKILL.md).
 
 | Flag | Meaning |
 |---|---|
@@ -572,11 +587,11 @@ List results decided since a time, oldest first. Open reports are not included.
 python report_shell.py results --since <iso> [--bot <id>] [--wait <seconds>] [--seen <run_id>]
 ```
 
-Before the first `show`, record the current time (ISO 8601 with an offset). Keep that time with the `run_id` that `show` returns. That time is the first `--since`. After that, pass `cursor` and `seen` back exactly as returned.
+Before the first `show`, record the current time (ISO 8601 with an offset). Keep that time with the `run_id` that `show` returns. That time is the first `--since`. After that, pass the returned `cursor` as the next `--since`. Pass every `run_id` already handled as `--seen`, including the `seen` list from the last answer. At the start of every turn, doorbell on or off, run this catch-up. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes the bot then. If a decision got no reaction, message the bot.
 
 | Flag | Meaning |
 |---|---|
-| `--since` | Required. ISO 8601 with an offset, or the `cursor` from last time. The comparison is inclusive on `decided`. |
+| `--since` | Required. ISO 8601 with an offset, or the `cursor` from last time. The comparison is inclusive on `decided`. Fractional seconds are ignored, so a cursor with milliseconds still includes a result decided earlier in that same second. |
 | `--bot` | Only this bot id. |
 | `--wait` | Seconds to wait for a first new result. Default 0. Capped at 3600. The command polls every 0.5 seconds. |
 | `--seen` | A `run_id` already handled. Repeat the flag. |
@@ -613,7 +628,7 @@ Print whether the desk is running.
 python report_shell.py status
 ```
 
-Stdout: `up`, `port`, `version`, `pid`, `open_runs`, `window_alive`, `data_dir`. `open_runs` is how many reports are open. When the desk is down, `up` is false, `version` and `pid` are null, `open_runs` is 0, and `window_alive` is false. `version` is the version of the desk that answered. Exit 0.
+Stdout: `up`, `port`, `version`, `pid`, `open_runs`, `window_alive`, `data_dir`, `doorbell`. `doorbell` is `on` or `off`. `open_runs` is how many reports are open. When the desk is down, `up` is false, `version` and `pid` are null, `open_runs` is 0, and `window_alive` is false. `version` is the version of the desk that answered. Exit 0.
 
 ### open
 
@@ -633,7 +648,31 @@ Discard an open report. The result is `cancelled`. Cancel only when the person a
 python report_shell.py cancel <run_id>
 ```
 
-Stdout: `{"status": "cancelled", "result_path"}`. Exit 0, or 6 when the `run_id` is unknown, already decided, or the request fails.
+Stdout: `{"status": "cancelled", "result_path"}`. Exit 0, or 6 when the `run_id` is unknown, already decided, or the request fails. This cancel is the bot's own, so the doorbell does not ring, even when the person asked the bot to cancel.
+
+### doorbell command
+
+Show whether the doorbell is on, set it up, ring once, or switch it off. The key is never printed.
+
+```text
+python report_shell.py doorbell
+python report_shell.py doorbell setup
+python report_shell.py doorbell setup --url URL --key-stdin
+python report_shell.py doorbell test [--to NAME]
+python report_shell.py doorbell off
+```
+
+| Action | Meaning |
+|---|---|
+| (none) | Print `{"doorbell": "on" or "off", "host"}`. `host` is the webhook host, or null when the doorbell is off. `on` means the address and key are saved. It does not prove a test reached Grok Bot. |
+| `setup` | Open the setup page in the desk window (`http://127.0.0.1:<port>/?page=doorbell`). The person pastes "POST to" and "key" from Grok Bot, Desk Doorbell, Routines, the webhook routine. Save writes `doorbell.json` and sends a test ring. When the save worked and the test failed, the page says `Saved. The test did not reach Grok Bot: …`. |
+| `setup --url URL --key-stdin` | Headless. `URL` is the webhook address, https only, with a host and no user or password. The key is one line on stdin. This writes the file and does not ring. |
+| `test` | One ring now, no retries. The body is `{"status": "test"}`. `--to NAME` is the exact Grok Bot name. The body is then `{"status": "test", "bot_name": NAME}`. A plain test writes `Desk: doorbell test received.` in the doorbell's own chat. An addressed test sends `Desk: doorbell test.` to that bot. |
+| `off` | Delete `doorbell.json`. |
+
+`doorbell` and `doorbell off` print `doorbell` and `host`. A window `setup` prints `ok`, `opened`, `pending`, `url`, `doorbell`, and `host`. `opened` and `pending` mean the same as on `open`. A headless `setup` prints `doorbell` and `host`. `test` prints `ok`, `http_status`, and `host`. A failed ring also prints `category` and `error`. `category` is `unreachable`, `refused` (check the address and the key), `busy` (a rate limit or a server error; try again in a minute), or `other`.
+
+Exit 0 when the command worked. `test` exits 0 when the ring was accepted, 4 when the ring failed, and 2 when the doorbell is off (`the doorbell is off; set it up with: doorbell setup`). A bad URL, a bad key, `--url` without `--key-stdin`, `--key-stdin` without `--url`, or a stdin that is not one key line exits 2. A browser that cannot start on `setup` exits 3. A desk that cannot start on `setup` exits 4. A file that cannot be written exits 7.
 
 ### list
 
@@ -663,7 +702,7 @@ Check installed templates, bot identities, and the data folder.
 python report_shell.py doctor
 ```
 
-Stdout: `ok` (true), `templates` (the count), `warnings` (registry warnings, including a user template that shadows a built-in), `identity_warnings` (a list of strings). `data_dir_warning` is added while the older Windows folder is in use. Warnings do not fail the command. Exit 0, or 7 when the registry is broken.
+Stdout: `ok` (true), `templates` (the count), `warnings` (registry warnings, including a user template that shadows a built-in), `identity_warnings` (a list of strings), `doorbell` (`on` or `off`). `data_dir_warning` is added while the older Windows folder is in use. Warnings do not fail the command. Exit 0, or 7 when the registry is broken.
 
 ### check
 
@@ -745,9 +784,9 @@ Exit 7, before the pull and without changing the checkout, when the folder is no
 |---|---|---|
 | 0 | Success. | Continue. |
 | 1 | Python is older than 3.11, or the process crashed. A crash leaves a Python traceback on stderr. | On macOS use `./report-shell`. Otherwise install Python 3.11 or newer ([README](../README.md)). After a crash, tell the person. The result file can still be read. |
-| 2 | Invalid payload, arguments, or config. Unknown template. Bad media. `--since` is not ISO 8601 with an offset. `--until-expiry` combined with `--timeout`. Port outside 1 to 65535 when that port is selected. A non-numeric `port` in `config.json` exits 2 only when the command uses that port. `--port` overrides it. A config file that cannot be parsed still exits 2. Unknown command or other usage error. Stderr names a JSON pointer when there is one, for example `/data/message`. | Fix the input. Do not retry it unchanged. |
+| 2 | Invalid payload, arguments, or config. Unknown template. Bad media. `--since` is not ISO 8601 with an offset. `--until-expiry` combined with `--timeout`. Port outside 1 to 65535 when that port is selected. A non-numeric `port` in `config.json` exits 2 only when the command uses that port. `--port` overrides it. A config file that cannot be parsed still exits 2. `doorbell test` while the doorbell is off. A bad doorbell URL or key, or a bad `doorbell setup` flag combination. Unknown command or other usage error. Stderr names a JSON pointer when there is one, for example `/data/message`. | Fix the input. Do not retry it unchanged. |
 | 3 | The browser could not be started (`show`, `open`). On Windows that is usually no Edge or Chrome. On macOS a missing Edge or Chrome falls back to the default browser, so their absence alone is not exit 3. Exit 3 there means the launch itself failed. A launch can also fail after a browser was found. | Tell the person in chat. Do not open another browser yourself. |
-| 4 | The port is taken, or the desk did not start. Also: `show` got a network or HTTP error other than 400. `open` failed while starting. `stop` could not deliver the request. `serve` could not bind or the data folder is busy. `migrate` refused because a desk is running, another migrate is running, or a report is still open. | Run `status`, try once more, then tell the person. Never pick another port yourself. For `migrate`, stop the desk and decide or discard open reports, then run it again. |
-| 5 | `wait` reached `--timeout` while the report was still open. | Hand the wait to a background task that can wake you, or catch up with `results --since`. |
+| 4 | The port is taken, or the desk did not start. Also: `show` got a network or HTTP error other than 400. `open` failed while starting. `doorbell setup` could not start the desk. `doorbell test` ring failed. `stop` could not deliver the request. `serve` could not bind or the data folder is busy. `migrate` refused because a desk is running, another migrate is running, or a report is still open. | Run `status`, try once more, then tell the person. Never pick another port yourself. For `migrate`, stop the desk and decide or discard open reports, then run it again. For a failed test ring, read `category`. `unreachable` means no connection. `refused` means check the address and the key. `busy` means a rate limit or a server error; try again in a minute. `other` means try again later. |
+| 5 | `wait` reached `--timeout` while the report was still open. | End the turn. With the doorbell on, a chat line that starts with `Desk: ` is the wake. With it off, a decision after that wait needs a new chat message from the person. Either way, the next turn starts with `results --since`. |
 | 6 | Unknown `run_id` (`wait`, `cancel`). `result` is unknown or not written yet. `cancel` of a report that is already decided, or a cancel request that failed. | Check the `run_id`. For `result`, try again later. |
-| 7 | `wait` passed expiry plus 2 minutes with no result. `check` found problems. `new` refused the name or the path. The registry is broken (`list`, `templates`, `doctor`, `serve`). `update` refused, the pull failed, git is missing, or a git step did not answer within 120 seconds. `migrate` found files in the new folder, or the move failed. | For `wait`, treat the report as expired. Otherwise fix the template, the clone, or the folders. A refused `update` that never started the pull changes nothing. A failed or timed-out pull may already have fetched objects. A refused `migrate` changes nothing. If the folder move itself fails, the error says the old folder stays in use. |
+| 7 | `wait` passed expiry plus 2 minutes with no result. `check` found problems. `new` refused the name or the path. The registry is broken (`list`, `templates`, `doctor`, `serve`). `update` refused, the pull failed, git is missing, or a git step did not answer within 120 seconds. `migrate` found files in the new folder, or the move failed. `doorbell setup` could not write `doorbell.json`. | For `wait`, treat the report as expired. Otherwise fix the template, the clone, or the folders. A refused `update` that never started the pull changes nothing. A failed or timed-out pull may already have fetched objects. A refused `migrate` changes nothing. If the folder move itself fails, the error says the old folder stays in use. |

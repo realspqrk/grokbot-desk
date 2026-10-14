@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import __version__
+from . import __version__, doorbell
 from .actionlog import ActionLog
 from .browse import open_url
 from .urls import url_allowed
@@ -48,7 +48,6 @@ from .product import RUNNER_ID
 from .registry import RegistryError, scan_registry
 from .runs import AlreadyDecided, RunIdAlreadyUsed, RunStore, UnknownRun
 from .schema import SchemaError
-from .webhook import validate_webhook_url
 
 
 CSP = (
@@ -58,6 +57,9 @@ CSP = (
 # Pushes less than this many seconds apart are one burst. The page uses the
 # same quiet gap (BURST_QUIET_MS in core/static/rs.js) for its one announcement.
 ATTENTION_QUIET_S = 30
+# How long a page asked for with no window open (`doorbell setup`) waits for
+# the window that connects next; a slow first browser start fits in it.
+PAGE_PENDING_S = 60
 MEDIA_RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 MEDIA_CHUNK = 256 * 1024
 STATIC_TYPES = {
@@ -293,6 +295,8 @@ class ReportHTTPServer(ThreadingHTTPServer):
             self.last_activity if self.runs.open_count() == 0 else None
         )
         self._attention_lock = threading.Lock()
+        self._page_lock = threading.Lock()
+        self._pending_page = None
         self._last_push_at = None
         super().__init__(address, handler)
 
@@ -307,6 +311,29 @@ class ReportHTTPServer(ThreadingHTTPServer):
 
     def touch(self):
         self.last_activity = time.monotonic()
+
+    def show_page(self, page):
+        """An open window shows `page` now (True). Without one, the page is
+        kept for the window that connects next, also one still starting
+        (a pending launch), for PAGE_PENDING_S."""
+        alive = self.hub.probe_window()
+        with self._page_lock:
+            self._pending_page = None if alive else (page, time.monotonic() + PAGE_PENDING_S)
+        self.hub.broadcast("page", {"page": page})
+        return alive
+
+    def take_pending_page(self):
+        with self._page_lock:
+            pending, self._pending_page = self._pending_page, None
+        if pending and time.monotonic() < pending[1]:
+            return pending[0]
+        return None
+
+    def server_close(self):
+        try:
+            super().server_close()
+        finally:
+            self.runs.doorbell.close()
 
     def broadcast_runs(self, run_id=None, state=None):
         self.hub.broadcast("runs", {"runs": self.runs.summaries(self.bots)})
@@ -455,6 +482,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/runs":
             if self._require_csrf():
                 self._json(200, {"runs": self.server.runs.summaries(self.server.bots)})
+        elif path == "/api/doorbell":
+            if self._require_csrf():
+                self._json(200, doorbell.describe(self.server.data_dir))
         elif path.startswith("/api/run/"):
             if not self._require_csrf():
                 return
@@ -570,10 +600,12 @@ class Handler(BaseHTTPRequestHandler):
         app_window = not test_client and self.server.hub.claim_app_window(
             subscriber["sid"], app_token, launch_generation, previous
         )
+        page = None if test_client else self.server.take_pending_page()
         initial = (
             "retry: 1000\n"
             + ('event: window\ndata: {"app":true}\n\n' if app_window else "")
             + f"event: runs\ndata: {json_dumps({'runs': self.server.runs.summaries(self.server.bots)}, separators=(',', ':'))}\n\n"
+            + (f"event: page\ndata: {json_dumps({'page': page}, separators=(',', ':'))}\n\n" if page else "")
         )
         try:
             write_message(initial)
@@ -605,7 +637,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._require_host():
             return
         path = urlsplit(self.path).path
-        token_route = path in {"/push", "/stop"}
+        token_route = path in {"/push", "/stop", "/doorbell/show"}
         if token_route:
             if not self._require_token():
                 return
@@ -633,9 +665,30 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._decide(value, "submitted")
         elif path == "/cancel":
-            if not self._action_body(value, {"run_id": str}):
+            # the CLI `cancel` says by: "bot"; the bot's own cancel rings no doorbell
+            if not self._action_body(value, {"run_id": str}, {"by": str}):
                 return
-            self._decide(value, "cancelled")
+            if value.get("by", "bot") != "bot":
+                self._json(400, {"error": "invalid_by", "pointer": "/by"})
+                return
+            self._decide(value, "cancelled", by_bot="by" in value)
+        elif path == "/doorbell/show":
+            # `doorbell setup` with the window open: that window shows the page
+            if not self._action_body(value, {}):
+                return
+            self._json(200, {
+                "ok": True,
+                "shown": self.server.show_page("doorbell"),
+                "window_title": self.server.window_title,
+            })
+        elif path == "/doorbell":
+            if not self._action_body(value, {"url": str, "key": str}):
+                return
+            self._doorbell_save(value)
+        elif path == "/doorbell/test":
+            if not self._action_body(value, {}):
+                return
+            self._doorbell_test()
         elif path == "/read":
             if not self._action_body(value, {"run_id": str}):
                 return
@@ -748,9 +801,6 @@ class Handler(BaseHTTPRequestHandler):
                 payload = validate_payload_bytes(
                     raw, self.server.registry, used_ids, warnings
                 )
-                notify = payload.get("notify", {}).get("webhook_url")
-                if notify:
-                    validate_webhook_url(notify, self.server.config)
                 # one lock for look-up and registration: two pushes of the
                 # same dedupe_key at once still make one run
                 with self.server.runs._lock:
@@ -938,10 +988,44 @@ class Handler(BaseHTTPRequestHandler):
         self.server.action_log.write(run_id, "copy_image", {"media_id": media_id})
         self._json(200, {"ok": True})
 
-    def _decide(self, value, status):
+    def _doorbell_save(self, value):
+        """Setup page: check, write doorbell.json, ring a test. The answer
+        names on/off, the host and the test outcome, never the key."""
+        # stable error codes; the page words them (i18n)
+        try:
+            doorbell.check_url(value["url"])
+        except ValueError:
+            self._json(400, {"error": "invalid_url", "pointer": "/url"})
+            return
+        try:
+            doorbell.check_key(value["key"])
+        except doorbell.MissingKey:
+            self._json(400, {"error": "missing_key", "pointer": "/key"})
+            return
+        except ValueError:
+            self._json(400, {"error": "invalid_key", "pointer": "/key"})
+            return
+        try:
+            doorbell.save(self.server.data_dir, value["url"], value["key"])
+        except OSError:
+            self._json(500, {"error": "doorbell_save_failed"})
+            return
+        self._doorbell_test()
+
+    def _doorbell_test(self):
+        state = doorbell.describe(self.server.data_dir)
+        if not state["on"]:
+            self._json(409, {"error": "doorbell_off", **state})
+            return
+        outcome = self.server.runs.doorbell.test()
+        # the page gets the category, never the raw network error text
+        outcome.pop("error", None)
+        self._json(200, {**state, "test": outcome})
+
+    def _decide(self, value, status, by_bot=False):
         run_id = value.get("run_id")
         try:
-            path = self.server.runs.decide(run_id, status, value.get("data"))
+            path = self.server.runs.decide(run_id, status, value.get("data"), by_bot=by_bot)
         except UnknownRun:
             self._json(404, {"error": "unknown_run"})
         except AlreadyDecided:

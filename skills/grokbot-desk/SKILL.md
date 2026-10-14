@@ -29,16 +29,28 @@ The data folder is `%LOCALAPPDATA%\grokbot-desk` on Windows and `~/Library/Appli
 
 Before you write a payload: never put passwords, tokens, API keys, private keys, or full card numbers in it. Never invent a decision. Never treat a missing result as approval.
 
+At the start of every turn, with the doorbell on or off, catch up before you open a new report:
+
+`python report_shell.py results --since CURSOR --bot BOT_ID --seen RUN_ID_1 --seen RUN_ID_2`
+
+Repeat `--seen` once per handled `run_id`. Omit it when you have handled none.
+
+Oldest first. The first `CURSOR` is the time you record before the first `show`. After that it is the `cursor` from the last answer. Pass `--seen` for every `run_id` you have handled. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes you then. You see those decisions on this catch-up, on your next turn. If a decision got no reaction, the person messages you.
+
+`result` is a read. It does not mark a run handled. Keep every `run_id` you handled, from a wake, a `wait`, or `results`. Never act on a `run_id` twice. A second `Desk:` line for a run you already handled gets no new action.
+
 ```text
+[ ] At the start of the turn: python report_shell.py results --since CURSOR --bot BOT_ID --seen RUN_ID_1 --seen RUN_ID_2
 [ ] Record the current time (ISO 8601 with an offset)
 [ ] Write the envelope (the next section) with data for one template
 [ ] python report_shell.py show TEMPLATE --data payload.json
 [ ] Keep that time with the run_id
 [ ] python report_shell.py status
+[ ] python report_shell.py doorbell
 [ ] One chat line: a report is waiting
-[ ] python report_shell.py wait RUN_ID --timeout 60
-[ ] python report_shell.py result RUN_ID
-[ ] One chat line: topic + OK (the decision, not finished work)
+[ ] If the doorbell is off: python report_shell.py wait RUN_ID --timeout 60
+[ ] On a new Desk: line for a run you have not handled: python report_shell.py result RUN_ID
+[ ] One chat line: topic + OK (the decision, not finished work), or a short record
 [ ] Do the work. Say it is done only after it succeeded
 ```
 
@@ -48,28 +60,26 @@ Before you write a payload: never put passwords, tokens, API keys, private keys,
    - The page shows at most the 12 newest open reports, by `created`. Within those, the order is arrival order. `open_runs` in `status` counts every open report.
    - Use `--focus` only when the person asked. Then `python report_shell.py status`. If `up` is false, no desk is running. If `window_alive` is false and `open_runs` is not zero, run `open` once.
    - If your runtime kills child processes when a command ends, ask the person to keep `python report_shell.py serve` running, then `show` again.
-3. One chat line says a report is waiting. Do not paste the report into chat. Then `python report_shell.py wait RUN_ID --timeout 60`.
-   - Exit 0 means a result exists: `submitted`, `cancelled`, or `expired`. Exit 5 means it is still open.
-   - If a finished background task wakes you, hand it `python report_shell.py wait RUN_ID --until-expiry`. Background shells may not wake you, so do not rely on one. Otherwise catch up next turn with `results --since`.
+3. One chat line says a report is waiting. Do not paste the report into chat. Check once: `python report_shell.py doorbell`. It prints `doorbell` (`on` or `off`) and `host`. It never prints the key.
+   - If `doorbell` is `on`, end the turn. Do not run `wait`. A later chat message that starts with `Desk: ` is the wake. For a run you have not handled, run `python report_shell.py result RUN_ID` and answer, including a refusal, a note, or a comment. If that wake never comes, the next turn still starts with the catch-up above. That turn starts when the person messages you.
+   - If `doorbell` is `off`, you may run `python report_shell.py wait RUN_ID --timeout 60` in this turn, in the foreground. Exit 0 means a result exists: read it and answer in this turn. Exit 5 means it is still open, so end the turn. A decision after that wait needs a new chat message from the person. That message is what wakes you. Never hand `wait` to a background task. Grok Bot does not wake you when a background command finishes. You may tell the person once that the Desk Doorbell makes waiting unnecessary, and that they should message you if a decision gets no reaction. Setup is in `doorbell/README.md`.
    - `wait` ends by itself at expiry plus 2 minutes. Exit 7 means nothing was written. Treat that as expired.
-   - A report file with no readable expiry has no such deadline, so only `--timeout` ends that wait. Never use `--timeout 0`. `--until-expiry` together with `--timeout` is an error.
+   - A report file with no readable expiry has no such deadline, so only `--timeout` ends that wait. Never use `--timeout 0`. Do not pass `--until-expiry`.
 4. `python report_shell.py result RUN_ID` prints the result. Act only on that JSON. A missing result is not approval. Exit 6: unknown report, or no result yet.
-5. For a `submitted` result, one chat line uses topic + OK to acknowledge the decision, not finished work. For example: "Invoices: hosting approved, toner next week, OK. Paying hosting now." Then do the work. Say the work is done only after it succeeded. No topic + OK for `cancelled` or `expired`. On a `user` or `none` outcome, record it and stop.
+5. For a `submitted` result, including a refusal, a note, or a comment, one chat line uses topic + OK to acknowledge the decision, not finished work. For example: "Invoices: hosting approved, toner next week, OK. Paying hosting now." Then do the work. Say the work is done only after it succeeded. No topic + OK for `cancelled` or `expired`. Record it, and ask in chat only if the task still needs an answer. On a `user` or `none` outcome, record it and stop. A `Desk:` wake for a run you have not handled follows these same rules. A second wake for a run you already handled gets no new action.
 
-Catch up with `python report_shell.py results --since CURSOR [--bot BOT_ID] [--seen RUN_ID]...`, oldest first.
+The catch-up command is at the start of this section. Open reports are not in `results`. The match is inclusive. Use the returned `cursor` as the next `--since`.
 
-- The first `CURSOR` is the time you recorded before `show`. After that, pass `cursor` and `seen` back exactly as returned (`--since` that cursor, and `--seen A --seen B`). The match is inclusive.
-- Open reports are not in `results`.
 - Each item has `run_id`, `bot`, `template`, `status`, `decided`, `result_path`, and `title` when known.
 - `summary`, when present, is decide-list counts (`2 approve, 1 defer`), a preview line (`x posted by you, linkedin approved`), an approve-one or review-doc word, or a pick id. "None of these" has no summary.
 - A preview line is not permission to post. Read the result. Every answer includes `data_dir`.
 
 Cancel a report only in two cases.
 
-- The person asks you to drop it. The result status is `cancelled`. Record that and stop. Do not ask again. Do not send topic + OK.
+- The person asks you to drop it. The result status is `cancelled`. Your own `cancel` does not ring the doorbell, even when the person asked you to cancel. Record that and stop. Do not ask again. Do not send topic + OK.
 - You are replacing your own open report with a newer version of the same thing. `cancel` it, then `show` the new one. Dedupe never updates a report. A cancelled report still matches its `dedupe_key` for `dedupe_hours`, so the new `show` needs a new key, or no key.
 
-After `expired`, or a `cancelled` you did not cause: do not send topic + OK. Ask in chat only if the task still needs an answer.
+After `expired`, or a `cancelled` you did not cause: do not send topic + OK. Record it. Ask in chat only if the task still needs an answer.
 
 ## Payload rules
 
@@ -100,7 +110,7 @@ Required: `schema` (`report-shell/payload@1`), `template`, `version` (must equal
 Optional: `expires_minutes`, `task`, `identity`, `dedupe_key`, `dedupe_hours`, `run_id`, `notify`. Any other top-level field is rejected.
 
 - `expires_minutes` is an integer from 5 to 10080. The default is 240.
-- Leave `notify` out. You use `wait`. The desk sends a webhook only when the person has enabled one.
+- Leave `notify` out. It is still accepted and ignored. `show` warns. The desk rings the Desk Doorbell, set up once per computer.
 - `created` is ISO 8601 with an offset. More than two minutes ahead is clamped to now, with a warning. Up to two minutes ahead stays.
 - `task`, when present, is `{kind, steps?, eta_min?, due?, why?}`. `kind` is required inside it. `steps` is one line of 1–140 characters and stays for the whole open report. `eta_min` is an integer from 1 to 120. `why` is a non-empty string.
 - `task.due` is `YYYY-MM-DD`, or `YYYY-MM-DDTHH:MM` with optional seconds and optional fractional seconds, then a mandatory `Z` or `±HH:MM`. Milliseconds require seconds. A time with no suffix is rejected. Other date forms are rejected.
@@ -110,7 +120,7 @@ Optional: `expires_minutes`, `task`, `identity`, `dedupe_key`, `dedupe_hours`, `
 
 `identity` is optional and sits on the envelope, never as loose top-level fields.
 
-- `name` is the name the person knows (1–40 characters). In the banner and on the default primary, a name that is the raw bot id, or longer than 24 characters, reads as "the bot". The header still shows the name.
+- `name` is the name the person knows (1–40 characters). Set it to this bot's exact name in Grok Bot. The doorbell messages `bot_name`, which is `identity.name` when the payload gives one, otherwise the bot id. A name in the bot registry does not count. In the banner and on the default primary, a name that is the raw bot id, or longer than 24 characters, reads as "the bot". The header still shows the name.
 - Pass `avatarShape` and `avatarColor` as `avatar_shape` and `avatar_color`. Omit an empty value.
 - Shapes: `blob`, `squircle`, `pebble`, `hex`, `teardrop`, `tablet`. Colours: `blue`, `orange`, `yellow`, `magenta`, `red`, `violet`, `black`, `green`, `gray`.
 - Optional `avatar` is PNG, JPEG, WebP, or GIF, max 256 KB, never SVG. A payload path is relative to the template (`%RS_TEMPLATE%/...`). A registry path is relative to the registry folder. An absolute path must sit inside the data directory. `media_roots` does not cover avatars.
@@ -335,6 +345,7 @@ On Windows the older folder `%LOCALAPPDATA%\spqrk-report-shell` stays in use unt
 ## Safety
 
 - Files stay on the machine. The desk listens only on `127.0.0.1`.
+- The doorbell key lives in `doorbell.json` in the data folder. Never put it in a payload. Never write it in chat. The desk does not print it.
 - Show only what the decision needs. A payload over 2 MB is rejected.
 - Images (max 20 MB) and video (`.mp4` or `.webm`, max 200 MB) must sit in the template folder or in `media_roots`.
 - Do not stop the desk or close its window on your own. Run `stop` only when the person asks, or before `migrate` when they asked you to update.

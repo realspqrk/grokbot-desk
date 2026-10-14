@@ -18,7 +18,6 @@ from unittest.mock import patch
 import pytest
 
 import core.server as server_module
-import core.webhook as webhook
 from core import platform_darwin, platform_windows
 from conftest import free_port, install_minimal_template
 from core.actionlog import ActionLog
@@ -32,7 +31,6 @@ from core.results import ResultExists, write_result
 from core.runs import RunStore
 from core.server import Handler, ReportHTTPServer
 from core.timeutil import to_local
-from core.webhook import deliver, webhook_enabled, validate_webhook_url
 
 
 # A socket timeout for the test client, not a latency budget: a valid push
@@ -484,6 +482,7 @@ def test_real_reconnect_handler_preserves_replacement_launch_marker(
         runs=SimpleNamespace(summaries=lambda bots: []),
         bots={},
         stopping=stopping,
+        take_pending_page=lambda: None,
     )
     handler.wfile = SimpleNamespace(write=lambda body: None, flush=lambda: None)
     handler.connection = None
@@ -1708,91 +1707,6 @@ def test_finding_3_unloadable_run_record_logs_error(tmp_path, content):
         and event["detail"].get("what") == "run_load_failed"
         for event in events
     )
-
-
-def test_webhook_requires_config_env_and_allowlist(monkeypatch):
-    config = {"webhook": {"enabled": True, "allow_prefixes": ["https://hooks.example/allowed/"]}}
-    monkeypatch.delenv(webhook.WEBHOOK_KEY_ENV, raising=False)
-    assert not webhook_enabled(config)
-    monkeypatch.setenv(webhook.WEBHOOK_KEY_ENV, "secret")
-    assert webhook_enabled(config)
-    validate_webhook_url("https://hooks.example/allowed/42", config)
-    with pytest.raises(ValueError):
-        validate_webhook_url("https://evil.example/", config)
-    with pytest.raises(ValueError, match="HTTPS"):
-        validate_webhook_url("http://hooks.example/allowed/42", {
-            "webhook": {"allow_prefixes": ["http://hooks.example/allowed/"]}
-        })
-    assert "secret" not in json.dumps(config)
-
-
-def test_webhook_ignores_the_removed_legacy_key_name(monkeypatch):
-    config = {"webhook": {"enabled": True, "allow_prefixes": ["https://hooks.example/"]}}
-    monkeypatch.delenv(webhook.WEBHOOK_KEY_ENV, raising=False)
-    monkeypatch.setenv("SPQRK_REPORT_SHELL_WEBHOOK_KEY", "secret")
-    assert not webhook.webhook_enabled(config)
-
-
-def test_webhook_redirect_rejects_disallowed_destination_before_forwarding_key():
-    config = {"webhook": {"allow_prefixes": ["https://hooks.example/allowed/"]}}
-    request_with_key = urllib.request.Request(
-        "https://hooks.example/allowed/1",
-        data=b"{}",
-        headers={"Authorization": "Bearer fake-key"},
-        method="POST",
-    )
-    handler = webhook.WebhookRedirectHandler(config)
-    with pytest.raises(ValueError, match="allowlisted"):
-        handler.redirect_request(
-            request_with_key,
-            None,
-            302,
-            "Found",
-            {"Location": "https://evil.example/sink"},
-            "https://evil.example/sink",
-        )
-    with pytest.raises(ValueError, match="HTTPS"):
-        handler.redirect_request(
-            request_with_key,
-            None,
-            307,
-            "Temporary Redirect",
-            {"Location": "http://hooks.example/allowed/sink"},
-            "http://hooks.example/allowed/sink",
-        )
-
-
-def test_webhook_non_success_response_logs_failure(monkeypatch, tmp_path):
-    config = {"webhook": {"enabled": True, "allow_prefixes": ["https://hooks.example/"]}}
-    monkeypatch.setenv(webhook.WEBHOOK_KEY_ENV, "secret")
-    events = []
-    action_log = type("Log", (), {"write": lambda self, run_id, event, detail: events.append(event)})()
-    response = type(
-        "Response",
-        (),
-        {
-            "status": 500,
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *args: None,
-        },
-    )()
-    requests = []
-
-    def open_request(request, **_kwargs):
-        requests.append(request)
-        return response
-
-    assert not deliver(
-        "https://hooks.example/42",
-        {"run_id": "r"},
-        config,
-        "r",
-        action_log,
-        opener=open_request,
-        sleeper=lambda seconds: None,
-    )
-    assert events == ["webhook_fail"]
-    assert requests[0].get_header("User-agent") == "grokbot-desk/1"
 
 
 def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
