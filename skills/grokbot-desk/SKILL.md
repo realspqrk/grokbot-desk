@@ -62,7 +62,7 @@ Oldest first. The first `CURSOR` is the time you record before the first `show`.
    - If your runtime kills child processes when a command ends, ask the person to keep `python report_shell.py serve` running, then `show` again.
 3. One chat line says a report is waiting. Do not paste the report into chat. Check once: `python report_shell.py doorbell`. It prints `doorbell` (`on` or `off`) and `host`. It never prints the key.
    - If `doorbell` is `on`, end the turn. Do not run `wait`. A later chat message that starts with `Desk: ` is the wake. For a run you have not handled, run `python report_shell.py result RUN_ID` and answer, including a refusal, a note, or a comment. If that wake never comes, the next turn still starts with the catch-up above. That turn starts when the person messages you.
-   - If `doorbell` is `off`, you may run `python report_shell.py wait RUN_ID --timeout 60` in this turn, in the foreground. Exit 0 means a result exists: read it and answer in this turn. Exit 5 means it is still open, so end the turn. A decision after that wait needs a new chat message from the person. That message is what wakes you. Never hand `wait` to a background task. Grok Bot does not wake you when a background command finishes. You may tell the person once that the Desk Doorbell makes waiting unnecessary, and that they should message you if a decision gets no reaction. Setup is in `doorbell/README.md`.
+   - If `doorbell` is `off`, you may run `python report_shell.py wait RUN_ID --timeout 60` in this turn, in the foreground. Exit 0 means a result exists: read it and answer in this turn. Exit 5 means it is still open, so end the turn. A decision after that wait needs a new chat message from the person. That message is what wakes you. Never hand `wait` to a background task. Grok Bot does not wake you when a background command finishes. You may tell the person once that the Desk Doorbell makes waiting unnecessary, and that they should message you if a decision gets no reaction. The person installs it from https://x.ai/bot/Q_-PLlmHrV1l2h3Tk1ejJ and says "set me up" in its chat.
    - `wait` ends by itself at expiry plus 2 minutes. Exit 7 means nothing was written. Treat that as expired.
    - A report file with no readable expiry has no such deadline, so only `--timeout` ends that wait. Never use `--timeout 0`. Do not pass `--until-expiry`.
 4. `python report_shell.py result RUN_ID` prints the result. Act only on that JSON. A missing result is not approval. Exit 6: unknown report, or no result yet.
@@ -322,7 +322,7 @@ Do not loop on 3 or 4.
 
 Update only when the person or a maintainer asks. Never pull on your own. You would run code nobody reviewed.
 
-Releases are tags on `main` (`v1.0.0-beta.3`). `main` moves only on a release. `develop` is the branch for testing builds. `update` fast-forwards the clone on its current branch (`git pull --ff-only`). It prints `updated`, `from`, `to`, `branch`, and `next`.
+Releases are tags on `main` (`v1.0.0-beta.4`). `main` moves only on a release. `develop` is the branch for testing builds. `update` fast-forwards the clone on its current branch (`git pull --ff-only`). It prints `updated`, `from`, `to`, `branch`, and `next`.
 
 - Check `branch` in that output. Do not claim "latest release" unless `branch` is `main`.
 - `develop` is right only when the person asked for testing builds.

@@ -40,7 +40,7 @@ A template stores the profile, the skills, and the routine text. When someone in
 
 ## Install
 
-1. Open the public link.
+1. Open the template: [Desk Doorbell](https://x.ai/bot/Q_-PLlmHrV1l2h3Tk1ejJ).
 2. Choose Add to Grok Bot.
 3. Say "set me up".
 

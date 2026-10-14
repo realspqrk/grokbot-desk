@@ -478,7 +478,7 @@ The CLI waits up to 10 seconds for a new desk to answer. If this checkout's proc
 
 ## Doorbell
 
-Grok Bot does not wake a bot when a background command finishes. The doorbell is one Desk Doorbell bot on this computer. Install it from the shared template. The texts and the install steps are in [doorbell/README.md](../doorbell/README.md).
+Grok Bot does not wake a bot when a background command finishes. The doorbell is one Desk Doorbell bot on this computer. Install it from the [Desk Doorbell template](https://x.ai/bot/Q_-PLlmHrV1l2h3Tk1ejJ). The texts and the install steps are in [doorbell/README.md](../doorbell/README.md).
 
 The doorbell is off until a URL and a key are saved. The file is `<data dir>/doorbell.json`. The key is never put in a payload, never written in chat, and never printed.
 

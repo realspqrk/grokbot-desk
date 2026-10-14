@@ -13,14 +13,14 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Platforms: Windows | macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-blue.svg)](#platforms-and-limits)
-[![Version: 1.0.0-beta.3](https://img.shields.io/badge/version-1.0.0--beta.3-blue.svg)](CHANGELOG.md)
+[![Version: 1.0.0-beta.4](https://img.shields.io/badge/version-1.0.0--beta.4-blue.svg)](CHANGELOG.md)
 
 </div>
 
 > [!WARNING]
 > ⚠️ This is not an official Grok Bot plugin. SpaceXAI, please don't sue me. But please steal it. Add it to Grok Bot natively 🙏
 
-**Status:** 1.0.0-beta.3. Windows and macOS.
+**Status:** 1.0.0-beta.4. Windows and macOS.
 
 <p>
   <a href="#what-it-is">What it is</a> &middot;
@@ -176,7 +176,7 @@ You do not have to install a skill. Any bot that can run a command in the clone 
 
 ## Desk Doorbell
 
-Grok Bot does not wake a bot when a background command finishes. Desk Doorbell is one bot on this computer. Install it from the shared template. The steps are in [doorbell/README.md](doorbell/README.md).
+Grok Bot does not wake a bot when a background command finishes. Desk Doorbell is one bot on this computer. Install it from the [Desk Doorbell template](https://x.ai/bot/Q_-PLlmHrV1l2h3Tk1ejJ), then say "set me up" in its chat. The steps are in [doorbell/README.md](doorbell/README.md).
 
 When a report is submitted, cancelled by you (discarded on the page), or expired, the desk POSTs `{bot, bot_name, run_id, status, title}` to that bot's webhook, with `Authorization: Bearer` and the key. Desk Doorbell then messages the bot named `bot_name`:
 
