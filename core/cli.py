@@ -698,6 +698,7 @@ def command_status(base, port):
         output({
             "up": True,
             "port": port,
+            "version": hello.get("version"),
             "pid": hello["pid"],
             "open_runs": hello.get("open_runs", 0),
             "window_alive": hello.get("window_alive", False),
@@ -705,7 +706,7 @@ def command_status(base, port):
         })
     else:
         output({
-            "up": False, "port": port, "pid": None, "open_runs": 0,
+            "up": False, "port": port, "version": None, "pid": None, "open_runs": 0,
             "window_alive": False, "data_dir": str(Path(base)),
         })
     return 0

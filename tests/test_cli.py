@@ -881,6 +881,8 @@ def test_show_submit_wait_result_cancel_status_and_stop(
         run = json.loads(shown.stdout)
         status = json.loads(cli(env, port, "status").stdout)
         assert status["up"] is True and status["open_runs"] == 1
+        # the running desk names its version, so a bot can tell it is current
+        assert status["version"] == cli_module.__version__
         hello = json.loads(
             urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/hello"
