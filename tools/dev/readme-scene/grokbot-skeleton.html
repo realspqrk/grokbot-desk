@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=1000">
+<meta name="viewport" content="width=840">
 <title>Desk over a chat app</title>
 <!--
   README hero scene: an illustrative dark chat desktop app, drawn as a
   skeleton (no real names, no logos), with the desk pop-up floating over it.
   Self-contained: no external requests. tools/dev/readme-shots.mjs fills
   #popup-shot with a screenshot of the real served shell and sets --pop-h
-  (the pop-up image height in CSS px); the scene grows with it. The blob
+  (the pop-up image height in CSS px); the scene grows with it. The chat
+  app is cropped by the scene's right and bottom edge. The blob
   outline and eyes are the desk's own (core/static/avatar-shapes.json,
   shapes.blob); the script checks they match.
 -->
@@ -32,9 +33,9 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
-    width: 1000px;
-    /* pop-up top + title bar + image + gap + composer + window edge */
-    height: calc(var(--pop-top) + 32px + var(--pop-h) + 100px);
+    width: 840px;
+    /* pop-up top + title bar + image + last bubble + composer */
+    height: calc(var(--pop-top) + 32px + var(--pop-h) + 136px);
     overflow: hidden;
     font: 14px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif;
     color: var(--ink);
@@ -49,16 +50,16 @@
   /* ------------------------------------------------ the chat app window */
   .app {
     position: absolute;
-    left: 20px;
-    top: 20px;
-    bottom: 20px;
-    width: 770px;
+    left: 14px;
+    top: 14px;
+    bottom: -12px;
+    right: -12px;
     background: var(--app);
     border: 1px solid #2b2b2b;
     border-radius: 8px;
     overflow: hidden;
     display: grid;
-    grid-template-columns: 176px 1fr;
+    grid-template-columns: 140px 1fr;
     box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
   }
 
@@ -74,7 +75,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 6px;
-    padding: 14px 12px 0;
+    padding: 12px 10px 0;
   }
   .round {
     width: 28px;
@@ -87,8 +88,8 @@
   .pins {
     display: flex;
     justify-content: center;
-    gap: 26px;
-    padding: 8px 0 14px;
+    gap: 14px;
+    padding: 6px 0 12px;
   }
   .pin { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .pin-av { position: relative; }
@@ -113,12 +114,13 @@
   .row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 8px;
+    gap: 8px;
+    padding: 6px 7px;
     border-radius: 10px;
   }
   .row.sel { background: var(--sel); }
   .row .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .row .av { width: 28px; height: 28px; }
   .name { font-weight: 700; font-size: 13px; color: #f4f4f4; line-height: 1.1; }
   .sk {
     display: block;
@@ -131,25 +133,25 @@
   .side-foot {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 12px;
+    gap: 6px;
+    padding: 10px 8px 22px;
     border-top: 1px solid var(--line);
   }
   .me {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background: #5a5a5a;
     flex: none;
   }
   .connect {
     flex: 1;
-    height: 30px;
+    height: 28px;
     border: 1px solid #3a3a3a;
-    border-radius: 15px;
+    border-radius: 14px;
     display: grid;
     place-items: center;
-    font-size: 12px;
+    font-size: 11.5px;
     color: #d0d0d0;
   }
 
@@ -175,7 +177,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 56px 20px 14px;
+    padding: 54px 26px 12px 16px;
     overflow: hidden;
   }
   .when {
@@ -191,10 +193,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-width: 200px;
+    max-width: 96px;
   }
   .bot .sk { background: #333333; }
-  .bot.text { font-size: 14px; color: #ececec; margin-top: auto; }
+  .bot.text { font-size: 14px; color: #ececec; margin-top: auto; max-width: none; }
   .mine {
     align-self: flex-end;
     background: linear-gradient(180deg, var(--me), var(--me-2));
@@ -204,7 +206,7 @@
     color: #ffffff;
   }
   .composer {
-    margin: 0 20px 16px;
+    margin: 0 26px 24px 16px;
     height: 46px;
     flex: none;
     background: #1a1a1a;
@@ -230,7 +232,7 @@
   /* ------------------------------------------------- the desk pop-up */
   .popup {
     position: absolute;
-    left: 418px;
+    left: 264px;
     top: var(--pop-top);
     width: 562px;
     background: #202020;
@@ -284,16 +286,16 @@
     <div class="pins">
       <div class="pin">
         <div class="pin-av">
-          <svg class="av" width="50" height="50" viewBox="0 0 48 48"><use href="#blob" fill="#f5f5f5"/><use href="#eyes" fill="#161616"/></svg>
+          <svg class="av" width="44" height="44" viewBox="0 0 48 48"><use href="#blob" fill="#f5f5f5"/><use href="#eyes" fill="#161616"/></svg>
           <span class="badge"><svg width="12" height="12" viewBox="0 0 24 24"><path fill="#ff6700" d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 16.9 5.9 20.4l1.5-6.8L2.2 9l6.9-.7z"/></svg></span>
         </div>
         <span class="pin-label">Grok Bot</span>
       </div>
       <div class="pin">
         <div class="pin-av">
-          <svg class="av" width="50" height="50" viewBox="0 0 48 48"><use href="#blob" fill="#0e74e0"/><use href="#eyes" fill="#161616"/></svg>
+          <svg class="av" width="44" height="44" viewBox="0 0 48 48"><use href="#blob" fill="#0e74e0"/><use href="#eyes" fill="#161616"/></svg>
         </div>
-        <span class="sk b" style="width:44px;margin-top:3px"></span>
+        <span class="sk b" style="width:40px;margin-top:3px"></span>
       </div>
     </div>
     <div class="list" id="list"></div>
@@ -311,8 +313,12 @@
     <div class="msgs">
       <span class="when">Today 10:56 AM</span>
       <div class="mine">Pay this week's invoices, check them first.</div>
-      <div class="bot"><span class="sk" style="width:150px"></span></div>
-      <div class="bot"><span class="sk" style="width:170px"></span><span class="sk" style="width:130px"></span><span class="sk" style="width:90px"></span></div>
+      <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:50px"></span></div>
+      <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:60px"></span><span class="sk" style="width:40px"></span></div>
+      <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:56px"></span><span class="sk" style="width:64px"></span><span class="sk" style="width:30px"></span></div>
+      <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:44px"></span></div>
+      <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:62px"></span><span class="sk" style="width:52px"></span></div>
+      <div class="bot"><span class="sk" style="width:58px"></span></div>
       <div class="bot text">I put the three invoices on your desk.</div>
     </div>
     <div class="composer">
@@ -335,9 +341,7 @@
 <script>
   /* sidebar rows: avatar colour, name width, preview width; the first is real */
   const groups = [
-    ['Work', [['#ff6700', 0, 90], ['#ff6700', 70, 100], ['#ff9800', 56, 84], ['#e5302f', 76, 96]]],
-    ['Personal', [['#ff6700', 64, 92], ['#777777', 52, 104]]],
-    ['Dev team', [['#e5302f', 72, 96], ['#8b4cf0', 60, 100], ['#1fa45a', 80, 88]]],
+    ['Work', [['#ff6700', 0, 60], ['#ff6700', 56, 70], ['#ff9800', 46, 64], ['#e5302f', 60, 54]]],
   ];
   const list = document.getElementById('list');
   let first = true;

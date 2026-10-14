@@ -29,11 +29,10 @@ const SCALE = 2;
 const MAX_BYTES = 600 * 1024;
 const TILE_WIDTH = Number(args[2] || 480);
 const MAX_HEIGHT = 1200;
-/* the hero pop-up: a real narrow window, shown 1:1 in a 1000 px scene */
+/* the hero pop-up: a real narrow window, shown 1:1; the 840 px scene keeps
+   it at about two thirds of the hero width */
 const HERO_POPUP_WIDTH = 560;
-const SCENE_WIDTH = 1000;
-/* as in grokbot-skeleton.html: body height = --pop-top + title bar + --pop-h + 100 */
-const sceneHeight = (popHeight) => 150 + 32 + popHeight + 100;
+const SCENE_WIDTH = 840;
 const SKELETON = path.join(ROOT, 'tools', 'dev', 'readme-scene', 'grokbot-skeleton.html');
 
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
@@ -329,7 +328,7 @@ try {
   {
     const html = readFileSync(SKELETON, 'utf8');
     checkSkeletonBlob(html);
-    const scene = { width: SCENE_WIDTH, height: sceneHeight(popHeight) };
+    const scene = { width: SCENE_WIDTH, height: MAX_HEIGHT };
     const ctx = await browser.newContext({ viewport: scene, deviceScaleFactor: SCALE, colorScheme: 'dark' });
     const page = await ctx.newPage();
     // self-contained page: refuse anything that is not the file itself or inline data
@@ -342,6 +341,9 @@ try {
       await img.decode();
     }, { src: `data:image/png;base64,${readFileSync(popupFile).toString('base64')}`, height: popHeight });
     await page.evaluate(() => document.fonts.ready);
+    // the scene's height follows the pop-up (body height in the skeleton)
+    scene.height = await page.evaluate(() => Math.ceil(document.body.getBoundingClientRect().height));
+    await page.setViewportSize(scene);
     await save(page, 'hero-grokbot-dark.png', scene.width);
     await ctx.close();
     rmSync(popupFile, { force: true });
