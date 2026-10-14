@@ -15,7 +15,7 @@ import { browserChannel, startServer, loadChromium, ROOT } from './rs-server.mjs
 
 const args = process.argv.slice(2);
 const out = path.resolve(args[0] || 'tools/dev/out/popup');
-const port = Number(args[1] || 18976);
+const port = Number(args[1] || 18924);
 mkdirSync(out, { recursive: true });
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
 const fixture = (template, name = 'golden') => {
@@ -145,7 +145,7 @@ try {
       await server.clearRuns();
       const run = showBot(BOTS[1], 0);
       const { ctx, page, errors } = await open(run.run_id, theme, size);
-      await page.click('rs-action-row[data-item="decision"] button[value="approve"]');
+      // approve-one: the footer primary is the decision, one click
       await page.click('#rs-submit');
       await page.waitForSelector('.rs-banner[data-done]');
       await page.waitForFunction(() => !document.querySelector('.rs-toast'), null, { timeout: 5000 });

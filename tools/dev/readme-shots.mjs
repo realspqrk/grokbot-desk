@@ -25,8 +25,7 @@ mkdirSync(out, { recursive: true });
 const SCALE = 2;
 const MAX_BYTES = 600 * 1024;
 const POPUP = { width: 864, height: 836 };
-/* the scene's pop-up: the same width, a window the person made a little shorter */
-const SCENE_POPUP = { width: 864, height: 660 };
+/* the scene's pop-up: the same width, as tall as its content (see fitHeight) */
 const SCENE = { width: 1600, height: 1000 };
 const SKELETON = path.join(ROOT, 'tools', 'dev', 'readme-scene', 'grokbot-skeleton.html');
 
@@ -208,6 +207,29 @@ async function shoot(page, name, cssWidth) {
   return file;
 }
 
+/** Shortens the viewport to the smallest height at which the report does
+ *  not scroll: the window ends just below the footer and its own padding. */
+async function fitHeight(page) {
+  const fits = async (height) => {
+    await page.setViewportSize({ width: POPUP.width, height });
+    await page.waitForTimeout(80);
+    return page.evaluate(() => {
+      const mount = document.getElementById('rs-mount');
+      return mount.scrollHeight <= mount.clientHeight && !mount.hasAttribute('data-rs-more');
+    });
+  };
+  let low = 320;
+  let high = POPUP.height;
+  if (!(await fits(high))) return high;
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (await fits(mid)) high = mid; else low = mid;
+  }
+  await fits(high);
+  console.log(`scene pop-up: ${POPUP.width}x${high}`);
+  return high;
+}
+
 /** The skeleton's avatars must be the desk's own blob. */
 function checkSkeletonBlob(html) {
   const shapes = JSON.parse(readFileSync(path.join(ROOT, 'core', 'static', 'avatar-shapes.json'), 'utf8'));
@@ -236,7 +258,8 @@ try {
   const invoices = showReport(INVOICES);
   const popupFile = path.join(out, '_popup-invoices-dark.png');
   {
-    const { ctx, page, errors } = await open(invoices.run_id, 'dark', SCENE_POPUP);
+    const { ctx, page, errors } = await open(invoices.run_id, 'dark');
+    await fitHeight(page);
     await settle(page);
     await warnIfScrolls(page, 'invoices');
     await page.screenshot({ path: popupFile });
