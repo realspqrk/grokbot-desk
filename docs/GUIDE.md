@@ -482,13 +482,15 @@ Grok Bot does not wake a bot when a background command finishes. The doorbell is
 
 The doorbell is off until a URL and a key are saved. The file is `<data dir>/doorbell.json`. The key is never put in a payload, never written in chat, and never printed.
 
-The desk rings when a report is submitted, cancelled by the person (discarded on the page), or expired. A bot's own `cancel` never rings, even when the person asked the bot to cancel. The desk POSTs JSON to that webhook with `Authorization: Bearer` and the key. The body is `bot`, `bot_name`, `run_id`, `status`, and `title`. `status` is `submitted`, `cancelled`, or `expired`. `bot_name` is the payload `identity.name` when that report gives one, otherwise the bot id. A name in the bot registry does not count. The Desk Doorbell bot then messages the bot named `bot_name`:
+The desk rings when a report is submitted, cancelled by the person (discarded on the page), or expired. A bot's own `cancel` never rings, even when the person asked the bot to cancel. The desk POSTs JSON to that webhook with `Authorization: Bearer` and the key. The body is `bot`, `bot_name`, `run_id`, `status`, and `title`. `status` is `submitted`, `cancelled`, or `expired`. `bot_name` is the payload `identity.name` when that report gives one, otherwise the bot id. A name in the bot registry does not count.
+
+The Desk Doorbell bot picks one Bot. A Bot whose name is exactly `bot_name` gets the message. Otherwise it slugs each Bot name. The slug is lower case. It keeps only ASCII a-z and 0-9. Every run of other characters (spaces, punctuation, umlauts, emoji) becomes one `-`, then `-` at the ends is removed. There is no transliteration. `Work Bot (Alpha)` becomes `work-bot-alpha`. `Büro Bot 🤖` becomes `b-ro-bot`. It matches that slug against `bot_name` and against `bot`. Exactly one match is sent this line. None or several: it writes `Desk: no Bot named <bot_name>.` in its own chat.
 
 ```text
 Desk: <title> is <status>. Read the result with report_shell.py result <run_id>.
 ```
 
-That bot reads the result and answers.
+Set `identity.name` to the bot's exact name in Grok Bot. The desk id must match `^[a-z0-9-]{1,40}$` and be unique. A desk id that is the slug of that name also matches. When the slug of the Grok Bot name is not a good id, choose any valid unique id and always set `identity.name` to the exact Grok Bot name. The exact name wins over slugs. That bot reads the result and answers. A plain test (`{"status": "test"}`) writes `Desk: doorbell test received.` in the doorbell's own chat. That line can arrive minutes late. `doorbell test --to "<name>"` sends `Desk: doorbell test.` to that bot, seen within a minute.
 
 The desk retries for about 4 minutes on rate limits, server errors, and a failed connection. It does not follow a redirect, so the key is not sent to another address. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes the bot then. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. If a decision got no reaction, message the bot.
 

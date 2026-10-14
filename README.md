@@ -26,6 +26,7 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
   <a href="#what-it-is">What it is</a> &middot;
   <a href="#why">Why</a> &middot;
   <a href="#quick-start">Quick start</a> &middot;
+  <a href="#manual-install">Manual install</a> &middot;
   <a href="#your-first-desk">Your first desk</a> &middot;
   <a href="#use-with-grok-bot">Use with Grok Bot</a> &middot;
   <a href="#desk-doorbell">Desk Doorbell</a> &middot;
@@ -65,7 +66,17 @@ Chat is a weak place for a decision or a long report. The desk puts that work in
 
 ## Quick start
 
-You need Python 3.11 or newer, and Microsoft Edge or Google Chrome. At runtime the desk uses only the Python standard library, so running it needs no extra Python packages. Clone the repository on the computer whose screen you look at.
+Desk Doorbell is one bot on this computer. It installs grokbot-desk, wakes the right bot when you decide, and updates the clone once a week.
+
+1. Open the [Desk Doorbell template](https://x.ai/bot/Q_-PLlmHrV1l2h3Tk1ejJ) and choose Add to Grok Bot.
+2. The first chat starts setup. Approve the commands it shows. Say yes when it asks to turn its two routines on.
+3. Paste "POST to" and "key" on the setup page it opens. You read both under Desk Doorbell, then Routines, then the webhook routine. They stay out of chat.
+
+The bot clones https://github.com/realspqrk/grokbot-desk if you do not already have it, then checks the ring with one work bot. Details are in [doorbell/README.md](doorbell/README.md). To clone and run the desk yourself, use [Manual install](#manual-install).
+
+## Manual install
+
+You need Python 3.11 or newer, git, and Microsoft Edge or Google Chrome. At runtime the desk uses only the Python standard library, so running it needs no extra Python packages. Clone the repository on the computer whose screen you look at.
 
 The examples below use `python report_shell.py`. On macOS, run the same arguments with `./report-shell`.
 
@@ -80,7 +91,12 @@ python --version
 python report_shell.py --help
 ```
 
-`python --version` must report 3.11 or newer. `report-shell.cmd` runs `py -3`. If `py -3 --version` fails and `python --version` works, use `python report_shell.py` for every command.
+`python --version` must report 3.11 or newer. `report-shell.cmd` runs `py -3`. Prefer `python report_shell.py` when `python --version` reports 3.11 or newer. Otherwise use `py -3 report_shell.py` when `py -3 --version` reports 3.11 or newer. If Python or git is missing:
+
+```powershell
+winget install Python.Python.3.12
+winget install Git.Git
+```
 
 ### macOS setup
 
@@ -166,36 +182,31 @@ python report_shell.py result RUN_ID
 
 ## Use with Grok Bot
 
-The skill is [`skills/grokbot-desk/SKILL.md`](skills/grokbot-desk/SKILL.md). A bot that receives only that file can still open a desk.
+The skill is [`skills/grokbot-desk/SKILL.md`](skills/grokbot-desk/SKILL.md) in the clone. Each bot reads that file from the clone path. Do not paste a copy into the bot. The next update then arrives when the bot reads the file again.
 
-1. Finish [Quick start](#quick-start) on the computer whose screen you look at. The desk runs on that computer.
-2. Give your bot `skills/grokbot-desk/SKILL.md` (add it as a skill, or paste it into the bot's instructions) and tell it where the clone is.
+1. Finish [Quick start](#quick-start) on the computer whose screen you look at. [Manual install](#manual-install) is the same desk without the doorbell bot. The desk runs on that computer.
+2. Tell each bot the clone folder, and to read `skills/grokbot-desk/SKILL.md` there.
 3. Tell your bot: "When you need a decision from me, or you have a report for me, use grokbot-desk."
 
-You do not have to install a skill. Any bot that can run a command in the clone folder can follow [Your first desk](#your-first-desk). The skill is what makes that reliable: when a report beats chat, which template to pick, how to wait, and what never belongs in a payload.
+Any bot that can run a command in the clone folder can follow [Your first desk](#your-first-desk). The skill is what makes that reliable: when a report beats chat, which template to pick, how to wait, and what never belongs in a payload. Set `identity.name` to the bot's exact name in Grok Bot. The desk id must match `^[a-z0-9-]{1,40}$` and be unique. When the slug of the Grok Bot name is not a good id, choose any valid unique id and always set `identity.name` to the exact Grok Bot name. The exact name wins over slugs. The slug rule is in [Desk Doorbell](#desk-doorbell).
 
 ## Desk Doorbell
 
-Grok Bot does not wake a bot when a background command finishes. Desk Doorbell is one bot on this computer. Install it from the [Desk Doorbell template](https://x.ai/bot/Q_-PLlmHrV1l2h3Tk1ejJ), then say "set me up" in its chat. The steps are in [doorbell/README.md](doorbell/README.md).
+Grok Bot does not wake a bot when a background command finishes. Desk Doorbell is one bot on this computer. [Quick start](#quick-start) installs it. The texts are in [doorbell/README.md](doorbell/README.md).
 
-When a report is submitted, cancelled by you (discarded on the page), or expired, the desk POSTs `{bot, bot_name, run_id, status, title}` to that bot's webhook, with `Authorization: Bearer` and the key. Desk Doorbell then messages the bot named `bot_name`:
+When a report is submitted, cancelled by you (discarded on the page), or expired, the desk POSTs `{bot, bot_name, run_id, status, title}` to the doorbell webhook. `bot_name` is the payload `identity.name` when the report gives one, otherwise the bot id. A name in the bot registry does not count. A bot's own `cancel` never rings, even when you asked the bot to cancel.
+
+The doorbell picks one Bot. A Bot whose name is exactly `bot_name` gets the message. Otherwise it slugs each Bot name. The slug is lower case. It keeps only ASCII a-z and 0-9. Every run of other characters (spaces, punctuation, umlauts, emoji) becomes one `-`, then `-` at the ends is removed. There is no transliteration. `Work Bot (Alpha)` becomes `work-bot-alpha`. `Büro Bot 🤖` becomes `b-ro-bot`. It matches that slug against `bot_name` and against `bot`. Exactly one match is sent the line below. None or several: it writes `Desk: no Bot named <bot_name>.` in its own chat.
 
 ```text
 Desk: <title> is <status>. Read the result with report_shell.py result <run_id>.
 ```
 
-`bot_name` is the payload `identity.name` when the report gives one, otherwise the bot id. A name in the bot registry does not count. Set `identity.name` to the bot's exact name in Grok Bot. A bot's own `cancel` never rings, even when you asked the bot to cancel. The desk retries for about 4 minutes on rate limits, server errors, and a failed connection. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes the bot then. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. If a decision got no reaction, message the bot.
+Set `identity.name` to the bot's exact name in Grok Bot. The desk id must match `^[a-z0-9-]{1,40}$` and be unique. A desk id that is the slug of that name also matches. When the slug of the Grok Bot name is not a good id, choose any valid unique id and always set `identity.name` to the exact Grok Bot name. The exact name wins over slugs. The desk retries for about 4 minutes on rate limits, server errors, and a failed connection. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes the bot then. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. If a decision got no reaction, message the bot.
 
-The key stays in `doorbell.json` in the data folder. It is never printed, and it does not belong in a payload or in chat.
+The key stays in `doorbell.json` in the data folder. It is never printed, and it does not belong in a payload or in chat. Only you see "POST to" and "key".
 
-```bash
-python report_shell.py doorbell
-python report_shell.py doorbell setup
-python report_shell.py doorbell test
-python report_shell.py doorbell off
-```
-
-`doorbell` prints `{"doorbell": "on" or "off", "host"}`. `host` is null when the doorbell is off. `on` means the address and key are saved. It does not prove a test reached Grok Bot. `doorbell setup` opens the setup page in the desk window. Paste the "POST to" URL and the "key" from Grok Bot, Desk Doorbell, Routines, the webhook routine. Save writes `doorbell.json` and sends a test ring. When the save worked and the test failed, the page says `Saved. The test did not reach Grok Bot: …`. Headless: `doorbell setup --url URL --key-stdin` (the key is one line on stdin). That write does not ring. `doorbell test` rings once. The body is `{"status": "test"}`. `doorbell test --to NAME` uses the exact Grok Bot name. The body is `{"status": "test", "bot_name": NAME}`. Exit 0 means the ring was accepted. Exit 4 means it failed. The failure includes `category`: `unreachable`, `refused` (check the address and the key), `busy` (a rate limit or a server error; try again in a minute), or `other`. Exit 2 means the doorbell is off. `doorbell off` deletes the file. `status` and `doctor` show `doorbell` as `on` or `off`. A plain test writes `Desk: doorbell test received.` in the doorbell's own chat. An addressed test sends `Desk: doorbell test.` to that bot.
+`doorbell` prints `on` or `off`. `on` means the address and key are saved. `doorbell setup` opens the page where you paste those two fields. `doorbell test` writes `Desk: doorbell test received.` in the doorbell's own chat, and that line can arrive minutes late. `doorbell test --to "<name>"` sends `Desk: doorbell test.` to that bot. `doorbell off` deletes the file. Exits, the setup page, and `category` are in the [guide](docs/GUIDE.md#doorbell).
 
 ## Templates
 
@@ -262,7 +273,7 @@ Exit 4 means the port is taken or the desk did not start. Run `status`, try the 
 
 ### `py -3` cannot find Python
 
-`report-shell.cmd` calls `py -3`. Check `py -3 --version`. If that fails and `python --version` works, run `python report_shell.py` from the clone folder. On macOS, exit 1 from an old Python means: use `./report-shell`.
+`report-shell.cmd` calls `py -3`. Prefer `python report_shell.py` when `python --version` reports 3.11 or newer. Otherwise use `py -3 report_shell.py` when `py -3 --version` reports 3.11 or newer. On macOS, exit 1 from an old Python means: use `./report-shell`.
 
 ### Exit codes
 
