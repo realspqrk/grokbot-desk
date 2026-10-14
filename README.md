@@ -48,15 +48,15 @@ One open report is a compact pop-up. Several open reports share one window, with
 
 The window is German. Set `RS_LANG=en` in the environment before the desk starts to use English. Times use the machine's time zone. Your payload text is shown as you wrote it. The window does not translate it.
 
-<img src="docs/img/hero-grokbot-dark.png" alt="A dark chat app with the conversation with Office Bot. The bot says it put three invoices on your desk, and a desk pop-up floats over the chat: Three invoices this week, with Pay, Don't pay and Next week buttons for the hosting invoice and two more invoices below" width="880">
+<img src="docs/img/hero-grokbot-dark.png" alt="Illustration: a skeleton of a dark Grok Bot chat app with a conversation with Office Bot. The person asks it to pay this week's invoices and check them first; the bot answers that it put the three invoices on your desk. The desk pop-up floats over the chat: Three invoices this week, with Pay, Don't pay and Next week for the hosting invoice, two more invoices below, and Send decisions" width="880">
 
 ### What you see
 
-| Several open reports | One open report |
+| Several open reports | One decision |
 | :---: | :---: |
-| <picture><source media="(prefers-color-scheme: light)" srcset="docs/img/hero-strip-light.png"><img src="docs/img/hero-strip-dark.png" alt="Three open reports from three bots, with their avatars in a strip along the top and 1 of 3 open. The visible report asks to deploy web shop v2.4.0, with Reject, Request changes and Approve deploy in the footer" width="400"></picture> | <img src="docs/img/hero-popup-dark.png" alt="One open report in a compact pop-up, dark theme: deploy web shop v2.4.0 to production, with version, changes, checks and Approve deploy in the footer" width="400"> |
+| <img src="docs/img/hero-strip-dark.png" alt="Three open reports from three bots, with their avatars in a strip along the top and 1 of 3 open. The visible report asks to deploy web shop v2.4.0, with two changes, three checks, and Reject, Request changes and Approve deploy in the footer" width="400"> | <img src="docs/img/hero-popup-dark.png" alt="Purchasing Agent asks: accept the supplier quote for office chairs? Facts: supplier, total 2,340 EUR, delivery in 2 weeks; one passed check, and Reject or Accept quote in the footer" width="400"> |
 | **A report to read** | **After you decide** |
-| <img src="docs/img/hero-report-dark.png" alt="A weekly operations report for your information, dark theme: a bold summary line, a table of two sites with their status, a checklist with one open item, a warning that one delivery is late, and a Got it button" width="400"> | <img src="docs/img/hero-done.png" alt="The deploy report after the decision, dark theme: Sent to bot, All done, This window closes in a moment, with a Keep open link" width="400"> |
+| <img src="docs/img/hero-report-dark.png" alt="A weekly operations report for your information: a bold summary line, a table of two sites with their status, a checklist with one open item, a warning that one delivery is late, and a Got it button" width="400"> | <img src="docs/img/hero-done.png" alt="The office chairs quote after the decision: Decided, Sent to bot, All done, This window closes in a moment, and a Keep open link" width="400"> |
 
 ## Why
 

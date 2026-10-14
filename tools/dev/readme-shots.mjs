@@ -1,16 +1,19 @@
 // README and marketing screenshots from the real served shell (isolated
 // server, temp data dir, headless Edge/Chrome, English UI, fictional bots,
 // synthetic data). Writes to <out-dir> only; a person approves the set
-// before it is copied to docs/img.
-//   hero-grokbot-dark.png   the desk pop-up over a dark chat-app skeleton
-//                           (tools/dev/readme-scene/grokbot-skeleton.html)
-//   hero-strip-<theme>.png  three open reports, avatar strip, approve-one first
-//   hero-popup-dark.png     one open approve-one report, no strip
-//   hero-report-dark.png    a review-doc status report (task.kind fyi)
-//   hero-done.png           the calm done state after the last decision
-// Shots are taken at deviceScaleFactor 2 and downscaled in the browser when
-// a PNG is larger than MAX_BYTES.
-// Usage: node tools/dev/readme-shots.mjs <out-dir> [port]   (default 18923)
+// before it is copied to docs/img. All dark.
+//   hero-grokbot-dark.png  the desk pop-up over an illustrative chat-app
+//                          skeleton (tools/dev/readme-scene/grokbot-skeleton.html)
+//   hero-strip-dark.png    three open reports, avatar strip, a compact deploy first
+//   hero-popup-dark.png    one open approve-one report (supplier quote), no strip
+//   hero-report-dark.png   a review-doc status report (task.kind fyi)
+//   hero-done.png          the supplier decision after it was sent, framed tight
+// The README shows the four tiles at about 400 px, so they share one narrow
+// viewport (TILE_WIDTH, or the third argument) and are as tall as their
+// content. Shots are taken at deviceScaleFactor 2 and downscaled in the
+// browser only when a PNG is larger than MAX_BYTES.
+// Usage: node tools/dev/readme-shots.mjs <out-dir> [port] [tile-width]
+//        (defaults: tools/dev/out/readme, 18923, 480)
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -24,9 +27,13 @@ mkdirSync(out, { recursive: true });
 
 const SCALE = 2;
 const MAX_BYTES = 600 * 1024;
-const POPUP = { width: 864, height: 836 };
-/* the scene's pop-up: the same width, as tall as its content (see fitHeight) */
-const SCENE = { width: 1600, height: 1000 };
+const TILE_WIDTH = Number(args[2] || 480);
+const MAX_HEIGHT = 1200;
+/* the hero pop-up: a real narrow window, shown 1:1 in a 1000 px scene */
+const HERO_POPUP_WIDTH = 560;
+const SCENE_WIDTH = 1000;
+/* as in grokbot-skeleton.html: body height = --pop-top + title bar + --pop-h + 100 */
+const sceneHeight = (popHeight) => 150 + 32 + popHeight + 100;
 const SKELETON = path.join(ROOT, 'tools', 'dev', 'readme-scene', 'grokbot-skeleton.html');
 
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
@@ -45,12 +52,10 @@ function nextFriday() {
   return ymd(d);
 }
 
-const OFFICE_BOT = { name: 'Office Bot', avatar_shape: 'blob', avatar_color: 'orange' };
-
 const INVOICES = {
   template: 'decide-list',
   title: 'Three invoices this week',
-  identity: OFFICE_BOT,
+  identity: { name: 'Office Bot', avatar_shape: 'blob', avatar_color: 'orange' },
   task: { kind: 'approve_bot_acts', why: 'Hosting is due Friday.' },
   data: {
     labels: { approve: 'Pay', reject: "Don't pay", defer: 'Next week' },
@@ -58,6 +63,45 @@ const INVOICES = {
       { id: 'hosting', kind: 'Invoice', source: 'Web hosting', title: 'Hosting for the web shop, 89 EUR', due: nextFriday() },
       { id: 'toner', kind: 'Invoice', source: 'Office supplies', title: 'Toner for the office printer, 132.90 EUR' },
       { id: 'domain', kind: 'Invoice', source: 'Domain registrar', title: 'Domain renewal for one year, 12 EUR' },
+    ],
+  },
+};
+
+const CHAIRS = {
+  template: 'approve-one',
+  title: 'Accept the supplier quote for office chairs?',
+  identity: { name: 'Purchasing Agent', avatar_shape: 'squircle', avatar_color: 'green' },
+  data: {
+    summary: 'Twelve office chairs for the second floor. The quote is within budget.',
+    approve_label: 'Accept quote',
+    facts: [
+      { label: 'Supplier', value: 'Northwind Seating' },
+      { label: 'Total', value: '2,340 EUR' },
+      { label: 'Delivery', value: 'In 2 weeks' },
+    ],
+    checks: [
+      { label: 'Within the furniture budget', state: 'ok' },
+    ],
+  },
+};
+
+const DEPLOY = {
+  template: 'approve-one',
+  title: 'Deploy web shop v2.4.0?',
+  identity: { name: 'Ops Agent', avatar_shape: 'squircle', avatar_color: 'blue' },
+  data: {
+    summary: 'Staging passed. Deploy tonight at 18:00?',
+    approve_label: 'Approve deploy',
+    allow_changes: true,
+    points_title: 'What changes',
+    points: [
+      'New checkout with saved addresses',
+      'Faster search',
+    ],
+    checks: [
+      { label: 'Tests', detail: '214 passed', state: 'ok' },
+      { label: 'Smoke test', detail: 'All flows OK', state: 'ok' },
+      { label: 'Bundle size', detail: '+18 KB', state: 'warn' },
     ],
   },
 };
@@ -70,7 +114,7 @@ const WEEKLY = {
   data: {
     summary: 'Week 41 across the two sites.',
     doc: [
-      '**Both sites ran normally this week; one supplier delivery is late.**',
+      '**Both sites ran normally; one delivery is late.**',
       '',
       '| Site | Status |',
       '|---|---|',
@@ -79,7 +123,6 @@ const WEEKLY = {
       '',
       '- [x] Backups finished every night',
       '- [x] Payroll file sent to the bank',
-      '- [x] Fire doors inspected',
       '- [ ] Packaging supplier confirms a new date',
       '',
       '> [!WARNING]',
@@ -90,9 +133,19 @@ const WEEKLY = {
 
 /* three bots for the strip; the first is the visible one (newest) */
 const STRIP = [
-  { name: 'Ops Agent', shape: 'squircle', color: 'blue', template: 'approve-one', fixture: 'golden', title: 'Deploy web shop v2.4.0 to production?' },
-  { name: 'Social Agent', shape: 'blob', color: 'orange', template: 'preview-post', fixture: 'golden', title: 'Autumn menu post: approve before Monday' },
-  { name: 'Garden Club Agent', shape: 'teardrop', color: 'yellow', template: 'review-doc', fixture: 'golden', title: 'Spring opening announcement: review the draft' },
+  DEPLOY,
+  {
+    template: 'preview-post',
+    title: 'Autumn menu post: approve before Monday',
+    identity: { name: 'Social Agent', avatar_shape: 'blob', avatar_color: 'orange' },
+    data: fixture('preview-post'),
+  },
+  {
+    template: 'review-doc',
+    title: 'Spring opening announcement: review the draft',
+    identity: { name: 'Garden Club Agent', avatar_shape: 'teardrop', avatar_color: 'yellow' },
+    data: fixture('review-doc'),
+  },
 ];
 
 const chromium = await loadChromium();
@@ -112,16 +165,7 @@ function showReport(report, index = 0) {
   });
 }
 
-function showStripBot(bot, index) {
-  return showReport({
-    template: bot.template,
-    title: bot.title,
-    identity: { name: bot.name, avatar_shape: bot.shape, avatar_color: bot.color },
-    data: fixture(bot.template, bot.fixture),
-  }, index);
-}
-
-async function open(runId, theme, size = POPUP) {
+async function open(runId, theme, size = { width: TILE_WIDTH, height: MAX_HEIGHT }) {
   const ctx = await browser.newContext({ viewport: size, deviceScaleFactor: SCALE, colorScheme: theme, reducedMotion: 'reduce' });
   const page = await ctx.newPage();
   const errors = [];
@@ -161,7 +205,7 @@ async function warnIfScrolls(page, label) {
       const s = getComputedStyle(el);
       return /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 1;
     })
-    .map((el) => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} +${el.scrollHeight - el.clientHeight}px`));
+    .map((el) => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''} +${el.scrollHeight - el.clientHeight}px`));
   if (over.length) console.warn(`${label}: content scrolls: ${over.join(', ')}`);
 }
 
@@ -199,35 +243,43 @@ async function shrink(file, cssWidth) {
   }
 }
 
-async function shoot(page, name, cssWidth) {
-  const file = path.join(out, name);
-  await page.screenshot({ path: file });
-  await shrink(file, cssWidth);
-  written.push(file);
-  return file;
-}
-
 /** Shortens the viewport to the smallest height at which the report does
  *  not scroll: the window ends just below the footer and its own padding. */
-async function fitHeight(page) {
+async function fitHeight(page, width) {
   const fits = async (height) => {
-    await page.setViewportSize({ width: POPUP.width, height });
-    await page.waitForTimeout(80);
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(150);
     return page.evaluate(() => {
       const mount = document.getElementById('rs-mount');
       return mount.scrollHeight <= mount.clientHeight && !mount.hasAttribute('data-rs-more');
     });
   };
-  let low = 320;
-  let high = POPUP.height;
-  if (!(await fits(high))) return high;
+  let low = 240;
+  let high = MAX_HEIGHT;
+  if (!(await fits(high))) throw new Error(`report does not fit ${width}x${MAX_HEIGHT}`);
   while (high - low > 1) {
     const mid = Math.floor((low + high) / 2);
     if (await fits(mid)) high = mid; else low = mid;
   }
   await fits(high);
-  console.log(`scene pop-up: ${POPUP.width}x${high}`);
   return high;
+}
+
+/** After the pointer and focus settle, grows the viewport until the report
+ *  does not scroll (a late reflow can need a few more pixels). */
+async function settleFitted(page, width, height) {
+  await settle(page);
+  for (let tries = 0; tries < 20; tries += 1) {
+    const scrolls = await page.evaluate(() => {
+      const mount = document.getElementById('rs-mount');
+      return mount.scrollHeight > mount.clientHeight || mount.hasAttribute('data-rs-more');
+    });
+    if (!scrolls) return height;
+    height += 4;
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(200);
+  }
+  return height;
 }
 
 /** The skeleton's avatars must be the desk's own blob. */
@@ -239,15 +291,23 @@ function checkSkeletonBlob(html) {
   }
 }
 
-async function report(runId, theme, name, { before } = {}) {
-  const { ctx, page, errors } = await open(runId, theme);
+async function save(page, name, cssWidth, clip) {
+  const file = path.join(out, name);
+  await page.screenshot({ path: file, ...(clip ? { clip } : {}) });
+  await shrink(file, cssWidth);
+  written.push(file);
+  return file;
+}
+
+/** One README tile: the tile width, as tall as the content (or `clip`). */
+async function tile(runId, name, { before, clip } = {}) {
+  const { ctx, page, errors } = await open(runId, 'dark');
   if (before) await before(page);
-  await settle(page);
+  await settleFitted(page, TILE_WIDTH, await fitHeight(page, TILE_WIDTH));
   await warnIfScrolls(page, name);
-  const file = await shoot(page, name, POPUP.width);
+  await save(page, name, TILE_WIDTH, clip ? await clip(page) : null);
   if (errors.length) console.error(name, errors.join(' | '));
   await ctx.close();
-  return file;
 }
 
 try {
@@ -257,10 +317,10 @@ try {
   await server.clearRuns();
   const invoices = showReport(INVOICES);
   const popupFile = path.join(out, '_popup-invoices-dark.png');
+  let popHeight;
   {
     const { ctx, page, errors } = await open(invoices.run_id, 'dark');
-    await fitHeight(page);
-    await settle(page);
+    popHeight = await settleFitted(page, HERO_POPUP_WIDTH, await fitHeight(page, HERO_POPUP_WIDTH));
     await warnIfScrolls(page, 'invoices');
     await page.screenshot({ path: popupFile });
     if (errors.length) console.error('invoices', errors.join(' | '));
@@ -269,56 +329,64 @@ try {
   {
     const html = readFileSync(SKELETON, 'utf8');
     checkSkeletonBlob(html);
-    const ctx = await browser.newContext({ viewport: SCENE, deviceScaleFactor: SCALE, colorScheme: 'dark' });
+    const scene = { width: SCENE_WIDTH, height: sceneHeight(popHeight) };
+    const ctx = await browser.newContext({ viewport: scene, deviceScaleFactor: SCALE, colorScheme: 'dark' });
     const page = await ctx.newPage();
     // self-contained page: refuse anything that is not the file itself or inline data
     await page.route('**/*', (r) => (/^(file|data):/.test(r.request().url()) ? r.continue() : r.abort()));
     await page.goto(pathToFileURL(SKELETON).href);
-    await page.evaluate(async (src) => {
+    await page.evaluate(async ({ src, height }) => {
+      document.documentElement.style.setProperty('--pop-h', `${height}px`);
       const img = document.getElementById('popup-shot');
       img.src = src;
       await img.decode();
-    }, `data:image/png;base64,${readFileSync(popupFile).toString('base64')}`);
+    }, { src: `data:image/png;base64,${readFileSync(popupFile).toString('base64')}`, height: popHeight });
     await page.evaluate(() => document.fonts.ready);
-    await shoot(page, 'hero-grokbot-dark.png', SCENE.width);
+    await save(page, 'hero-grokbot-dark.png', scene.width);
     await ctx.close();
     rmSync(popupFile, { force: true });
   }
 
   // ------------------------------------------------------ 2. the strip --
   await server.clearRuns();
-  const three = STRIP.map(showStripBot);
-  for (const theme of ['dark', 'light']) {
-    await report(three[0].run_id, theme, `hero-strip-${theme}.png`, {
-      before: async (page) => {
-        // the last one stays new: its dot is filled, the others are rings
-        await markRead(page, three.slice(0, 2).map((r) => r.run_id));
-        await page.reload();
-        await ready(page);
-      },
-    });
-  }
+  const three = STRIP.map(showReport);
+  await tile(three[0].run_id, 'hero-strip-dark.png', {
+    before: async (page) => {
+      // the last one stays new: its dot is filled, the others are rings
+      await markRead(page, three.slice(0, 2).map((r) => r.run_id));
+      await page.reload();
+      await ready(page);
+    },
+  });
 
   // --------------------------------------------------- 3. one pop-up --
   await server.clearRuns();
-  const single = showStripBot(STRIP[0], 0);
-  await report(single.run_id, 'dark', 'hero-popup-dark.png');
+  await tile(showReport(CHAIRS).run_id, 'hero-popup-dark.png');
 
   // ---------------------------------------------- 4. a status report --
   await server.clearRuns();
-  const weekly = showReport(WEEKLY);
-  await report(weekly.run_id, 'dark', 'hero-report-dark.png');
+  await tile(showReport(WEEKLY).run_id, 'hero-report-dark.png');
 
-  // --------------------------------------------------- 5. done state --
+  // ------------------------------------- 5. done: the same decision, sent --
   await server.clearRuns();
-  const last = showStripBot(STRIP[0], 0);
-  await report(last.run_id, 'dark', 'hero-done.png', {
+  await tile(showReport(CHAIRS).run_id, 'hero-done.png', {
     before: async (page) => {
       // approve-one: the footer primary is the decision, one click
       await page.click('#rs-submit');
       await page.waitForSelector('.rs-banner[data-done]');
       await page.waitForFunction(() => !document.querySelector('.rs-toast'), null, { timeout: 5000 });
     },
+    // tight: the header, the title, the decided banner and "Sent to bot"
+    clip: (page) => page.evaluate((width) => {
+      const bottoms = [...document.querySelectorAll('.rs-banner[data-done], .rs-banner[data-done] *')]
+        .map((el) => el.getBoundingClientRect().bottom);
+      // the template's first line follows closely: stop short of it
+      const banner = document.querySelector('.rs-banner[data-done]');
+      let next = banner.nextElementSibling;
+      while (next && !next.getBoundingClientRect().height) next = next.nextElementSibling;
+      const limit = next ? next.getBoundingClientRect().top - 8 : Infinity;
+      return { x: 0, y: 0, width, height: Math.ceil(Math.min(Math.max(...bottoms) + 16, limit)) };
+    }, TILE_WIDTH),
   });
 } finally {
   try { if (browser) await browser.close(); } finally { await server.stop(); }
