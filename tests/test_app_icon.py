@@ -180,7 +180,8 @@ def test_version_has_one_source_and_pyproject_matches():
     assert VERSION == 1
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["version"] == __version__
-    assert f"## {__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert re.search(rf"^## \[?{re.escape(__version__)}\]?", changelog, re.M)
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert f"version-{__version__.replace('-', '--')}-blue" in readme
     assert f"**Status:** {__version__}." in readme
