@@ -322,7 +322,7 @@ Do not loop on 3 or 4.
 
 Update only when the person or a maintainer asks. Never pull on your own. You would run code nobody reviewed.
 
-Releases are tags on `main` (`v1.0.0-beta.4`). `main` moves only on a release. `develop` is the branch for testing builds. `update` fast-forwards the clone on its current branch (`git pull --ff-only`). It prints `updated`, `from`, `to`, `branch`, and `next`.
+Releases are tags on `main` (`v1.0.0-beta.5`). `main` moves only on a release. `develop` is the branch for testing builds. `update` fast-forwards the clone on its current branch (`git pull --ff-only`). It prints `updated`, `from`, `to`, `branch`, and `next`.
 
 - Check `branch` in that output. Do not claim "latest release" unless `branch` is `main`.
 - `develop` is right only when the person asked for testing builds.

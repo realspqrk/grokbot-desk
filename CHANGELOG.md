@@ -5,12 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0-beta.5] - 2026-10-14
+
+The Desk Doorbell template now sets up the desk by itself. Add it, and its first chat installs and connects everything.
 
 ### Changed
 
 - Desk Doorbell template texts in `doorbell/`. The profile description, a getting-started skill, desk setup, desk update, and the two routines name grokbot-desk, the clone at https://github.com/realspqrk/grokbot-desk, and the setup flow. After the clone exists, `doorbell/` in that clone is the source of truth. The doorbell matches a Bot by exact name, or by one slug of that name against `bot_name` and `bot`. The README quick start leads with the [Desk Doorbell template](https://x.ai/bot/Q_-PLlmHrV1l2h3Tk1ejJ). The clone steps are under Manual install.
 - Desk Doorbell setup remembers the Windows call that reports Python 3.11 or newer (`python`, otherwise `py -3`) and uses it afterwards. If winget installs Python or git and the command still cannot be found, setup asks for one restart of Grok Bot and does not install again. On macOS, after `brew install python@3.12`, setup checks `python3.12` (including the Homebrew paths) and then `./report-shell --help`. A clone whose help has no `update` is fast-forwarded in place with `git pull --ff-only` only when the worktree is clean and the branch is not detached. A Bot slug keeps only ASCII a-z and 0-9 (`Büro Bot 🤖` becomes `b-ro-bot`), with no transliteration. The desk id must match `^[a-z0-9-]{1,40}$` and be unique. The weekly check refreshes this bot's description, skills, and routine text from the clone. It does not re-import the template.
+- The webhook routine is named `desk-doorbell-webhook`. Each routine's text names its trigger, and setup checks the trigger before it turns the routine on.
+
+### Fixed
+
+- The published Desk Doorbell template in 1.0.0-beta.4 had no description and no desk skills, so a new install did not know grokbot-desk. The template now carries the texts from `doorbell/`.
 
 ## [1.0.0-beta.4] - 2026-10-14
 
@@ -149,6 +156,7 @@ First public beta of grokbot-desk.
 - `python report_shell.py --version` prints the version (`grokbot-desk 1.0.0-beta.1`).
 - Windows is supported. macOS is in beta.
 
+[1.0.0-beta.5]: https://github.com/realspqrk/grokbot-desk/compare/v1.0.0-beta.4...v1.0.0-beta.5
 [1.0.0-beta.4]: https://github.com/realspqrk/grokbot-desk/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/realspqrk/grokbot-desk/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/realspqrk/grokbot-desk/compare/v1.0.0-beta.1...v1.0.0-beta.2

@@ -13,14 +13,14 @@ Optimized for Grok Bot. Works with any agent that can run a command.</p>
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Platforms: Windows | macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-blue.svg)](#platforms-and-limits)
-[![Version: 1.0.0-beta.4](https://img.shields.io/badge/version-1.0.0--beta.4-blue.svg)](CHANGELOG.md)
+[![Version: 1.0.0-beta.5](https://img.shields.io/badge/version-1.0.0--beta.5-blue.svg)](CHANGELOG.md)
 
 </div>
 
 > [!WARNING]
 > ⚠️ This is not an official Grok Bot plugin. SpaceXAI, please don't sue me. But please steal it. Add it to Grok Bot natively 🙏
 
-**Status:** 1.0.0-beta.4. Windows and macOS.
+**Status:** 1.0.0-beta.5. Windows and macOS.
 
 <p>
   <a href="#what-it-is">What it is</a> &middot;
