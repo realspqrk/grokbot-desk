@@ -206,6 +206,8 @@ describe('built-ins review-doc and pick-option (served, headless Edge)', { skip 
       await page.fill('#rd-comment', 'Second thoughts');
       await summary.click();
       assert.equal(await summary.evaluate((el) => el.parentElement.open), false);
+      // the toggle event (it hides the field and saves the draft) fires a task later
+      await page.waitForFunction(() => document.querySelector('#rs-mount summary').nextElementSibling.hidden);
       await reload(page);
       assert.equal(await summary.evaluate((el) => el.parentElement.open), false, 'a closed note stays closed');
       await page.click('#rs-submit');
