@@ -258,7 +258,11 @@ def check_template_details(
         for warning in registry.warnings
         if warning.split(":", 1)[0] in selected_ids
     ]
-    return {"findings": findings, "warnings": warnings}
+    return {
+        "findings": findings,
+        "warnings": warnings,
+        "templates": [template.id for template in selected],
+    }
 
 
 def check_template(

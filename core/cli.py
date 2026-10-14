@@ -811,7 +811,10 @@ def command_check(args):
         return error("; ".join(details["findings"]), 7)
     output({
         "ok": True,
-        "template": selected,
+        **(
+            {"templates": details["templates"]} if args.all
+            else {"template": selected}
+        ),
         "visual": args.visual,
         "warnings": details["warnings"],
     })

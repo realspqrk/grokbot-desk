@@ -20,7 +20,6 @@ import { isSameOriginPath } from '../tools/dev/browser-safety.mjs';
 import {
   browserChannel,
   loadChromium,
-  pythonCommand,
   resolvePythonExecutable,
   ROOT,
   serverStderrTail,
@@ -106,10 +105,23 @@ function stopServerSandbox(overrides = {}) {
   return { stopServer: value.stopServer, removed };
 }
 
-test('the test server finds Python on every platform without RS_PYTHON', () => {
-  assert.deepEqual(pythonCommand({}, 'win32'), { command: 'py', args: ['-3'] });
-  assert.deepEqual(pythonCommand({}, 'darwin'), { command: 'python3', args: [] });
-  assert.deepEqual(pythonCommand({ RS_PYTHON: '/opt/python3.12' }, 'darwin'), { command: '/opt/python3.12', args: [] });
+test('the test server finds Python 3.11+ on every platform without RS_PYTHON', () => {
+  // macOS: /usr/bin/python3 is 3.9, Homebrew adds only python3.11
+  const installed = { python3: '3.9', '/opt/homebrew/bin/python3.11': '3.11' };
+  const mac = (command) => {
+    const version = installed[command];
+    if (!version) return { status: null, error: new Error('ENOENT') };
+    if (version === '3.9') return { status: 1, stdout: '', stderr: 'Python 3.9.6' };
+    return { status: 0, stdout: `${command}\n`, stderr: '' };
+  };
+  assert.equal(resolvePythonExecutable({}, mac, 'darwin'), '/opt/homebrew/bin/python3.11');
+  delete installed['/opt/homebrew/bin/python3.11'];
+  assert.throws(() => resolvePythonExecutable({}, mac, 'darwin'), /3\.11 or later.*Python 3\.9/);
+  const calls = [];
+  resolvePythonExecutable({}, (command, args) => { calls.push([command, args[0]]); return { status: 0, stdout: 'C:\\py.exe' }; }, 'win32');
+  assert.deepEqual(calls, [['py', '-3']]);
+  resolvePythonExecutable({ RS_PYTHON: '/x/python' }, (command) => { calls.push(command); return { status: 0, stdout: '/x/python' }; }, 'darwin');
+  assert.equal(calls.at(-1), '/x/python');
 });
 
 test('resolved interpreter spawn retains python itself instead of the py launcher', () => {
@@ -139,10 +151,8 @@ test('resolved interpreter spawn retains python itself instead of the py launche
 
   assert.equal(resolveCalls.length, 1);
   assert.equal(resolveCalls[0].command, 'py');
-  assert.deepEqual(resolveCalls[0].args, [
-    '-c',
-    'import sys; print(sys.executable)',
-  ]);
+  assert.equal(resolveCalls[0].args[0], '-c');
+  assert.match(resolveCalls[0].args[1], /print\(sys\.executable\)/);
   assert.equal(executable, 'C:\\Python311\\python.exe');
   assert.equal(result, child);
   assert.equal(spawnCalls.length, 1);

@@ -853,13 +853,16 @@ def test_contained_child_handle_is_closed_when_identity_query_fails(tmp_path, mo
 
     fail_child.calls = 0
     monkeypatch.setattr(platform_windows, "_handle_identity", fail_child)
+    # The count is process-wide, so threads of other tests move it a little
+    # either way; a leak adds one handle per call.
+    calls = 200
     before = _process_handle_count()
-    for _ in range(20):
+    for _ in range(calls):
         fail_child.calls = 0
         with pytest.raises(OSError, match="injected identity failure"):
             platform_windows.open_contained(root, ("sub", "photo.png"))
         assert fail_child.calls == 2
-    assert _process_handle_count() == before
+    assert _process_handle_count() - before < calls // 2
 
 
 def test_launch_result_state_round_trip_and_default_has_no_identity(tmp_path):

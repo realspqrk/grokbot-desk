@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { browserChannel, pythonCommand, startServer, loadChromium, ROOT } from './dev/rs-server.mjs';
+import { browserChannel, PYTHON, startServer, loadChromium, ROOT } from './dev/rs-server.mjs';
 import { isSameOriginPath } from './dev/browser-safety.mjs';
 import { resolvedTemplates } from './template-registry.mjs';
 import {
@@ -720,10 +720,9 @@ async function timedFinalStep(page, step) {
 }
 
 function validateObservedResult(testCase, result) {
-  const { command: executable, args: arguments_ } = pythonCommand();
   const validated = spawnSync(
-    executable,
-    [...arguments_, path.join(ROOT, 'tools', 'validate_result.py')],
+    PYTHON,
+    [path.join(ROOT, 'tools', 'validate_result.py')],
     {
       cwd: ROOT,
       encoding: 'utf8',

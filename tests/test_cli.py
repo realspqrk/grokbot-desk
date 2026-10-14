@@ -1434,3 +1434,18 @@ def test_text_output_keeps_umlauts_on_a_utf8_stream(tmp_path):
     text = result.stdout.decode("utf-8")
     assert "\\x" not in text and "\\u" not in text
     assert not text.isascii()  # the built-in titles are German
+
+
+def test_check_all_names_the_templates_it_checked(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RS_DATA_DIR", str(tmp_path / "data"))
+    checked = []
+
+    def details(selected, root, data_dir_path=None, visual=False):
+        checked.append(selected)
+        return {"findings": [], "warnings": [], "templates": ["_starter", "approve-one"]}
+
+    monkeypatch.setattr(cli_module, "check_template_details", details)
+    assert cli_module.main(["check", "--all"]) == 0
+    value = json.loads(capsys.readouterr().out)
+    assert checked == ["--all"]
+    assert "template" not in value and value["templates"] == ["_starter", "approve-one"]

@@ -256,7 +256,7 @@ Replace `RUN_ID` with the value printed by `show`. Choose and send in the window
 | `templates [--json]` | table, or `[{"id","source","extends","title"}, ...]`; uses the shared lookup order | 0, 7 (broken registry) |
 | `list` | compatibility JSON: `[{"id","namespace","version"}, ...]` | 0, 7 (broken registry) |
 | `doctor` | `{"ok","templates","warnings"}` including user/built-in shadow warnings, plus `data_dir_warning` while the older Windows folder is in use | 0, 7 |
-| `check <id> \| --all [--visual]` | `{"ok":true,"template","visual"}` | 0, 7 |
+| `check <id> \| --all [--visual]` | `{"ok":true,"template","visual"}`; `--all` names `"templates"` | 0, 7 |
 | `new <namespace>/<name>` | `{"ok":true,"id","path"}` | 0, 7 |
 | `stop` | `{"ok":true,"stopped":true\|false}` | 0, 4 |
 | `serve` | internal (the server in the foreground) | 4 (port), 7 (registry) |

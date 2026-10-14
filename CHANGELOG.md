@@ -9,7 +9,10 @@
   is on macOS and in a Windows console. Output piped on Windows stays ASCII;
   JSON output is unchanged.
 - **`check` on macOS.** It no longer needs the Windows `py` launcher. The
-  browser tools use the same Python as `check`, or `python3`.
+  browser tools use the same Python as `check`; on their own they look for
+  Python 3.11 or later like `report-shell` does.
+- **`check --all`** names the checked templates (`"templates": [...]`)
+  instead of `"template": "--all"`.
 
 ## 1.0.0-beta.3 (2026-10-13)
 

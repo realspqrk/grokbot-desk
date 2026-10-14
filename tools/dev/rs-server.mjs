@@ -18,32 +18,40 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-// RS_PYTHON wins; otherwise the py launcher on Windows, python3 elsewhere.
-export function pythonCommand(environment = process.env, platform = process.platform) {
-  if (environment.RS_PYTHON) return { command: environment.RS_PYTHON, args: [] };
-  return platform === 'win32' ? { command: 'py', args: ['-3'] } : { command: 'python3', args: [] };
+// RS_PYTHON wins; otherwise the py launcher on Windows. Elsewhere, like the
+// report-shell launcher: macOS's /usr/bin/python3 is 3.9 and Homebrew adds
+// only versioned names, so try those first.
+const POSIX_NAMES = ['python3.14', 'python3.13', 'python3.12', 'python3.11', 'python3'];
+
+export function pythonCandidates(environment = process.env, platform = process.platform) {
+  if (environment.RS_PYTHON) return [{ command: environment.RS_PYTHON, args: [] }];
+  if (platform === 'win32') return [{ command: 'py', args: ['-3'] }];
+  return POSIX_NAMES.flatMap((name) => [name, `/opt/homebrew/bin/${name}`, `/usr/local/bin/${name}`])
+    .map((command) => ({ command, args: [] }));
 }
 
+const PROBE = [
+  'import sys',
+  'if sys.version_info < (3, 11): raise SystemExit("Python " + sys.version.split()[0])',
+  'print(sys.executable)',
+].join('\n');
+
 export function resolvePythonExecutable(environment = process.env, run = spawnSync, platform = process.platform) {
-  const { command, args: commandArgs } = pythonCommand(environment, platform);
-  const result = run(
-    command,
-    [...commandArgs, '-c', 'import sys; print(sys.executable)'],
-    { encoding: 'utf8', windowsHide: true, shell: false },
-  );
-  const executable = result.stdout?.trim();
-  if (result.status !== 0 || !executable) {
-    const detail = result.error?.message || result.stderr?.trim() || `exit ${result.status}`;
-    throw new Error(`could not resolve Python interpreter ${command}: ${detail}`);
+  const tried = [];
+  for (const { command, args } of pythonCandidates(environment, platform)) {
+    const result = run(command, [...args, '-c', PROBE], { encoding: 'utf8', windowsHide: true, shell: false });
+    const executable = result.stdout?.trim();
+    if (result.status === 0 && executable) return executable;
+    tried.push(`${command}: ${result.error?.message || result.stderr?.trim() || `exit ${result.status}`}`);
   }
-  return executable;
+  throw new Error(`no Python 3.11 or later found; set RS_PYTHON (${tried.join('; ')})`);
 }
 
 export function spawnPythonProcess(executable, args, options, spawnProcess = spawn) {
   return spawnProcess(executable, args, { ...options, shell: false });
 }
 
-const PYTHON = resolvePythonExecutable();
+export const PYTHON = resolvePythonExecutable();
 const MEASUREMENT_BOT_ID = JSON.parse(
   readFileSync(path.join(ROOT, 'tools', 'measurement.json'), 'utf8'),
 ).bot_id;
