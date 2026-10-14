@@ -8,7 +8,7 @@ A template stores this text. On install, Grok Bot creates both routines again. T
 
 Name: Desk doorbell
 
-Slug: `desk-doorbell`
+Slug: `desk-doorbell-webhook`
 
 Description: When the desk sends a webhook, send one line to the named bot.
 
