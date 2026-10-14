@@ -1,6 +1,7 @@
 """Pop-up layout: window default, strings and shell structure."""
 import json
 import re
+import time
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -177,8 +178,16 @@ def test_only_the_launched_window_is_told_it_owns_the_app_window(tmp_path, monke
         assert "event: window" not in _initial_events(server.port, f"sid={'2' * 32}&app={'f' * 32}")
         # the ordinary tabs above claimed the pending launch: re-arm it
         cli_module._clear_launch_pending(data_dir, pending_launch_generation(data_dir))
-        cli_module._launch_window_once(data_dir, f"http://127.0.0.1:{server.port}/", {})
-        token = pending_launch_generation(data_dir)
+        # the tabs' stream threads take the launch lock briefly while they
+        # clear their pending launch; a launch that meets it registers nothing
+        deadline = time.monotonic() + 5
+        token = None
+        while token is None and time.monotonic() < deadline:
+            cli_module._launch_window_once(data_dir, f"http://127.0.0.1:{server.port}/", {})
+            token = pending_launch_generation(data_dir)
+            if token is None:
+                time.sleep(.05)
+        assert token, "the launch was never armed"
         owned = _initial_events(server.port, f"sid={sid}&app={token}")
         assert 'event: window\ndata: {"app":true}\n\n' in owned
         assert owned.index("event: window") < owned.index("event: runs")
