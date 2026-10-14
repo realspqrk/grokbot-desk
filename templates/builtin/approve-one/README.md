@@ -1,112 +1,126 @@
-# `approve-one`: one yes/no decision with details
+# Approve one
 
-Built-in template. Use it for **one** decision that needs a recorded yes or no: a production deploy, a purchase, an access request, a contract renewal. Set `allow_changes` when "not like this" is a useful third answer. For several items use `decide-list`.
+One decision: approve, reject, or ask for changes. The actor can be the bot, the person, or nobody (information only). A single yes or no uses this template.
 
-```
-py -3 report_shell.py show approve-one --data payload.json
-py -3 report_shell.py wait <run_id> --timeout 120
-```
+The shell draws the header, the task banner, and the footer. The template fills the page. German is the default UI (`core/i18n/de.json`). `RS_LANG=en` selects the English strings below.
 
 ## What the person sees
 
-- The `summary` first, when given (as the why of the task banner above the title, unless the payload brings its own `task.why` or the summary has a link). With `checks`, one line sums them up before the facts: `3 ok · 1 warning: Bundle size`. Warnings and failures are named there, so nothing that needs a look waits below the fold. Then the key `facts` as label/value pairs and the `copy` values next to copy icons.
-- The footer is the decision, one click each. The primary approves: `Approve & post`, `Approve & send` or `Approve & continue` (from `action`; `approve_label` overrides that phrase). There is no plain `Approve` default. The quiet alternatives are `Reject` and, with `allow_changes`, `Request changes`. Ctrl+Enter presses the primary.
-- `Reject` sends at once and needs no reason.
-- `Request changes` opens the comment field (`What should change?`) and moves the focus there. The primary becomes `Send request`; `Cancel` goes back. While the comment is empty the primary is disabled and the status reads `Please write a comment to request changes`.
-- A user action (`actor: user`): the primary is the mark (`Posted ✓`, `Sent ✓` or `Done ✓`), the alternative `Skip`, plus `Request changes` with `allow_changes`. Information only (`actor: none`): just `Got it`.
-- `Add note` (shown on hover and keyboard focus, below the report) opens an optional note. It travels with whichever button is pressed while it is shown. What is visible is what is sent: a note that is not shown is never part of the result.
-- The report: `points` as a quiet list (heading `points_title`, default `Details`), `checks` with status dots (ok, needs a look, failed; never behind a disclosure) and the `reference` text behind a closed disclosure with its own copy icon.
-- A started change request, its comment and a shown note are kept as a draft and come back after a reload, including the information-only note (its disclosure may stay closed). A sent report shows the sent comment or note, read-only.
+The summary, then up to six facts, up to three copy values, up to eight points, and up to eight checks. A longer reference sits in a closed disclosure with its own copy button. No field is required, so a report can be facts and a task banner alone.
 
-## Payload `data` (`schema.json`)
+Who acts next comes from `actor` (default `bot`):
+
+- `bot`: the primary is Approve & post, Approve & send, or Approve & continue, from `action`. `approve_label` leads the approval banner and replaces that label. Reject is a quiet alternative and sends at once. Request changes, when `allow_changes` is true, opens a comment. The primary becomes Send request. Cancel returns to the decision. The comment is included only while that field is open.
+- `user`: the person does the work and reports back. With no explicit `task.kind`, the primary reads Sent ✓ when `action` is `send`, and Done ✓ otherwise. An explicit `task.kind` of `post_yourself` reads Posted ✓, including when `action` is `send`. Skip is the other choice. Request changes stays available when `allow_changes` is true, with the same Send request and Cancel path.
+- `none`: Got it, plus one optional note. The result is `acknowledged`. A closed note is not sent. The bot does not act.
+
+Without a `summary`, put the question in `task.why`. The facts then carry the request. A fact label may be 32 characters.
+
+`action` is a verb of 1 to 24 characters: `post`, `send`, or another word such as `deploy`. `post` and `send` name the button. Any other verb, including `deploy`, becomes Approve & continue.
+
+## Payload data
 
 ```json
 {
-  "summary": "Release v2.4.0 of the web shop passed staging. Deploy it to production tonight?",
-  "approve_label": "Approve deploy",
+  "summary": "Deploy the billing service at version 2.4.0 after the Friday sale.",
+  "action": "deploy",
   "allow_changes": true,
   "facts": [
-    {"label": "Version", "value": "v2.3.7 → v2.4.0", "mono": true},
-    {"label": "Window", "value": "Today 18:00 to 18:20, low traffic"}
+    {"label": "Version", "value": "2.4.0", "mono": true}
   ],
-  "points_title": "What changes",
-  "points": ["New checkout flow with saved addresses"],
-  "checks": [{"label": "Staging smoke test", "detail": "All 18 user flows OK", "state": "ok"}],
-  "reference": {"title": "Rollback", "label": "Copy rollback command", "text": "deploy rollback --to v2.3.7", "mono": true}
+  "points": ["Runs the migration before the app starts."],
+  "checks": [
+    {"label": "Tests", "state": "ok"},
+    {"label": "Sale window", "state": "warn", "detail": "Friday is still open."}
+  ],
+  "reference": {
+    "title": "Rollback",
+    "label": "Copy command",
+    "text": "deploy rollback --to v2.3.7",
+    "mono": true
+  }
 }
 ```
 
 | Field | Rule |
 |---|---|
-| `summary` | optional, 1–600, not blank, plain text (newlines kept). An http(s) address in the text becomes a link |
-| `actor` | optional `bot` (default), `user` or `none`. `user`: the mark names what the person did. Posted ✓ for a post (`task.kind` `post_yourself`), Sent ✓ when `action` is `send`, Done ✓ only when there is no specific content or action. Results stay `done` / `skipped`. `allow_changes` adds Request changes. `none`: only Got it, sent at once (`acknowledged`), plus one collapsed note. The bot never acts on `user` or `none`. A payload `task.kind` sets the actor when left out (`post_yourself` = `user`, `fyi` = `none`) |
-| `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. For a bot decision, `post` labels the primary Approve & post, `send` labels it Approve & send, any other verb labels it Approve & continue. For a user decision, `send` labels the choice Sent ✓ |
-| `approve_label` | optional, 1–24; the label of the approving primary for the bot, instead of the action phrase (Approve & continue, or Approve & post / send). There is no plain Approve default |
-| `allow_changes` | optional boolean, default `false`; offers `Request changes` as a second quiet alternative |
-| `facts[]` | optional, at most 6 of `{label 1–32, value 1–120, mono?}` |
-| `copy[]` | optional, at most 3 of `{label 1–24, text 1–2000}`; each value is shown in full next to its button |
-| `points_title` | optional, 1–40 |
-| `points[]` | optional, at most 8 strings of 1–160 |
-| `checks[]` | optional, at most 8 of `{label 1–80, detail? 1–120, state ok\|warn\|fail}`; summed up in one line before the facts |
-| `reference` | optional `{title 1–40, label 1–24, text 1–2000, mono?}`; behind a closed disclosure |
+| `summary` | Optional. 1 to 600 characters. Plain text. http(s) addresses become links. |
+| `actor` | `bot` (default), `user`, or `none`. |
+| `action` | Optional. `^[a-z][a-z0-9-]{0,23}$`. |
+| `approve_label` | Optional. 1 to 24 characters. Wins over `action` for a bot primary. |
+| `allow_changes` | Optional. Default false. Ignored when `actor` is `none`. |
+| `facts` | Optional. At most 6. Each has `label` (1 to 32), `value` (1 to 120), and optional `mono`. |
+| `copy` | Optional. At most 3. Each has `label` (1 to 24) and `text` (1 to 2000). |
+| `points_title` | Optional. 1 to 40. Default heading is Details. |
+| `points` | Optional. At most 8 strings, each 1 to 160. |
+| `checks` | Optional. At most 8. `label` (1 to 80), `state` `ok`, `warn`, or `fail`, optional `detail` (1 to 120). |
+| `reference` | Optional. `title` (1 to 40), `label` (1 to 24), `text` (1 to 2000), optional `mono`. |
 
-Empty sections are not rendered. Payload text keeps its language: the window does not translate it, so write it in the person's language (see `fixtures/edge-de.json`).
+## Result data
 
-## Result `data` (`result.schema.json`, oneOf)
+The payload above is a bot decision with `allow_changes` set, so the person can approve it or ask for changes. `approve`, `reject`, `done`, `skipped`, and `acknowledged` take a `comment` of at most 2000 characters, and the comment may be empty. `request_changes` needs a comment that contains a non-space character. The page offers `request_changes` only when `allow_changes` is true, and never for `actor` `none`. `done` and `skipped` are the user actor. `acknowledged` is `actor` `none`.
 
-```json
-{ "decision": "approve", "comment": "" }
-```
+Asking for changes on the payload above:
 
 ```json
-{ "decision": "request_changes", "comment": "Please deploy after the Friday sale ends." }
+{
+  "decision": "request_changes",
+  "comment": "Please deploy after the Friday sale ends."
+}
 ```
 
-- `approve` or `reject` (actor `bot`): `comment` 0–2000 (the optional note; `""` when no note was shown). Reject needs no reason.
-- `done` or `skipped` (actor `user`), and `acknowledged` (actor `none`): `comment` 0–2000.
-- `request_changes` (bot or user, only with `allow_changes`; not offered for information only): `comment` 1–2000 with at least one non-whitespace character. Information only may include the optional note as `comment`, sent only while the note is open.
-- A discarded or expired report gives `cancelled` / `expired` and no `data`: do nothing.
+Approving it:
 
-## Strings used (`core/i18n/en.json`, `de.json`)
+```json
+{
+  "decision": "approve",
+  "comment": ""
+}
+```
 
-| Key | English | German |
-|---|---|---|
-| `approve_post`, `approve_send`, `approve_continue` | Approve & post, Approve & send, Approve & continue | Freigeben & posten, Freigeben & senden, Freigeben & weiter |
-| `choice_reject`, `request_changes` | Reject, Request changes | Ablehnen, Änderungen anfordern |
-| `posted`, `sent_mark`, `done_mark`, `skip`, `got_it` | Posted ✓, Sent ✓, Done ✓, Skip, Got it | Gepostet ✓, Gesendet ✓, Erledigt ✓, Überspringen, Verstanden |
-| `request_send`, `cancel` | Send request, Cancel | Anfrage senden, Abbrechen |
-| `add_note`, `add_a_note`, `note` | Add note, Add a note, Note | Notiz hinzufügen, Notiz hinzufügen, Notiz |
-| `request_changes_label`, `comment_required` | What should change?; Please write a comment to request changes | Was soll sich ändern?; Für Änderungen bitte einen Kommentar schreiben |
-| `ao_checks_ok`, `ao_checks_warn_one`, `ao_checks_warn`, `ao_checks_fail_one`, `ao_checks_fail` | {n} ok; 1 warning: {names}; {n} warnings: {names}; 1 failed: {names}; {n} failed: {names} | {n} ok; 1 Warnung: {names}; {n} Warnungen: {names}; 1 fehlgeschlagen: {names}; {n} fehlgeschlagen: {names} |
-| `section_details`, `section_checks` | Details, Checks | Details, Prüfungen |
-| `check_ok`, `check_warn`, `check_fail` | passed, needs a look, failed (spoken names of the dots) | bestanden, bitte ansehen, fehlgeschlagen |
+## Keyboard path
 
-Copy labels, fact labels, `points_title`, `reference.title` and `approve_label` come from the payload.
-
-## Test hooks
-
-- Copies: `data-copy-id="copy-<n>"` (1-based) and `data-copy-id="reference"` (inside the disclosure).
-- The checks line `[data-ao="checksum"]`; the note/comment `#ao-comment` behind `[data-ao="note-open"]`.
-- The footer alternatives in order: `#rs-alt` (Reject or Skip), `#rs-alt-2` (Request changes, with `allow_changes`); in a change request `#rs-alt` is Cancel.
-
-## Keyboard path (golden, one open report)
-
-Tab ×5 passes the `…` menu, the `Rollback` disclosure, `Add note` and `Reject`, and reaches `Request changes`. Space opens the comment field and moves the focus into it; type the comment; Ctrl+Enter sends the request. For an approval: Ctrl+Enter alone.
+Tab moves through the facts, the checks, and the reference, then to the footer. Request changes opens a comment, and that comment is required. The primary becomes Send request. Cancel returns to the decision. Approve is the primary. Reject is a quiet alternative. Ctrl+Enter or Cmd+Enter sends. The exact golden key sequence is in `fixtures/expect/golden.json`.
 
 ## Files
 
-| File | Notes |
+`template.json`, `template.html`, `template.css`, `template.js`, `schema.json`, `result.schema.json`, `fixtures/golden.json`, `fixtures/edge-*.json`, `fixtures/invalid-*.json`, `fixtures/expect/golden.json`, and this README. The task banner and the result envelope are in [docs/GUIDE.md](../../../docs/GUIDE.md).
+
+## For maintainers
+
+### Strings used
+
+| Key | English |
 |---|---|
-| `template.json` | manifest (namespace `global`) |
-| `template.html`, `template.css`, `template.js` | calm kit only: tokens, `rs-action-row`, `rs-copy` |
-| `schema.json`, `result.schema.json` | payload and result (oneOf) |
-| `fixtures/golden.json` | a production deploy with changes allowed: facts, points, checks, rollback reference |
-| `fixtures/edge-access.json` | an access request (yes/no only): copies, points, checks with a warning |
-| `fixtures/edge-de.json` | the golden deploy written in German (`Deployment freigeben`) |
-| `fixtures/edge-minimal.json` | the summary only |
-| `fixtures/edge-max.json` | every field at its maximum |
-| `fixtures/edge-no-summary.json` | no `summary`: the label and one fact carry the request |
-| `fixtures/invalid-blank-summary.json` | rejected at `/summary` (blank) |
-| `fixtures/invalid-check-state.json` | rejected at `/checks/1/state` |
-| `fixtures/expect/golden.json` | copy, `flow`, `keyboard`, `result` |
-| `fixtures/expect/edge-access.json`, `edge-de.json`, `edge-max.json` | every copy string |
+| `choice_reject` | Reject |
+| `request_changes` | Request changes |
+| `skip` | Skip |
+| `got_it` | Got it |
+| `approve_post` | Approve & post |
+| `approve_send` | Approve & send |
+| `approve_continue` | Approve & continue |
+| `posted` | Posted ✓ |
+| `done_mark` | Done ✓ |
+| `sent_mark` | Sent ✓ |
+| `add_note` | Add note |
+| `add_a_note` | Add a note |
+| `note` | Note |
+| `request_changes_label` | What should change? |
+| `comment_required` | Please write a comment to request changes |
+| `request_send` | Send request |
+| `cancel` | Cancel |
+| `section_details` | Details |
+| `section_checks` | Checks |
+| `check_ok` | passed |
+| `check_warn` | needs a look |
+| `check_fail` | failed |
+| `ao_checks_ok` | {n} ok |
+| `ao_checks_warn_one` | 1 warning: {names} |
+| `ao_checks_warn` | {n} warnings: {names} |
+| `ao_checks_fail_one` | 1 failed: {names} |
+| `ao_checks_fail` | {n} failed: {names} |
+| `copy` | Copy |
+
+### Test hooks
+
+Copy values from `copy` use `data-copy-id="copy-1"`, `copy-2`, `copy-3`, in payload order starting at 1. The reference copy is `data-copy-id="reference"`. The golden expect records `reference` as `deploy rollback --to v2.3.7`.

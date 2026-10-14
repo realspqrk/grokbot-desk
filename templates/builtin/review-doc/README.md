@@ -1,91 +1,145 @@
-# `review-doc`: review a document
+# Review doc
 
-Built-in template for one document the person should read and then approve, or send back with comments: a draft, an announcement, a report, a reply. The agent's short lead sits on top, then quiet reading facts (`640 words · 3 min read · 5 sections`), then the document itself in a 72ch reading column.
+A document to read and answer. The bot can send it on, the person can do it, or it can be information only. A status, a weekly summary, or a research outcome uses this template with `task.kind` `fyi`, even when the document is short.
 
-- **Looks good** (*Passt*) is the primary for a plain review, or Approve & post / send / continue when `action` is set (Ctrl+Enter).
-- **Request changes** (*Änderungen anfordern*) is the footer's quiet alternative. It opens one overall comment (*What should change?*, with *Cancel*), and the primary becomes *Send request*. With section comments the request can go as it is: the empty overall comment stays behind a quiet *Add a note*.
-- **Comment on a section:** every section heading carries a *Comment* action that shows on hover or keyboard focus. It opens a comment field under that heading. An empty field closes again when it loses focus (or with Esc). Section comments go with either decision; the status line says how many go with an approval. Without section comments the status line stays empty: the banner and the buttons already say what is open.
-- The overflow menu (`…`) has *Copy Markdown* (or *Copy text*) for the whole source.
+The shell draws the header, the task banner, and the footer. The template fills the page. German is the default UI (`core/i18n/de.json`). `RS_LANG=en` selects the English strings below.
 
-Pick this template when the person has to **read** something. For one yes/no decision with a few facts, use `approve-one`; for several items, `decide-list`.
+## What the person sees
 
-## Payload `data` (`schema.json`)
+An optional summary, up to four copy values, then the document. Markdown is the default. Plain `text` keeps line breaks. Only a bold paragraph in the document's lead moves ahead of the copy texts. A bold word later in the document stays where it is. The person can comment on a section and write an overall comment. A long document scrolls inside the report. The header and the footer stay.
+
+Who acts next comes from `actor` (default `bot`):
+
+- `bot`: Looks good, or Approve & post / Approve & send / Approve & continue when `action` is set. Request changes is the other decision. Results are `approve` or `request_changes`.
+- `user`: the person does it and reports back. With no explicit `task.kind`, the primary reads Sent ✓ when `action` is `send`, and Done ✓ otherwise. An explicit `task.kind` of `post_yourself` reads Posted ✓, including when `action` is `send`. Results stay `done` or `skipped`.
+- `none`: Got it, plus one optional note. No section comments. The result is `acknowledged`.
+
+`action` `post` and `send` name the bot primary. Any other verb becomes Approve & continue. Without `action` the primary is Looks good.
+
+Write a document that can be scanned: a one-line summary first, then a table, bold verdicts, check states, at most one callout, and the long detail last. `fixtures/edge-report.json` is the model.
+
+## Payload data
 
 ```json
 {
-  "summary": "Draft of the spring opening announcement for members. I added the plot fees and moved the sign-up deadline to 20 March. Approve it, or tell me what to change before it goes out on Friday.",
-  "format": "markdown",
-  "doc": "# Spring opening at Larkspur Community Garden\n\nThe gates open again on **Saturday, 4 April**. …\n\n## Plot fees\n\n| Plot | Size | Season fee |\n|---|---:|---:|\n| Small | 10 m² | €35 |\n…"
+  "summary": "Please review the garden note before Friday.",
+  "doc": "## Plot fees\n\nFees are listed per year.\n"
 }
 ```
 
 | Field | Rule |
 |---|---|
-| `summary` | optional, 1–600 characters, plain text: what the document is and what to look at. Shown as the why of the task banner (first three sentences, the rest folded) unless the payload brings its own `task.why`; then it leads the report. An http(s) address keeps it in the report, where it becomes a link |
-| `actor` | optional `bot` (default), `user` or `none`. `bot`: Looks good / Request changes, or Approve & post / send / continue when `action` is set. `user`: the mark names what the person did. Posted ✓ for a post (`task.kind` `post_yourself`), Sent ✓ when `action` is `send`, Done ✓ only when there is no specific content or action. Results stay `done` / `skipped`. `none`: only Got it (`acknowledged`), plus one collapsed note and no section comments. The bot never acts on `user` or `none`. A payload `task.kind` sets it when left out (`post_yourself` = `user`, `fyi` = `none`) |
-| `action` | optional verb, `^[a-z][a-z0-9-]{0,23}$`. `post` and `send` name the bot primary; any other verb reads Approve & continue |
-| `copy` | optional, at most 4 of `{label 1–24, text 1–5000}`, shown near the top as fix texts to copy. The first paragraph with bold text in the lead (before the first heading under the title) moves above them as the verdict; bold text further down stays where it is |
-| `format` | optional, `markdown` (default) or `text` |
-| `doc` | required, 1–60 000 characters |
-| `images` | optional, at most 8 `{ "key", "path", "alt" }`; `key` matches `^[a-z0-9][a-z0-9_-]{0,31}$` and is unique (`x-rs-unique-key`), `path` is a media path (`x-rs-media`: absolute, under a media root, png/jpg/jpeg/webp/gif, at most 20 MB), `alt` 1–200 characters |
+| `doc` | Required. 1 to 60000 characters. Raw HTML is shown as text. |
+| `summary` | Optional. 1 to 600. http(s) addresses become links. |
+| `actor` | `bot` (default), `user`, or `none`. |
+| `action` | Optional. `^[a-z][a-z0-9-]{0,23}$`. |
+| `copy` | Optional. At most 4. Each has `label` (1 to 24) and `text` (1 to 5000). |
+| `format` | `markdown` (default) or `text`. |
+| `images` | Optional. At most 8, unique `key`. Markdown shows them with `![alt](key)`. Any other image target, including a web address, is a quiet placeholder. |
 
-### The Markdown subset
+Each image has `key` (`^[a-z0-9][a-z0-9_-]{0,31}$`), `path` (an image under a media root, `x-rs-media`), and `alt` (1 to 200). `alt` is used when the Markdown gives none. A `%RS_TEMPLATE%` image path is read from this template's folder and does not have to sit under a media root.
 
-Rendered: ATX headings (`#` to `######`) and setext headings, paragraphs (a single line break is a space; two trailing spaces or `\` make a hard break), `**strong**`, `*em*` / `_em_`, `~~strike~~`, `` `code` ``, fenced code blocks (no highlighting), bullet and numbered lists (nested by indentation), `>` quotes, callouts, `---` rules and pipe tables (with `:--`, `:-:`, `--:` alignment).
+Markdown covers headings, paragraphs, emphasis, inline code, code blocks, lists, quotes, tables, rules, links as text, and images by media key. A callout is a quote whose first line is one of `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`. http(s) links open in the system browser. Other link targets stay text.
 
-**Callouts.** A quote whose first line is only `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` (any case) is a quiet tinted note with a title (*Hinweis*, *Tipp*, *Wichtig*, *Warnung*, *Vorsicht*). Its body may hold paragraphs, lists, a table or a code block. It has no copy control. A marker with more text on its line stays an ordinary quote.
+## Result data
 
-Safe by construction:
+`approve` requires an empty overall `comment`. Section comments are allowed. `request_changes` needs a non-blank overall comment, or a blank comment plus at least one section comment. `done`, `skipped`, and `acknowledged` allow an optional comment. Section comments are `{section, heading, comment}` in document order. `section` is the 1-based index among the document's sections (1 to 200). `heading` is at most 200 characters. `comment` is 1 to 2000 and must contain a non-space character.
 
-- **No raw HTML.** Tags such as `<b>` or `<script>` are shown as text; the page builds every node itself and uses `textContent` only.
-- **http(s) links open in the system browser.** `[label](https://…)` is a real link; activating it calls `RS.openUrl`. The address is also shown as quiet text when it differs from the label. Other targets stay text. Nothing is fetched. A right-click does not open the address inside the app profile.
-- **Copy.** Each fenced code block and each plain blockquote has a copy control; a callout has none, also not for a code block or quote inside it. Write the report short and scannable: a one-line TL;DR, a table, bold verdicts, check states (`- [x]` / `- [ ]`), at most one callout, details last (see `edge-report.json`).
-- **No external images.** `![alt](key)` shows an image only when `key` names an entry in `images`; the page loads it through the media route (`RS.media`). Any other target, including a web address, becomes a quiet *Image not shown: alt*.
-- **Bounded nesting.** Links and emphasis nested more than 16 levels deep stay literal text (the Markdown source as written), so every accepted document renders and can be approved.
+Approving the short document above, which has one section and no comments:
 
-With `"format": "text"` the document is shown as plain text: blank lines separate paragraphs and every line break is kept (letters, replies).
+```json
+{
+  "decision": "approve",
+  "comment": "",
+  "comments": []
+}
+```
 
-### Sections
+Asking for a change to that same document, with no section comment:
 
-When the document has at least two headings of level 1–2, each of those headings starts a section (otherwise level 1–3; otherwise there are no sections and only the overall comment exists). Text before the first section heading belongs to no section. At most 200 sections take comments; later headings are rendered without the action.
+```json
+{
+  "decision": "request_changes",
+  "comment": "Please name the fee year.",
+  "comments": []
+}
+```
 
-## Result `data` (`result.schema.json`)
+## Keyboard path
+
+Tab moves through the document. Comment on a section opens a note for that section. An empty section note closes on blur or Esc and is left out. A blank section comment is rejected. Request changes opens the overall comment only when no section comment already gives a reason. Otherwise the overall note stays collapsed, and focus stays on the request. Looks good sends an approval, and the overall comment stays empty. Ctrl+Enter or Cmd+Enter sends. The exact golden key sequence is in `fixtures/expect/golden.json`.
+
+## Files
+
+`template.json`, `template.html`, `template.css`, `template.js`, `schema.json`, `result.schema.json`, `fixtures/golden.json`, `fixtures/edge-*.json`, `fixtures/invalid-*.json`, `fixtures/expect/golden.json`, and this README. Media roots and the result envelope are in [docs/GUIDE.md](../../../docs/GUIDE.md).
+
+## For maintainers
+
+### Strings used
+
+| Key | English |
+|---|---|
+| `rd_doc_label` | Document |
+| `rd_words` | {n} words |
+| `rd_words_one` | 1 word |
+| `rd_minutes` | {n} min read |
+| `rd_sections` | {n} sections |
+| `rd_sections_one` | 1 section |
+| `rd_comment` | Comment |
+| `rd_comment_for` | Comment on “{what}” |
+| `rd_comment_label` | Comment on “{what}” |
+| `rd_with_comments` | {n} comments go with your approval |
+| `rd_with_comments_one` | 1 comment goes with your approval |
+| `rd_copy_markdown` | Copy Markdown |
+| `rd_image_missing` | Image not shown: {alt} |
+| `rd_callout_note` | Note |
+| `rd_callout_tip` | Tip |
+| `rd_callout_important` | Important |
+| `rd_callout_warning` | Warning |
+| `rd_callout_caution` | Caution |
+| `sep_list` | ` · ` |
+| `copy_text` | Copy text |
+| `copied` | Copied ✓ |
+| `copy_failed` | Copy failed |
+| `clipboard_busy` | Clipboard busy, please click again |
+| `approve` | Approve |
+| `request_changes` | Request changes |
+| `request_changes_ask` | Request changes |
+| `looks_good` | Looks good |
+| `done_check` | Done ✓ |
+| `skip` | Skip |
+| `got_it` | Got it |
+| `add_a_note` | Add a note |
+| `note` | Note |
+| `approve_post` | Approve & post |
+| `approve_send` | Approve & send |
+| `approve_continue` | Approve & continue |
+| `task_done` | Done |
+| `task_open` | Open |
+| `copy` | Copy |
+| `request_changes_label` | What should change? |
+| `send_request` | Send request |
+| `cancel` | Cancel |
+| `comment_required` | Please write a comment to request changes |
+
+### Test hooks
+
+Payload `copy` entries use `data-copy-id="copy-1"` and so on, 1-based. A code block copies as `code-<n>`. A quote copies as `quote-<n>`. The golden expect records no copies (`copies` is `{}`).
+
+### Golden result
+
+The golden fixture's document has more than one section. Its result asks for changes on section 4:
 
 ```json
 {
   "decision": "request_changes",
   "comment": "Looks good. Please fix the fee note, then send it on Friday.",
   "comments": [
-    { "section": 4, "heading": "Plot fees", "comment": "Say that the fees are per season, not per year." }
+    {
+      "section": 4,
+      "heading": "Plot fees",
+      "comment": "Say that the fees are per season, not per year."
+    }
   ]
 }
 ```
-
-| Field | Rule |
-|---|---|
-| `decision` | `approve` or `request_changes` for `bot`; `done` or `skipped` for `user`; only `acknowledged` for `none` (information only never sends `request_changes`) |
-| `comment` | overall comment, at most 4000 characters; `""` for `approve`, `done` and `skipped`; for `acknowledged` the optional note, sent only while the note is open |
-| `comments` | section comments in document order, at most 200: `section` (1-based position among the sections), `heading` (plain text, at most 200 characters), `comment` (1–2000 characters). Empty sections are left out. |
-
-`approve` may carry section comments ("approve, and fix these small things"). `request_changes` needs the overall comment or at least one section comment.
-
-## Strings
-
-English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `rd_doc_label` (Document / Dokument), `rd_words` ({n} words / {n} Wörter), `rd_words_one` (1 word / 1 Wort), `rd_minutes` ({n} min read / {n} Min. Lesezeit), `rd_sections`, `rd_sections_one`, `rd_comment` (Comment / Kommentieren), `rd_comment_for` (accessible name of the action), `rd_comment_label` (Comment on “{what}” / Kommentar zu „{what}“), `rd_with_comments`, `rd_with_comments_one`, `rd_copy_markdown`, `rd_image_missing`, `rd_callout_note`, `rd_callout_tip`, `rd_callout_important`, `rd_callout_warning`, `rd_callout_caution` (Note, Tip, Important, Warning, Caution / Hinweis, Tipp, Wichtig, Warnung, Vorsicht); shared: `looks_good`, `request_changes` (Request changes / Änderungen anfordern), `request_changes_label`, `add_a_note`, `send_request`, `cancel`, `comment_required`, `copy_text`, `copied`, `copy_failed`, `clipboard_busy`, `sep_list`.
-
-## Fixtures
-
-| File | What it covers |
-|---|---|
-| `golden.json` | announcement draft, 5 sections, list, table, link |
-| `edge-max.json` | long season report: 8 sections, nested and numbered lists, two tables, a quote, a code block, a rule, strike-through, a media image (`fixtures/media/harvest-chart.png`, via `%RS_TEMPLATE%`) |
-| `edge-plain.json` | `format: text`: a reply letter, no sections, line breaks kept |
-| `edge-de.json` | the golden announcement in German, with a table, a link and one note callout, for German reviews |
-| `edge-report.json` | the model report: information only (`actor: none`), one-line TL;DR, a facts table, `- [x]` checks, one `[!WARNING]` callout, details last (under 400 words) |
-| `edge-html.json` | pasted HTML (`<p>`, `<b>`, `<script>`, `<a>`), a web image and links: all shown inert as text |
-| `invalid-empty-doc.json`, `invalid-format.json`, `invalid-image-key.json` | rejected at `/doc`, `/format`, `/images/0/key` |
-| `expect/golden.json` | `flow` (mouse) and `keyboard` (keys only) both produce the same `result` |
-
-## Keyboard path (golden, one report open)
-
-Tab ×5 reaches *Comment* on section 4 (after the `…` menu and the actions of sections 1–3). Space opens the comment and focuses it; type. Tab ×3 passes section 5 and reaches *Request changes*; Space opens the request. Tab reaches *Add a note*; Space opens the overall comment and focuses it; type. Ctrl+Enter sends. Arrow keys are not needed anywhere.

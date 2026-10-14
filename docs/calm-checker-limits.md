@@ -7,7 +7,7 @@ Known limit K10: the checker verifies reachable platform states but cannot prove
 
 Provisional K1 amendment: a disabled primary may use a neutral opaque fill when its label has AA contrast and no element is accent-filled.
 Provisional K2/K9 amendment: an attached, accessibly named copy control no larger than 32 px is exempt, and a roving radiogroup, toolbar, or tablist counts as one control.
-K5 treats an element marked `data-rs-avatar` that is at most 32x32 px and holds nothing but an optional `<img>` as media (like an image), not a container box; larger or content-holding avatars count as boxes again (`tests_js/calm.test.mjs`).
+K5 treats an element marked `data-rs-avatar` that is at most 32×32 px, and whose element children are only `<img>` or an SVG marked `data-rs-shape` (an initials disc has no element children), as media (like an image), not a container box; larger avatars, or avatars that hold any other content, count as boxes again (`tools/calm.mjs`, `tests_js/calm.test.mjs`).
 Identity calibration adds scenes per template golden (custom accent `#0891b2`, whose derived hover fill requires the light-theme fallback; low-contrast accent `#f6c945` with the light-theme fallback; 3 open runs whose other bots carry other accents) and checks the active accent and that no accent is painted in the strip.
 Provisional K10 amendment: a tab's `aria-controls` may reference either its mockup or a tabpanel containing the mockup.
 K10's social-preview audit (one wide mockup, stateful platform tabs, platform switching) runs for the built-in `preview-post` and any user template that `extends` `preview-post` (`isSocialPreview` in `tools/calm.mjs`).

@@ -1,82 +1,86 @@
-# `_starter`: model template
+# Starter template
 
-The template an author copies to start a new template:
+This is the copy `new` writes when no built-in fits. It shows one short message, an optional value to copy, and two choices.
 
-```
-py -3 report_shell.py new <namespace>/<name>
-```
+The shell draws the header, the task banner, and the footer. The template fills the page. German is the default UI (`core/i18n/de.json`). `RS_LANG=en` selects the English strings below.
 
-The copy is written to `<data dir>\templates\<name>\`, never into the installation tree. Prefer an existing built-in; scaffold only when none fits.
+## What the person sees
 
-It shows a short text, one copy value (`rs-copy`, a copy icon), one choice with two options (`rs-action-row`) and a quiet `Notiz hinzufügen` link that opens the note field. The user picks an option, optionally writes a note, and sends the result with `An Bot senden` (or Ctrl+Enter).
+A heading, the message, and a copy control when `copy` is set. Two choices sit in one row: Done and Later. A note stays closed until the person opens it. Nothing is preselected. Ctrl+Enter or Cmd+Enter sends the choice.
 
-## Purpose
+## Payload data
 
-- A working example of the template contract that passes `report-shell check _starter`.
-- The patterns to copy: German text only via `data-rs-t` / `RS.t`, payload text via `textContent`, `RS.setResult(null)` until the input is complete, drafts via `RS.draft`, and `data-copy-id` on every `rs-copy`.
-
-## Payload `data` (`schema.json`)
+`message` is required (1 to 600 characters, plain text, newlines allowed). `copy` is optional: `label` (1 to 24) and `text` (1 to 5000). The clipboard receives `text` exactly.
 
 ```json
 {
   "message": "Last night's server backup finished. Please confirm that the check is done, or move it to later.",
-  "copy": { "label": "Copy path", "text": "\\\\files.example.invalid\\backup\\2026-10-08\\nightly.log" }
+  "copy": {
+    "label": "Copy path",
+    "text": "\\\\files.example.invalid\\backup\\2026-10-08\\nightly.log"
+  }
 }
 ```
 
-| Field | Rule |
-|---|---|
-| `message` | required, 1–600 characters, plain text (newlines kept) |
-| `copy` | optional; `label` 1–24 characters (button label), `text` 1–5000 characters (exact clipboard string, shown in full next to the button) |
+## Result data
 
-Full envelope for `show`:
+The choice values `erledigt` (Done) and `spaeter` (Later) are German on purpose, and so is the sample note `Passt so`, because result values belong to the template; rename the choice values in `schema.json`, `result.schema.json`, and `template.js` together if you change them. `note` is required and may be empty, at most 500 characters.
+
+Choosing Done on the message above:
 
 ```json
 {
-  "schema": "report-shell/payload@1",
-  "template": "_starter",
-  "version": 1,
-  "bot": "agent",
-  "title": "Check the backup",
-  "created": "2026-10-08T10:39:00+02:00",
-  "data": { "message": "…", "copy": { "label": "Copy path", "text": "…" } }
+  "choice": "erledigt",
+  "note": "Passt so"
 }
 ```
 
-`show _starter --data <file>` also accepts a bare `data` object; the core then wraps it in an envelope with the template's title.
+## Keyboard path
 
-## Result `data` (`result.schema.json`)
-
-```json
-{ "choice": "erledigt", "note": "Passt so" }
-```
-
-| Field | Rule |
-|---|---|
-| `choice` | `erledigt` or `spaeter` |
-| `note` | string, at most 500 characters, may be empty |
-
-The agent reads the result from the selected data directory (`RS_DATA_DIR` or the platform default), normally via `python report_shell.py wait` or `result`. Use the exact `result_path` printed by the command.
-
-## German strings used
-
-`starter_heading` (Beispielbericht), `choice_erledigt` (Erledigt), `choice_spaeter` (Später), `choice_group_label` (Entscheidung: {what}), `add_note` (Notiz hinzufügen), `note` (Notiz), `starter_note_placeholder` (Optional; filled into the note's `placeholder` through `data-rs-t-placeholder`, the pattern for `placeholder`, `title`, `aria-label` and `alt`), `starter_pick_choice` (Bitte eine Option wählen). Every key is listed in `template.json` `strings` and exists in `core\i18n\de.json`. New keys go into `de.json` first.
+Tab reaches the two choices. Space or Enter selects the focused one. Left and Right move between Done and Later and select the one you land on. Tab reaches Add note. Space or Enter opens it. Ctrl+Enter or Cmd+Enter sends. The exact golden key sequence is in `fixtures/expect/golden.json`.
 
 ## Files
 
-| File | Notes |
+`new` writes this folder to `<data dir>/templates/<name>/`. It does not write into the install tree.
+
+```text
+python report_shell.py new <namespace>/<name>
+```
+
+`<namespace>` is the bot id, for example `inbox-agent`. The folder name is `<name>`.
+
+`template.json`, `template.html`, `template.css`, `template.js`, `schema.json`, `result.schema.json`, `fixtures/golden.json`, `fixtures/edge-*.json`, `fixtures/invalid-*.json`, `fixtures/expect/golden.json`, and this README. Design rules, `check`, and the RS API are in [docs/GUIDE.md](../../../docs/GUIDE.md).
+
+## For maintainers
+
+### Strings used
+
+| Key | English |
 |---|---|
-| `template.json` | manifest; `components` and `strings` must list everything the template uses |
-| `template.html` | partial; no literal text, only `<span data-rs-t="key"></span>`; only core custom elements |
-| `template.css` | `var(--rs-*)` tokens only; no colour literals, no URLs |
-| `template.js` | body of `function (RS, root)`; RS API only; block comments only (`//` fails the URL lint) |
-| `schema.json`, `result.schema.json` | supported JSON-Schema keyword subset |
-| `fixtures/golden.json` | the screenshot fixture |
-| `fixtures/edge-max.json`, `fixtures/edge-no-copy.json` | all maxima with emoji/CJK/CRLF/tab; the optional copy left out |
-| `fixtures/edge-de.json` | the golden message in German |
-| `fixtures/invalid-empty-message.json`, `fixtures/invalid-long-label.json` | rejected at `/message` and `/copy/label` |
-| `fixtures/expect/golden.json` | `copies` (by `data-copy-id`), `flow` (mouse), `keyboard` (keys only), `result` (exact result data). `report-shell check` reports clearly that the `tools/e2e.mjs` backend is required to execute these expectations. |
+| `starter_heading` | Example report |
+| `choice_erledigt` | Done |
+| `choice_spaeter` | Later |
+| `choice_group_label` | Decision: {what} |
+| `add_note` | Add note |
+| `note` | Note |
+| `starter_note_placeholder` | Optional |
+| `starter_pick_choice` | Please pick an option |
 
-## Keyboard path (golden, one run open)
+### Test hooks
 
-Tab ×3 reaches the choice row (after the `…` menu and the copy icon; with one open run there is no strip). Space picks `Erledigt` (the arrow keys move between options and pick them). Tab reaches `Notiz hinzufügen`; Space opens the note and focuses it; type the note; Ctrl+Enter sends.
+The copy control is `data-copy-id="starter-copy"` in `template.html`. The golden expect maps that id to the path in the payload above. There is no counter.
+
+### Files in the copy
+
+| File | Role |
+|---|---|
+| `template.json` | Manifest. `new` sets `id`, `namespace`, and `title_de`. |
+| `template.html` | The partial. Components: `rs-copy`, `rs-action-row`. |
+| `template.css` | Layout for this card only. |
+| `template.js` | Reads `RS.data`, sets the result. |
+| `schema.json` | Payload `data`. |
+| `result.schema.json` | Result `data`. |
+| `fixtures/golden.json` | The payload above. |
+| `fixtures/edge-*.json` | Two valid edge payloads. |
+| `fixtures/invalid-*.json` | Two payloads `check` must reject. |
+| `fixtures/expect/golden.json` | Copies, flow, keyboard, and the result above. |

@@ -491,15 +491,19 @@ def test_wait_parser_rejects_until_expiry_with_any_timeout(argv):
 
 
 def test_docs_teach_the_same_wait_flow():
-    """README, GUIDE and SKILL give a bot one flow: a short wait first, a
-    background waiter only where the runtime wakes on it, never --timeout 0,
-    catch-up with results --since, and an acknowledgement."""
-    for name in ("README.md", "docs/GUIDE.md", "skills/grokbot-desk/SKILL.md"):
+    """GUIDE and SKILL give a bot one flow: a short wait first, a background
+    waiter only where the runtime wakes on it, never --timeout 0, catch-up
+    with results --since, and an acknowledgement. The README points at the
+    skill and does not teach that flow."""
+    for name in ("docs/GUIDE.md", "skills/grokbot-desk/SKILL.md"):
         text = (ROOT / name).read_text(encoding="utf-8")
         for needle in ("--timeout 60", "--until-expiry", "background shells may not wake",
                        "`--timeout 0`", "results --since", "topic + OK"):
             assert needle.lower() in text.lower(), (name, needle)
         assert "--timeout 120" not in text, name
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "skills/grokbot-desk/SKILL.md" in readme
+    assert "--timeout 120" not in readme
 
 
 def test_marking_a_read_run_read_again_does_not_rewrite_it(live):

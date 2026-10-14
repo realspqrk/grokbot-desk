@@ -1,389 +1,753 @@
-# grokbot-desk: best-practice guide (v1)
+# grokbot-desk template guide
 
-For bots that show reports to a person in the grokbot-desk window, and for bots that write templates. Sections 1-10 explain the design rules; the reference part (A-D) has the worked example, every command and every exit code.
+This guide is for you if you design a template, or if you call the desk from your own program. A bot that sends reports should read [skills/grokbot-desk/SKILL.md](../skills/grokbot-desk/SKILL.md). Install, update, and the first desk are in the [README](../README.md).
 
-Windows and macOS are supported. On macOS, use Python 3.11 or newer through `./report-shell` or a versioned `python3.12` (macOS's own `/usr/bin/python3` is 3.9 and too old), not `py -3` or `report-shell.cmd`. See the README sections macOS setup and Platforms.
+The desk is the window and the local app behind it. A report is one thing a bot puts on the desk. In command output that same report is a run: the fields are `run_id`, `open_runs`, and the folder `runs/`.
 
-Run commands from the repository root with `python report_shell.py <command>` using Python 3.11 or newer. On Windows, `py -3` is an alternative only when `py -3 --version` succeeds. The Windows wrapper `<repo>\report-shell.cmd <command>` requires that launcher. From another directory, pass the full path to `report_shell.py`. On macOS, use `<repo>/report-shell <command>` (it finds a Python 3.11 or newer) or `python3.12`, and forward-slash paths; the .cmd wrapper is Windows-only.
+From the repository root:
 
-Quick start: write a payload file, then `show`, then `wait` in a loop, then read the result file. Section A has the full example.
+```text
+python report_shell.py <command>
+./report-shell <command>
+```
 
-Placeholders used below: `<repo>` = the repository folder, `<host>` = the Windows machine that shows the window, `<user>` = the Windows user on `<host>`, `example-bot` = your bot id, `<data dir>` = `%LOCALAPPDATA%\grokbot-desk` on Windows, or `RS_DATA_DIR` if set. A legacy `%LOCALAPPDATA%\spqrk-report-shell` stays in use until the new folder holds runs of its own, or until `migrate` moves it; an empty `grokbot-desk` folder does not hide it. Bots always use the CLI (`result`, `wait`, `results --since`, `paths`) and never guess the data directory. `paths` prints which directory is in use and why.
+The rest of this guide uses `python report_shell.py`. On macOS, use `./report-shell` in its place. `./report-shell` looks for an executable Python 3.11 or newer named `python3`, then `python3.14` down through `python3.11`, including the copies under `/opt/homebrew/bin` and `/usr/local/bin`. It skips `/usr/bin/python3`. `REPORT_SHELL_PYTHON`, when set, replaces that search. It is the only executable tried. A bad value exits 1 even when a suitable interpreter is installed. On Windows, `report-shell.cmd` uses the `py` launcher. If `python` works and `py` does not, keep the form above.
 
-Template ids resolve in one order everywhere (CLI, server, checks and score tools):
+`python report_shell.py --help` lists the commands and the flags that apply before a command (`--port`, `--version`), and it prints a typical flow. It does not list each command's own flags. `python report_shell.py <command> --help` lists that command's flags. It does not repeat the typical flow, `--port`, or `--version`. `templates --paths` is omitted from help.
 
-1. user templates: `<data dir>\templates\<id>\`;
-2. shipped built-ins: `<repo>\templates\builtin\<id>\`;
-3. legacy namespace templates: `<repo>\templates\<namespace>\<id>\`.
+## Contents
 
-The first match wins. A user template may shadow a built-in id; `check` and `doctor` report that as a warning. Legacy namespace templates remain supported; new templates are stored in the user template directory, never in the install tree.
+- [How a desk works](#how-a-desk-works)
+- [Design rules](#design-rules)
+- [Build a template](#build-a-template)
+- [Anti-patterns](#anti-patterns)
+- [Envelopes](#envelopes)
+- [Task banner](#task-banner)
+- [Bot identity](#bot-identity)
+- [Data folder and template resolution](#data-folder-and-template-resolution)
+- [Configuration](#configuration)
+- [Commands](#commands)
+- [Exit codes](#exit-codes)
 
-Template directories and every file read from them are checked by canonical path. A symlink or junction that leaves its template root fails closed, including manifests, schemas, fixtures, HTML/CSS/JS and `%RS_TEMPLATE%` media. The registry records the template directory's identity when it is scanned. `%RS_TEMPLATE%` media is opened from that directory without following links, and serving it checks the same identity again, so replacing the folder after the scan cannot authorize a file outside it. The only cross-root reads are the explicitly inherited HTML/CSS/JS files from a trusted built-in.
+## How a desk works
 
----
+A bot runs `show` with a JSON payload for a template. The desk opens one Edge or Chrome app window on the person's computer. The person decides. The bot reads the result JSON with `wait`, `result`, or `results --since`. The desk is local. At runtime it needs Python 3.11 or newer and the standard library only. It runs on Windows and on macOS.
 
-## 1. Window or chat?
-
-Use the window when the person has to:
-
-- decide on 2 or more items,
-- copy text (IBAN, amount, reply draft, post text, hashtags),
-- see a visual preview (a social post), or
-- read more than about 5 chat lines.
-
-Stay in chat for a one-line acknowledgement or a single yes/no question.
-
-After `show`, the chat message is **one pointer line**, for example `Im Fenster: Mail-Vorsortierung 08.10. (3 Punkte zu entscheiden)`. Do not repeat the report in chat.
+The shell draws the header, the task banner, and the footer. Your template fills the page. Prefer a built-in when it already fits. The five built-ins are linked from the [README](../README.md). The sixth folder, `_starter`, is the copy source for new templates.
 
 What the person sees:
 
-- One window (Edge or Chrome in `--app` mode, own profile, no tabs, no address bar): a compact pop-up for one decision, 880x920 at 0,0 of the primary monitor by default (an 864x836 page: every built-in golden but the long `review-doc` fits without scrolling; `config.json` `window` overrides it).
-- If the window is already open, a new report arrives quietly: the title gets the prefix `● ` and the taskbar button flashes, at most once per burst of reports (pushes less than 30 seconds apart are one burst; a window opened for the first report of a burst counts as its one bring-forward). The page uses that same 30-second quiet gap for its one announcement. The window does not jump to the front. `show --focus` brings it to the front, also at most once per burst; use it only when the person asked for the report right now.
-- Above the title of every report a tinted task banner says what to do and who acts next: one task line (`Freigeben, dann postet der Bot` / `Approve and the bot posts`), one line of steps, at most three sentences of why, and the effort and due date as quiet meta (`~3 Min.`, `fällig heute 15:00`). A decided report keeps it, neutral, saying what happened. See *Task banner* in section D.
-- With exactly one open report there is no list at all: the header shows the bot's avatar, its name in bold and the report title as one quiet line below. With 2 or more open reports a slim avatar strip sits above the header with one avatar per bot (see "Several bots" below), the active one underlined, and `n von m offen` / `n of m open` at the end (counting reports, up to 12). `Ctrl+1..9` switches from anywhere; on the strip `Left`/`Right`/`Home`/`End` move along it (one Tab stop). A new report never replaces the report on screen; it waits in the strip with a filled dot and the window title gets `● `.
+- One Edge or Chrome app window, with its own profile. No tabs and no address bar. The default size is 880 by 920 pixels at position 0, 0. That is an 864 by 836 page plus the window frame. `config.json` `window` overrides it. Long lists and documents scroll inside the report. The header and the footer stay put.
+- If the desk is already open, a new report arrives quietly. The title gets the prefix `● ` while any open report is unread. On Windows the taskbar button flashes at most once per burst. Pushes less than 30 seconds apart are one burst. A window opened for the first report of a burst counts as that burst's one bring-forward. The page uses the same 30-second quiet gap for its one announcement. The desk does not jump to the front. `show --focus` brings the window to the front on Windows, also at most once per burst. Use `--focus` only when the person asked for the report right now. On macOS the focus call has no effect.
+- Under the title, a tinted task banner says what to do and who acts next. See [Task banner](#task-banner).
+- With exactly one open report there is no strip. The header shows the bot's avatar, its name, and the report title. With two or more open reports a slim avatar strip sits above the header: one avatar per bot, with a count when that bot has more than one. The open count sits in the header byline, beside the overflow menu. In English it reads "{n} of {m} open", or "{m} open" when the report on screen is not one of those rows.
+- The page receives at most 12 open reports, the 12 newest by `created`. Within those, arrival order is kept: bots stay in the order they first appeared, and each bot's reports stay in registration order. A `created` stamp does not reorder that set. When more than 12 reports are open, an older one can be left off the page.
+- `Ctrl+1` through `Ctrl+9` switches reports, and so does `Cmd+1` through `Cmd+9`. On the strip, Left, Right, Home, and End move along it. The strip is one Tab stop.
 
-### Several bots
+When several bots send at once, the desk stays one window. Concurrent `show` calls with no window open launch one window. A window that is still starting is waited for. The report on screen stays. A new report becomes the one on screen only when nothing open is shown. Then the oldest arrival in the set the page received comes first.
 
-When several bots post at once (a burst), the window stays one calm window:
+One announcement per burst, for screen readers. English examples: "3 new reports from 2 bots", "2 new reports from Inbox Agent", or "New report: <title>". A single report that is shown at once needs none. The page collects a burst for up to 10 seconds, announces it once, and stays quiet until 30 seconds have passed with no new report.
 
-- Exactly one window. Concurrent `show` calls with no window open launch one window; the others return at once. A window still starting up (a first browser start can take several seconds) is waited for, not launched again.
-- The report on screen stays, touched or not. A new report becomes the active one only when nothing open is shown (no report, or the shown one was decided or is gone); then the oldest arrival comes first.
-- One announcement per burst, polite for screen readers: `3 neue Berichte von 2 Bots` / `3 new reports from 2 bots` (one bot: `2 new reports from Inbox Agent`; a single waiting report: `New report: <title>`). A single report that is shown at once needs none. Reports less than 30 seconds apart are one burst, the same rule as bringing the window forward. The page collects that burst for up to 10 seconds, announces it once, and stays quiet until 30 seconds have passed with no new report.
-- The strip groups open reports by bot: one avatar per bot, with a small count when that bot has more than one (named `Inbox Agent, 3 Berichte` / `Inbox Agent, 3 reports` for screen readers). The current bot's avatar also says to activate it again for the next report. Bots keep the order in which they were registered, and each bot's reports that same order, so nothing jumps during a burst. Each run summary carries `seq`, assigned when the report was registered and stored on the run. A run saved before `seq` existed is given one when the store loads it, in `created` order, and that run stays ahead of any report registered afterwards. A bot's `created` stamp cannot move an entry. A bot's avatar goes to its oldest open report; activating the current bot's avatar again steps to that bot's next report. After a decision the window moves on to the same bot's next open report, wrapping to that bot's earlier open reports before it moves on to the next bot.
-- After the person sends or discards a report, the window moves on to the next open one. After the last one it shows a calm done state (`Alles erledigt. Das Fenster schließt sich gleich.` with `Offen lassen`) and closes itself after about 4 seconds; open reports never close it, and a new report arriving in that moment cancels the close.
-- If the person closes the window, open reports stay open. The next `show`, or `report_shell.py open`, opens the window again.
+Activating the current bot's avatar again steps to that bot's next report. After a decision the desk moves on to the same bot's next open report before it moves to the next bot.
 
-## 2. Action design
+After the last decision, the page that owns the launch token may close. The desk passes that token (`?app=`) to every window it opens, including the macOS default-browser fallback. The first page that presents a valid token owns it. That page shows "All done. This window closes in a moment." with Keep open, and it may close after 4 seconds. A new report in that moment, Keep open, or a close the browser refuses leaves the window open. A page that does not own the token shows "All done." and stays open. Open reports never close the window by themselves. If the person closes the window, open reports stay open. The next `show`, or `open`, opens the window again.
 
-- Every item ends in an explicit choice. The person picks; nothing is decided by default.
-- Set `task.kind` and write a short `task.why` (aim for 3 sentences). Labels say who acts next: `Erledigt ✓` when the person does it, `Gepostet ✓` when they post it, `Freigeben & posten` when the bot will, `Verstanden` when there is nothing to decide. The actor-model built-ins take their buttons from one table (*Task banner*).
-- Choice labels are German verbs of at most 2 words (`Erledigt`, `Später`, `Ignorieren`, `Ja`, `Nein`, `Freigeben`, `Änderungen anfordern`).
-- At most 3 choices per item. Use `rs-action-row` (radio-group semantics, arrow keys).
-- No pre-selected choice. "Do nothing" is the default: a report that is discarded (`Verwerfen`) or expires gives the bot a `cancelled` or `expired` result, and the bot then does nothing.
-- Keep `An Bot senden` disabled until the input is complete: the template calls `RS.setResult(null)` until every required choice is made, and `RS.setStatus(...)` says what is missing. A long list stays in the accessible name; the visible line can be short (e.g. `4 open` / `4 offen`).
-- The window never executes destructive work in v1. It records decisions; the bot executes them after reading the result file.
+When no report is on screen while some wait, the desk lists them under "Waiting for you". A row opens its report.
 
-## 3. Copy-first
+## Design rules
 
-- Anything the person would otherwise retype gets an `rs-copy`: IBAN, amount, reference, reply draft, post text, hashtags, paths.
-- The copied string is shown **in full** next to its button. Use the `mono` attribute for IBANs, amounts and paths. The `no-value` attribute is only for text that is already visible right beside the button (the post text inside a preview).
-- No hidden transformations: the clipboard receives exactly the string in the payload (server-side `CF_UNICODETEXT`, no line-ending conversion). If the template composes a string (e.g. post text plus hashtags), the composed string is what is shown, counted and copied.
-- Limits: one copy is at most 100 000 UTF-16 code units (server limit); templates usually cap copy texts lower (`_starter` and `decide-list`: 5000 characters).
-- Text only. Copying images is not in v1.
-- Every `rs-copy` gets a stable `data-copy-id` (e.g. `warn-1-copy-0`), so the copy tests in `fixtures\expect\` can find it.
+A decision, including a single yes or no, is a report (`approve-one`). A status, a weekly summary, or a research outcome is a `review-doc` report with `task.kind` `fyi`, even when it is short. Chat is for small talk, a clarifying question, or the one-line acknowledgement. The bot's rules for when to open a report are in the [skill](../skills/grokbot-desk/SKILL.md).
 
-## 4. Density
+### Action design
 
-- At most 5 actionable items per screen (the presort cap of 5 ⚠️ items). If there are more, the bot prioritises; it does not scroll the person through 20 decisions.
-- Golden fixtures fit above the fold at 1500x1000 with no scrolling (usability item U1).
-- When content does run past the fold, the shell fades its last 24 px above the submit bar (in a sent, read-only view: above the window edge) into the paper (only while more follows, gone at the end), so a half-visible line never looks cut; keyboard focus scrolls clear of the fade, including focus already held when an opened disclosure or a resize turns the fade on. Templates add no fade or bottom spacing of their own.
-- Noise collapses to a count plus themes (`feed: {count, themes}` in `decide-list`); items kept without action become chips.
-- Empty sections are not rendered.
+Every item ends in an explicit choice. The person picks. Nothing is decided by default. Discard and expiry are the do-nothing outcomes: the result is `cancelled` or `expired`, and the bot does nothing.
 
-## 5. German strings and local time
+Set `task.kind` and write a short `task.why`. Aim for three sentences. Labels say who acts next. The actor-model built-ins take their buttons from one table. See [Task banner](#task-banner).
 
-German is the default; set `RS_LANG=en` before starting the server to select English. Times use the machine's time zone; `RS_TZ` (an IANA name such as `Europe/Vienna`) pins one zone, for tests and screenshots.
+At most three choices per item. Use `rs-action-row`. No choice is preselected. Keep the primary disabled until the input is complete: call `RS.setResult(null)` until every required choice is made, and `RS.setStatus(text, tone, label)` says what is missing. `label` is the accessible name when the visible line is shorter.
 
-- Every visible UI string is German and comes from `core\i18n\de.json` (keys in English, values in German). Templates never contain literal text:
-  - static text in `template.html`: `<span data-rs-t="key"></span>`;
-  - localised attributes (`placeholder`, `title`, `aria-label`, `alt`): `data-rs-t-<attribute>="key"`, e.g. `data-rs-t-placeholder="note"`;
-  - dynamic text in `template.js`: `RS.t("key", {name: value})` (`{name}` placeholders in the value are filled from the params);
-  - payload text (names, subjects, snippets): set with `textContent`, never `innerHTML`.
-- Every key a template uses is listed in `template.json` `strings` and exists in `de.json`. A new key goes into `de.json` first (see section 9, step 4).
-- Times: only `RS.time(iso)`, which shows local time in the format `Do 08.10.2026 · 10:39`.
-- Every timestamp in a payload must carry an offset (`+02:00`, `+01:00` or `Z`); the core converts it to local time. Timestamps in result envelopes are local ISO 8601 with their offset, e.g. `2026-10-08T10:44:12+02:00`.
-- Producing `created`:
-  - PowerShell on `<host>`: `(Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')` gives e.g. `2026-10-08T12:41:33+02:00`.
-  - Python: `datetime.now().astimezone().isoformat(timespec="seconds")`.
+The desk records the decision. The bot does the work after it reads the result.
 
-## 6. No external requests
+### Copy first
 
-- No CDN, web fonts, remote images, link unfurling or any network call from the page. The Content-Security-Policy blocks it, and the template lint rejects `http:`, `https:` and `//` anywhere in `template.html`, `template.css` and `template.js`. That includes `//` line comments: write `/* ... */` comments only.
-- System fonts only (the core sets them).
-- A link in a post preview is rendered from the payload (`url`, `title`, `domain`); nothing is fetched.
-- http(s) addresses in item text, review-doc Markdown, pick-option text and a payload `url` field are real links. The page does not let those links navigate this window: the anchors are not draggable, a drag is cancelled, and dropping a URL on the page is cancelled. A primary click, a middle click, Enter, and a modified click (Shift, Ctrl, Alt) call `RS.openUrl(url)`, which posts `{run_id, url}` to `/open-url`. Modified Enter does the same, except Ctrl+Enter or Cmd+Enter, which stays the submit shortcut and does not navigate. The server opens the host's default browser only when that exact address occurs in the run's payload, is http or https, is at most 2048 characters, has a hostname and a valid port, and has no credentials in the authority. `rel="noopener noreferrer"` and the server allowlist do not by themselves stop the window from navigating; the page handlers do. A right-click on these links is cancelled so the menu cannot open the address in the app profile. A browser that still offers Open from a menu the page cannot see is outside this guarantee.
-- Images and video go through the media roots:
-  - The payload holds an absolute path on `<host>` in a field the template's `schema.json` marks with `"x-rs-media"`. `true` is an image. `"video"` is a video.
-  - At `show` the path must resolve (after realpath) under one of the media roots in `config.json` `media_roots` (in `<data dir>`). Defaults are the user's Downloads folder and `<data dir>/media`; add any shared-drive folder explicitly to `config.json` `media_roots`.
-  - Images: `.png .jpg .jpeg .webp .gif`, at most 20 MB. Video: `.mp4 .webm`, at most 200 MB. The file must exist. Relative paths, `..`, UNC paths and paths outside the roots are rejected with exit code 2.
-  - The page never sees the path, only a random media id. `RS.media(id)` is the URL for `img.src`, a video `src`, or a poster. `/media/<id>` is served in HTTP ranges, so a video can start without reading the whole file. A range with no bound (`bytes=-`) is ignored and the whole file is returned. `RS.reveal(id)` is `Im Ordner zeigen` / `Show in folder`, and only for a media file of that same report. `RS.copyImage(id)` (or `<rs-copy media="<id>">`) puts an image on the clipboard as a picture (macOS: PNG, JPEG, GIF, WebP; Windows: PNG, JPEG, GIF). `RS.copyPath(id)` (or `<rs-copy media="<id>" media-copy="path">`) copies the file path, which is how a video is handed to a manual post. The poster image stays visible on its own. If the clip cannot be decoded, or makes no progress for 8 seconds, the loading indicator stops and the page says the preview is unavailable in this browser and that the path can still be copied or the file shown in its folder. Choosing not to preload (`preload="none"`) leaves an untouched clip on its poster and is not a failure; once playback starts, a clip that cannot be decoded keeps the poster and the same unavailable line, with no retry button.
-  - A bot on another machine copies the file to `<host>` first (section A, step 1: drop folder) and puts the `<host>` path into the payload. Never a path that exists only on the bot's machine.
+Anything the person would otherwise retype gets an `rs-copy`: an amount, a reference, a reply, a post, hashtags, a path. The copied string is shown in full next to its button. Use `mono` for amounts, ids, and paths. Use `no-value` only when that text is already visible beside the button.
 
-## 7. Accessibility
+The clipboard receives the exact string. There is no line-ending conversion. If the template composes a string, the composed string is what is shown, counted, and copied. One copy is at most 100,000 UTF-16 code units. Templates usually cap their own texts lower.
 
-Checklist. The core already gives `lang="de"`, visible focus, token contrast and the keyboard map; templates must not break them.
+`RS.copyImage(id)`, or `<rs-copy media="id">`, puts an image on the clipboard as a picture. On macOS that is PNG, JPEG, GIF, or WebP, written as PNG and TIFF. On Windows that is PNG, JPEG, or GIF, written as a bitmap. WebP is not pasted as a picture on Windows. `RS.copyPath(id)`, or `<rs-copy media="id" media-copy="path">`, copies the file path. That is how a video is handed to a manual post.
 
-- [ ] Every control has an accessible name: a `<label for>` filled by `data-rs-t`, or `data-rs-t-aria-label`; `rs-action-row` gets a `label` (e.g. `RS.t('choice_group_label', {what: ...})` = `Entscheidung: ...`).
-- [ ] Every image has alt text (payload `alt`, or `data-rs-t-alt`).
-- [ ] Focus stays visible: do not override `outline` (the core draws at least 2 px with contrast at least 3:1).
-- [ ] Colours only from `--rs-*` tokens (the token pairs for text meet WCAG AA, at least 4.5:1, in light and dark). No colour literals.
-- [ ] No positive `tabindex`.
-- [ ] Choices use `rs-action-row` (`role=radiogroup`, arrow keys), not home-made radio buttons.
-- [ ] The whole flow works with the keyboard only: `Tab`/`Shift+Tab`, `Enter`/`Space`, arrow keys in a choice row, `Ctrl+Enter` sends, `Esc` closes a dialog, `Ctrl+1..9` switches reports. `fixtures\expect\golden.json` `keyboard` proves it.
-- [ ] Status changes are announced through the core toast (`RS.toast`, `aria-live`), not by custom alerts.
-- [ ] Animations respect `prefers-reduced-motion`.
+Every `rs-copy` gets a stable `data-copy-id`, so `fixtures/expect/` can find it.
 
-## 8. Results
+### Density
 
-- Design `result.schema.json` **first**, then the UI. Keep it small: echo the payload's item ids, use enums for choices, give free-text fields a `maxLength`. Example (`decide-list`): `{"items":[{"id","choice","note"}], "note"}`.
-- Labels say who acts next. `actor` is `bot` (default), `user` or, on approve-one and review-doc, `none`. Bot results stay `approve`, `reject`, `request_changes`, `defer`. User results are `done`, `skipped` and, on a list, `later`. Info-only is `acknowledged`. A missing `actor` keeps today's values. The bot never acts on `user` or `none`.
-- Bots read **only** the result file `<data dir>\results\<run_id>.json` on `<host>` (take the exact path from `result_path` in the `show` or `wait` output). Never scrape the page, the run store or the action log.
-- A result file is written once, atomically, and never changes. Its `data` was validated against `result.schema.json` before it was written.
-- Waiting: start with `wait --timeout 60` (below the runtime's shell-call cap). On exit 5, if your runtime wakes you when a background subagent or task finishes, hand the wait to one that runs `wait <run_id> --until-expiry` and blocks on it; background shells may not wake you. Otherwise catch up on the next turn with `results --since`. `wait` ends at the run's expiry plus 2 minutes at the latest (exit 7: no result by then; a pre-beta.2 or unreadable run record has no expiry, so only `--timeout` ends it). Never use `--timeout 0` from a bot.
-- After a result: acknowledge in your own chat with topic + OK (e.g. "X replies: 5x posted, OK"); act right away if the result asks for action.
-- Act on `status`:
+A `decide-list` holds 1 to 12 items. The current item is a card. The others are quiet rows. One card is open at a time. More than 12 items is another report. The bot chooses what belongs on this screen.
 
-| `status` | Meaning | Bot does |
+What the bot already handled, with no decision left, goes in `done` (at most 12). The page shows that list under one closed disclosure.
+
+A short report keeps the footer directly under its content. A long list or document scrolls inside the report, and the footer stays at the bottom of the window. The header stays either way. When the report scrolls, the shell fades the last 24 pixels above the submit bar into the paper, and only while more follows. In a sent, read-only view the fade sits above the window edge. Keyboard focus scrolls clear of the fade. Templates add no fade and no bottom spacing of their own.
+
+Empty sections are not rendered.
+
+### Strings and local time
+
+German is the default UI, from `core/i18n/de.json`. Set `RS_LANG=en` before the desk starts to select English (`core/i18n/en.json`). An unknown `RS_LANG` stays on German. The English strings in this guide are the `en.json` values. Times use the machine's time zone. `RS_TZ` can pin an IANA zone for tests and screenshots. See [Configuration](#configuration) for when that pin falls back.
+
+Every visible UI string comes from the string table. Templates contain no literal UI text. Declare a string in one of these ways:
+
+- Static text in `template.html`: `<span data-rs-t="key"></span>`.
+- Localised attributes (`placeholder`, `title`, `aria-label`, `alt`): `data-rs-t-<attribute>="key"`.
+- Dynamic text in `template.js`: `RS.t("key", {name: value})`. `{name}` placeholders in the value are filled from the params.
+- Payload text is set with `textContent`. Never `innerHTML`.
+
+Every key a template uses is listed in `template.json` `strings` and exists in `de.json`. `check` fails until the key is there. Add the English value to `en.json` in the same change when you own both files. A template in the data folder does not edit `core/`. Ask the maintainer to add the shared key.
+
+`RS.time(iso)` shows local time. German: `Do 08.10.2026 · 10:39`. English: `Thu, Oct 8, 2026 · 10:39`. `RS.date(isoDate)` shows a calendar date. German: `15.10.`. English: `Oct 15`. `RS.number(n)` groups digits from the selected table. German: `99.999`. English: `99,999`.
+
+Every timestamp in a payload carries an offset (`+02:00` or `Z`). The desk converts it to local time. Timestamps in a result are local ISO 8601 with their offset.
+
+To produce `created`:
+
+- PowerShell: `(Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')`.
+- Python: `datetime.now().astimezone().isoformat(timespec="seconds")`.
+
+### No external requests
+
+No CDN, web fonts, remote images, link unfurling, or any network call from the page. The Content-Security-Policy blocks it. The template lint rejects `http:`, `https:`, and `//` anywhere in `template.html`, `template.css`, and `template.js`. That includes `//` line comments. Write `/* ... */` comments only. System fonts only. The core sets them.
+
+A link card in a post preview is rendered from the payload (`url`, `title`, `domain`). Nothing is fetched.
+
+http(s) addresses in item text, review-doc Markdown, pick-option text, and a payload `url` field are real links. The page does not let those links navigate this window. Anchors are not draggable, a drag is cancelled, and dropping a URL on the page is cancelled. A primary click, a middle click, Enter, and a modified click call `RS.openUrl(url)`, which posts `{run_id, url}` to `/open-url`. Modified Enter does the same, except Ctrl+Enter and Cmd+Enter, which stay the submit shortcut.
+
+The desk opens the system browser only when all of these are true:
+
+- That exact address occurs in this report's payload.
+- It is http or https.
+- It is at most 2048 characters.
+- It has a hostname or an IPv6 address (no zone id).
+- It has a port from 0 to 65535.
+- It has no credentials.
+
+One malformed string does not discard the other URLs in the same text. A right-click on these links is cancelled so the menu cannot open the address in the app profile.
+
+Images and video go through the media roots, except a `%RS_TEMPLATE%` path:
+
+- The payload holds a path in a field marked `"x-rs-media"`. `true` is an image. `"video"` is a video. `%RS_TEMPLATE%` is template-relative and is not followed as a link. Those paths are read from the template folder. They do not have to sit under `media_roots`.
+- Any other path is absolute. At `show` it must resolve, after realpath, under one of `config.json` `media_roots`. Defaults are the person's Downloads folder and `<data dir>/media`.
+- Images: `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, at most 20 MB. Video: `.mp4`, `.webm`, at most 200 MB. The file must exist. Relative paths, `..`, UNC paths, and ordinary paths outside the roots fail with exit 2.
+- The page sees a media id, not the path. `RS.media(id)` is the URL for an image, a video, or a poster. `/media/<id>` is served in HTTP ranges, so a video can start without reading the whole file. A range with no bound (`bytes=-`) is ignored and the whole file is returned. `RS.reveal(id)` is Show in folder, and only for a media file of that same report.
+- If a clip cannot be decoded, or makes no progress for 8 seconds, the loading indicator stops and the page says the preview is unavailable and that the path can still be copied or the file shown in its folder. `preload="none"` leaves an untouched clip on its poster and is not a failure.
+
+A bot on another machine copies the file onto the person's computer first and puts that path in the payload.
+
+### Accessibility
+
+The core already sets `lang`, visible focus, token contrast, and the keyboard map. A template must not break them.
+
+- Every control has an accessible name: a `<label for>` filled by `data-rs-t`, or `data-rs-t-aria-label`. `rs-action-row` gets a `label`. `RS.t('choice_group_label', {what: ...})` is `Decision: ...`.
+- Every image has alt text.
+- Focus stays visible. Do not override `outline`. The core draws at least 2 pixels at a contrast of at least 3:1.
+- Colours only from `--rs-*` tokens. Text pairs meet WCAG AA, at least 4.5:1, in light and dark. No colour literals. No positive `tabindex`.
+- Choices use `rs-action-row` (`role=radiogroup`, arrow keys).
+- The whole flow works from the keyboard: Tab and Shift+Tab, Enter and Space, arrows in a choice row, Ctrl+Enter or Cmd+Enter to send, Esc to close a dialog, Ctrl+1 through Ctrl+9 or Cmd+1 through Cmd+9 to switch reports. `fixtures/expect/golden.json` `keyboard` proves the golden path.
+- Status changes go through `RS.toast` (`aria-live`).
+- Animations respect `prefers-reduced-motion`.
+
+The calm checker has a few known limits. They are listed in [calm-checker-limits.md](calm-checker-limits.md).
+
+### What a result means
+
+Design `result.schema.json` first, then the UI. Keep it small. Echo the payload's item ids. Use enums for choices. Give free text a `maxLength`.
+
+`actor` is `bot` (the default), `user`, or, on `approve-one` and `review-doc`, `none`. Bot results stay `approve`, `reject`, `request_changes`, and, on a list, `defer`. User results are `done`, `skipped`, and, on a list, `later`. Info only is `acknowledged`. The bot never acts on `user` or `none`.
+
+Bots read the result file. Take the path from `result_path` in the `show` or `wait` output. `result` prints that same JSON, plus `data_dir` on stdout only. The file itself is unchanged. Never scrape the page, the run store, or the action log. A result file is written once, atomically, and never changes. Its `data` was validated against `result.schema.json` before it was written.
+
+Bots wait as described in the [skill](../skills/grokbot-desk/SKILL.md). The command and its exits are under [wait](#wait).
+
+| `status` | Meaning | The bot does |
 |---|---|---|
-| `submitted` | the person sent it (`An Bot senden` or Ctrl+Enter) | executes `data` |
-| `cancelled` | the person discarded it (`Verwerfen`), or the bot ran `cancel` | nothing; at most one chat line if the topic is still open |
-| `expired` | `expires_minutes` ran out (default 240, max 10080) | nothing; re-show later only if it still matters |
+| `submitted` | the person sent it | reads `data` and does the work. Acknowledges the decision in chat with topic + OK, for example "Invoices: hosting approved, toner next week, OK. Paying hosting now." Says the work is finished only after it succeeded. |
+| `cancelled` | the person discarded it, or `cancel` was run | does nothing with the decision. If the person asked for the cancel, records it and stops. Does not ask again. If the bot did not cause the cancel, asks in chat only when the task still needs an answer. No acknowledgement. |
+| `expired` | `expires_minutes` ran out (default 240, max 10080) | does nothing with the decision. Asks in chat only when the task still needs an answer. No acknowledgement. Shows it again later only if it still matters. |
 
-- Payload hygiene: never put secrets (passwords, tokens, full card numbers) or full email bodies into a payload. Use snippets of at most 600 characters. Payloads, results and logs stay 30 days in `<data dir>\`, then the core deletes them.
-- One open report per topic: when a newer report replaces an open one, `cancel` the old run first. Or set `dedupe_key` (1–120 printable ASCII characters, not starting with a space) so the same bot and key does not open a second report. `dedupe_hours` (integer 1–168, default 24) is only valid together with a key. An open run with that key is returned as-is. A run submitted or cancelled within the last N hours is returned too (`show` prints `deduped: true` and `state`: `open`, `submitted` or `cancelled`) and does not open another window. An expired run was never answered, so it never dedupes.
-- `created` is ISO 8601 with an offset. A stamp more than 2 minutes ahead of the clock is clamped to now, and `show` includes a warning: a wrong UTC offset would otherwise make `duration_s` read 0. Up to 2 minutes ahead is left as clock skew.
+Cancel a report only when the person asks, or to replace your own open report with a newer version of the same thing. Cancel, then `show` the new one. A `dedupe_key` never updates a report.
 
-## 9. Adding a template
+Never put secrets or full message bodies into a payload. Use short snippets. Files in `runs/`, `results/`, and `log/` older than 30 days are deleted when the desk starts. Media is kept.
 
-Pick a built-in before writing one:
+`created` is ISO 8601 with an offset. A stamp more than 2 minutes ahead of the clock is clamped to now, and `show` adds a warning. Up to 2 minutes ahead is left as clock skew.
+
+## Build a template
+
+Use a built-in when it fits.
 
 | Need | Built-in |
 |---|---|
-| approve, reject or defer several items, or mark items the person posts (`actor: user`) | `decide-list` |
-| one yes/no decision, optionally request changes; `actor` can be `user` or `none` | `approve-one` |
-| preview and approve a social post (per platform `auto`: the bot posts it, or `manual`: the user posts it, result `done` / `skipped`) | `preview-post` |
-| review a short, scannable document (TL;DR, a table, bold verdicts, check states, copy buttons) | `review-doc` |
-| compare 2–4 options and pick one, with optional copy text per option | `pick-option` |
+| Several items to approve, reject, or defer, or items the person does | `decide-list` |
+| One approval, including a single yes or no, with an optional request for changes | `approve-one` |
+| A social post to preview and approve | `preview-post` |
+| A document, a status, a weekly summary, or a research outcome | `review-doc` |
+| Two to four options, side by side | `pick-option` |
 
-Run `py -3 report_shell.py templates` (or `templates --json`) to see what is installed. Use `new` only when no built-in fits.
+`python report_shell.py templates` lists what is installed. Use `new` only when no built-in fits.
 
-1. For a local user template, no repository branch is needed: `new` writes into your data directory.
-2. Copy the starter (from the repository root):
+1. Create the folder in the data directory. No repository branch is required for a template that stays on this computer.
 
-   ```
-   py -3 report_shell.py new <namespace>/<name>
-   ```
-
-   `<namespace>` is your bot id (e.g. `example-bot`). This copies the shipped `templates\builtin\_starter` into `<data dir>\templates\<name>\` and sets `id`, `namespace` and `title_de` in `template.json`. The writable template survives installation updates. Exit 7 if the user target exists, the name is invalid, or a symlink/junction would place the templates root or destination outside the canonical data directory.
-3. Edit, following `templates\builtin\_starter\README.md`:
-
-| File | Rules |
-|---|---|
-| `template.json` | exactly the fields `id` (= folder name), `namespace` (= the namespace argument passed to `new`, stored as metadata; the folder remains `<data dir>/templates/<name>`), `version` (integer, payloads must send the same), `title_de`, `description`, `components` (only `rs-card`, `rs-action-row`, `rs-copy`, `rs-badge`, `rs-counter`, `rs-post-frame`, `rs-confirm`), `strings` (every `de.json` key used) |
-| `template.html` | a partial: no `<html>`, `<head>`, `<body>`, `<script>`, `<link>`, `<style>`; no literal text; no `on*=` handlers; custom elements only from the list above |
-| `template.css` | `var(--rs-*)` tokens only, spacing only `var(--space-*)`, `0` or `1px`; no `#hex`, `rgb(`, `hsl(`; no URLs |
-| `template.js` | the body of `function (RS, root)`; RS API only (`RS.data`, `RS.run`, `RS.t`, `RS.time`, `RS.date`, `RS.number`, `RS.count`, `RS.copy`, `RS.copyImage`, `RS.copyPath`, `RS.toast`, `RS.media`, `RS.reveal`, `RS.openUrl`, `RS.fillText`, `RS.appendLinks`, `RS.externalLink`, `RS.icon`, `RS.setResult`, `RS.setStatus`, `RS.setSubmitLabel`, `RS.setAlternative`, `RS.focusAlternative`, `RS.addMenuItem`, `RS.addMenuMeta`, `RS.onChange`, `RS.draft`, `RS.submit`; see the helper notes below the table); never `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `new Function`, `import()`, `navigator.clipboard`; no literal UI strings; block comments only |
-| `schema.json`, `result.schema.json` | only `type, properties, required, additionalProperties, items, minItems, maxItems, uniqueItems, enum, const, minLength, maxLength, pattern, minimum, maximum, oneOf, default, description, x-rs-*`. `"x-rs-unique-key": "<property>"` on an array of objects rejects an item whose `<property>` repeats an earlier item's (e.g. option ids; finding `/data/options/1/id`); `"x-rs-exclusive": ["image", "video"]` on an object rejects a value that sets more than one of those properties (finding `/video`); every name must be a non-empty string, or the finding is `/x-rs-exclusive`. `"x-rs-url": true` (or `"http"`) requires an openable http(s) URL; `"x-rs-url": "https"` additionally requires https. Openable means what the opener accepts: a hostname or an IPv6 literal, a port from 0 to 65535, no credentials, no spaces, backslashes or control characters, at most 2048 characters. An uppercase scheme (`HTTPS://`) and a zero-padded port are accepted. `preview-post` `target.url` uses `"https"` and `maxLength` 2048, so those opener forms are accepted and `http://` is not. `decide-list` `items[].url` keeps its hostname pattern as well, so an IPv6 literal stays rejected there. `"x-rs-media": true` marks an image path and `"x-rs-media": "video"` a video path (section 6) |
-| `fixtures\` | `golden.json`, at least 2 `edge-*.json`, at least 2 `invalid-*.json` (each must be rejected) |
-| `fixtures\expect\golden.json` | `copies` (by `data-copy-id`), `counters` (by `data-counter-id`), `flow` (mouse steps), `keyboard` (keys only), `result` (the exact result `data`) |
-| `README.md` | purpose, payload example, result example, German strings used |
-
-To reuse a shipped UI, add `"extends": "<builtin id>"` to the user manifest. Inheritance is deliberately one level: `template.html`, `template.css` and `template.js` come from that shipped built-in; the user template owns its manifest strings/components, `schema.json`, `result.schema.json`, `fixtures\`, `README.md` and template-relative media. The base must be a valid built-in id; unknown bases, traversal, cycles and a base that itself extends another base fail closed in `check`.
-
-Calm-UI helpers (template API, all scoped to the active report):
-
-- `RS.time(iso)`: a timestamp in the machine's time zone (or the one `RS_TZ` pins). German `Do 08.10.2026 · 10:39`, English `Thu, Oct 8, 2026 · 10:39`. Accepts `Z` and any offset.
-- `RS.date(isoDate)`: a calendar date (`2026-10-15`, the same day everywhere). German `15.10.`, English `Oct 15`.
-- `RS.number(n)`: grouped by the selected string table: German `99.999`, English `99,999`. The table is German by default; `RS_LANG=en` selects English.
-- `RS.setAlternatives([{label, run}, ...])`: up to two quiet footer alternatives, shown in the given order before the primary (e.g. *Skip*, *Request changes*). `[]` removes them. `RS.setAlternative(label, onClick)` / `RS.setAlternative(null)` is the one-item form. They are reset on every report switch. The footer holds the status, these alternatives and the one primary; *Discard report* lives in the header's `…` menu, behind its confirmation.
-- `RS.focusAlternative()`: moves focus to that alternative (e.g. after *Cancel* in a sub-mode). Returns `false` if there is none.
-- `RS.addMenuItem(label, onClick)`: an entry in the header `…` panel (e.g. *Show in folder*). Cleared on every report switch.
-- `RS.addMenuMeta(text)`: a quiet metadata line (not an action) in the header `…` panel, below the agent and time (e.g. *Persona: …*). Cleared on every report switch.
-- `RS.icon(name)`: a decorative inline SVG (`copy`, `check`, `plus`, `hash`, `ring`, `done`, `chevron`, `dot`, `more`, …).
-- `RS.openUrl(url)`: ask the server to open that http(s) address in the system browser (`POST /open-url`). `RS.fillText(el, text)` replaces an element's contents with the text and turns addresses in it into those links. `RS.appendLinks(el, text)` appends only the extracted http(s) links, not the surrounding words. `RS.externalLink(url, text)` returns one link, or null when `url` cannot be opened (not http(s), no hostname, a bad port, credentials in the authority, a control character, or a backslash).
-- Reports meant to be read (`review-doc`) stay short and scannable: a one-line TL;DR first, then a table, bold verdicts, check states (`- [x]` / `- [ ]`), at most one callout (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` alone on the first quoted line), and the long detail last. `review-doc/fixtures/edge-report.json` is the model.
-- `RS.run.result`: for a **submitted** report, the immutable result `data` (otherwise `null`). Show it read-only instead of the draft; the shell locks decisions and text but keeps tabs, disclosures and item rows (`aria-expanded`) working, and copies and buttons marked `data-rs-view-action` (view-only, e.g. `rs-post-frame`'s *Reload image*).
-
-4. New German strings: a template branch never edits `core\` (that includes `core\i18n\de.json`). Ask the maintainer of the installation to add the shared key (English key, German value) to `de.json`; `check` fails until the key exists there, then list it in `template.json` `strings`.
-5. Test until it passes:
-
-   ```
-   py -3 report_shell.py check <name>
-   py -3 report_shell.py check <name> --visual
+   ```text
+   python report_shell.py new <namespace>/<name>
    ```
 
-   Exit 0 = pass, 7 = fail (the findings are on stderr). `--visual` compares screenshots of the golden and every edge fixture, light and dark, at 1500x1000, with `golden\<fixture>.light.png` / `.dark.png` (at most 1% differing pixels).
-6. **Golden approval rule:** golden images are recorded with `node tools\visual.mjs --update <name>` **only after the person or the maintainer has approved the screenshots**. Never re-record goldens to make a failing `--visual` pass.
-7. To share a user template, send its complete `<data dir>/templates/<name>` folder to the maintainer. For a contribution to the shipped repository, agree the destination with the maintainer, copy the files there, and follow the repository contribution process.
+   `<namespace>` is the bot id, for example `inbox-agent`. The command copies `templates/builtin/_starter` to `<data dir>/templates/<name>/` and sets `id`, `namespace`, and `title_de` (`title_de` is the name with hyphens turned into a title). The folder is `<name>`, not `<namespace>/<name>`. Exit 7 if the target exists, the name is invalid, or the destination would leave the data directory. Each part matches `^(?:_[a-z0-9][a-z0-9_-]{0,62}|[a-z0-9][a-z0-9_-]{0,63})$`: 1 to 64 characters from `a-z`, `0-9`, `_`, and `-`. It does not start with `-`. A leading `_` needs another character after it.
 
-## 10. Anti-patterns
+2. Edit the files. The starter's own notes are in [templates/builtin/_starter/README.md](../templates/builtin/_starter/README.md).
 
-- Opening report HTML via `file://`, `Invoke-Item`, `Start-Process <url>`, `start <url>`, `os.startfile` or `webbrowser.open` (that opens a tab in the default browser). Only `report_shell.py show` / `open` open the window. A link inside a report is `RS.openUrl`: the server opens the system browser; a template does not.
-- Starting `msedge.exe` or `chrome.exe` yourself, or a second window per update. One window; new runs arrive over SSE.
-- Editing the core (`core\`, `tokens.css`, components, `rs.js`) from a template, or copying core CSS into a template.
-- Colour literals in template CSS. Literal German text in `template.html` or `template.js`.
-- `//` comments in `template.js` (the URL lint fails).
-- Preselected choices, more than 3 choices per item, more than 12 items per screen.
-- Full email bodies or secrets in the payload.
-- Building the result path by hand instead of using `result_path`; reading the action log; parsing the page.
-- `wait --timeout 0` from a bot, a timeout above the runtime's shell-call cap, or a background shell that is expected to wake the bot; polling the result file in a tight loop.
-- A payload or image path that exists only on the bot's machine, not on `<host>`.
-- `--data -` from Windows PowerShell 5.1: the pipe re-encodes the JSON and umlauts arrive as `?` (verified). Use a file.
-- Parsing the page or the action log instead of the result file (`result` stdout is fine: it is ASCII-only JSON, non-ASCII characters are `\u` escapes).
-- Reusing a `run_id`. Leave `run_id` out and let the core generate it.
-- Using `--focus` by default, or `--port 18742` and the real data dir in tests (tests use `RS_DATA_DIR` and another port).
+   | File | Rules |
+   |---|---|
+   | `template.json` | `id` (the folder name), `namespace`, `version` (integer; payloads send the same integer), `title_de`, `description`, `components`, `strings`. Optional `extends`. |
+   | `template.html` | A partial. No `html`, `head`, `body`, `script`, `link`, or `style`. No literal UI text. No `on*` handlers. Custom elements only from the component list below. |
+   | `template.css` | `var(--rs-*)` and `var(--space-*)` only. Spacing values are `0`, `1px`, or `var(--space-*)`. No `#hex`, `rgb(`, or `hsl(`. No URLs. |
+   | `template.js` | The body of `function (RS, root)`. The RS API below. No literal UI strings. Block comments only. |
+   | `schema.json`, `result.schema.json` | The keywords below. |
+   | `fixtures/` | `golden.json`, at least two `edge-*.json`, at least two `invalid-*.json`. |
+   | `fixtures/expect/` | One object per file. `golden.json` proves the keyboard path. |
+   | `README.md` | The section order in [Template READMEs](#template-readmes). |
 
----
+   Components, and the only custom elements allowed: `rs-card`, `rs-action-row`, `rs-copy`, `rs-badge`, `rs-counter`, `rs-post-frame`, `rs-confirm`.
 
-## A. Worked example: decide-list
+   `template.js` may use: `RS.data`, `RS.task`, `RS.cta`, `RS.setTaskLive`, `RS.run`, `RS.t`, `RS.time`, `RS.date`, `RS.number`, `RS.count`, `RS.copy`, `RS.copyImage`, `RS.copyPath`, `RS.toast`, `RS.media`, `RS.reveal`, `RS.openUrl`, `RS.fillText`, `RS.appendLinks`, `RS.externalLink`, `RS.setResult`, `RS.onChange`, `RS.draft`, `RS.setStatus`, `RS.setSubmitLabel`, `RS.setAlternatives`, `RS.setAlternative`, `RS.focusAlternative`, `RS.addMenuMeta`, `RS.addMenuItem`, `RS.icon`, `RS.submit`.
 
-Use the public `decide-list` example in [README.md](../README.md). Save its Python block as `make_payload.py` in the repository root, then run:
+   It must not call `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `eval`, `importScripts`, `new Function`, `Function(`, `import()`, `navigator.clipboard`, or `navigator.sendBeacon`. The lint also rejects those names inside a regular expression, and `window`, `globalThis`, or `self` used to reach a string name.
 
-```text
-python make_payload.py
-python report_shell.py show decide-list --data payload.json
-python report_shell.py wait RUN_ID --timeout 60
-python report_shell.py result RUN_ID
-```
+   Schema keywords: `type`, `properties`, `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `uniqueItems`, `enum`, `const`, `minLength`, `maxLength`, `pattern`, `minimum`, `maximum`, `oneOf`, `default`, `description`, plus `x-rs-*`.
 
-Replace `RUN_ID` with the value printed by `show`. Choose and send in the window before reading the result. Exit 5 from `wait` means it is still waiting: hand `wait RUN_ID --until-expiry` to a background subagent if your runtime wakes you when one finishes, or check later with `results --since`. On macOS use `./report-shell` (or `python3.12`) in place of `python report_shell.py`, and `python3.12` for `make_payload.py`.
+   - `"x-rs-unique-key": "<property>"` on an array of objects rejects a repeated property. The pointer looks like `/data/options/1/id`.
+   - `"x-rs-exclusive": ["image", "video"]` on an object rejects a value that sets more than one of those properties. Every name must be a non-empty string.
+   - `"x-rs-url": true` (or `"http"`) requires an openable http(s) URL. `"x-rs-url": "https"` also requires https. Openable means a hostname or an IPv6 literal, a port from 0 to 65535, no credentials, no spaces, backslashes, or control characters, at most 2048 characters. An uppercase scheme and a zero-padded port are accepted. `preview-post` `target.url` uses `"https"` and `maxLength` 2048. `decide-list` `items[].url` also keeps a hostname pattern, so an IPv6 literal is rejected there.
+   - `"x-rs-media": true` marks an image path. `"x-rs-media": "video"` marks a video path.
 
-## B. Commands
+   `RS.task` is `{kind, base, verb, why_from, mark, parties, steps_for}`. `RS.cta(value, opts)` is the label for a decision value. `opts.item` with `opts.actor` and `opts.content` is the per-item path. `RS.setTaskLive({parties, changes, stepsFor, stepsKey, stepsButton, tone})` keeps a mixed report's banner lines true. An explicit `task.steps` stays as written: the call still updates the actor lines, the footer, and the tone.
 
-`--port N` works before or after the command (default: `config.json` `port`, else 18742). Normal output is one JSON line on stdout; errors are one English line on stderr.
+   `RS.setAlternatives([{label, run}, ...])` sets up to two quiet footer alternatives, in that order, before the primary. `[]` removes them. `RS.setAlternative(label, onClick)` is the one-item form. `RS.focusAlternative(which)` moves focus to the first alternative, or to an index or a label. It returns `false` when there is none. They reset on every report switch. Discard lives in the header menu, behind its confirmation.
 
-| Command | Output | Exit codes |
-|---|---|---|
-| `show <template> --data <path\|-> [--focus] [--no-window]` | `{"run_id","url","result_path","data_dir"}`. Validates, starts the server if needed, registers the run, opens the window if none is open (`--no-window`: never). A duplicate `dedupe_key` adds `deduped: true` and `state` and does not open a second report. A clamped `created` adds `warnings`. While the older Windows data folder is in use, `data_dir_warning` names `migrate`. `--data` may also hold only the `data` object; the core then wraps it (title = template `title_de`, `created` = now, `bot` = the template's namespace, or a built-in default bot id for `global` templates <!-- rename -->). | 0, 2, 3, 4 |
-| `wait <run_id> [--timeout <s> \| --until-expiry]` | `{"status","result_path","data_dir"}` once the result file exists (checked every 200 ms). Returns on the result, at the latest at the run's expiry plus 2 minutes (exit 7: no result by then); `--until-expiry` waits up to that point and excludes `--timeout`. A run record without a readable `expires` (pre-beta.2) has no such limit. Never use `--timeout 0` from a bot | 0, 2, 5, 6, 7 |
-| `result <run_id>` | the result envelope plus `data_dir` | 0, 6 (also while no result exists yet) |
-| `results --since <iso> [--bot <id>] [--seen <run_id>]... [--wait <s>]` | `{"data_dir","results":[{"run_id","bot","template","title","status","decided","result_path","summary?"}],"cursor","seen"}`: results decided at or after `--since`, oldest first, minus `--seen`. `title` is included when the run record still has a payload title (or the result file itself carries one). `summary`, when the decision is compact, is decide-list counts per choice (`2 approve, 1 defer`), a consistent preview-post reading (`x posted by you, linkedin approved`; manual is `posted by you` or `skipped`, auto+approved is `approved`), the approve-one or review-doc decision word, or the pick-option id. A preview-post summary is omitted when mode and decision disagree, the decision is unknown, `platforms` is not exactly the auto approvals, or the result has no `per_platform` (older results). The summary is not permission to post: read `per_platform` and post only `auto` + `approved`. An inconsistent preview-post result is rejected on submit. `cursor` is the newest `decided` so far (keep it) and `seen` every run id decided in that second (also on an empty answer); pass both back as they came. `--wait` blocks up to that many seconds (max 3600) for the first one | 0, 2 |
-| `paths` | `{"data_dir","source","runs","results","log","config"}` and `unused_data_dirs` when another candidate still holds results. `source` is `RS_DATA_DIR`, `legacy` or `default`. `warning` appears while the older Windows folder is in use and names `migrate`. This is how a bot learns the directory; it never guesses | 0 |
-| `migrate` | Windows: moves `%LOCALAPPDATA%\spqrk-report-shell` to `%LOCALAPPDATA%\grokbot-desk` (only when the new folder is missing or holds no files) and points paths under the old folder to the new one: media in decided reports and `config.json` `media_roots`. Prints `{"migrated","from","to","config_rewritten","runs_rewritten"}`. Refuses while a desk runs or starts in either folder, or while a report in the old folder is still open (exit 4: decide or discard open reports first), or when the new folder holds files (exit 7); nothing changes then. The old folder is never created again afterwards. `RS_DATA_DIR` and macOS: nothing to do | 0, 4, 7 |
-| `status` | `{"up","port","pid","open_runs","window_alive"}` | 0 |
-| `open` | `{"ok":true,"opened":true\|false}`; opens or focuses the window when runs are open | 0, 3, 4 |
-| `cancel <run_id>` | `{"status":"cancelled","result_path"}`; bot-side withdrawal | 0, 6 (unknown or already decided) |
-| `templates [--json]` | table, or `[{"id","source","extends","title"}, ...]`; uses the shared lookup order | 0, 7 (broken registry) |
-| `list` | compatibility JSON: `[{"id","namespace","version"}, ...]` | 0, 7 (broken registry) |
-| `doctor` | `{"ok","templates","warnings"}` including user/built-in shadow warnings, plus `data_dir_warning` while the older Windows folder is in use | 0, 7 |
-| `check <id> \| --all [--visual]` | `{"ok":true,"template","visual"}`; `--all` names `"templates"` | 0, 7 |
-| `new <namespace>/<name>` | `{"ok":true,"id","path"}` | 0, 7 |
-| `stop` | `{"ok":true,"stopped":true\|false}` | 0, 4 |
-| `serve` | internal (the server in the foreground) | 4 (port), 7 (registry) |
+   `RS.addMenuItem(label, onClick)` and `RS.addMenuMeta(text)` add a menu entry and a quiet metadata line. Both clear on every report switch. `RS.icon(name)` returns a decorative inline SVG.
 
-The server stops by itself after 30 minutes with no open run and no window.
+   `RS.openUrl(url)` asks the desk to open that address. `RS.fillText(el, text)` replaces an element's contents with the text and turns addresses in it into links. `RS.appendLinks(el, text)` appends only the extracted http(s) links. `RS.externalLink(url, text)` returns one link, or null when `url` cannot be opened.
 
-## C. Exit codes
+   `RS.run.result` is the result `data` of a submitted report, otherwise `null`. Show it read-only. The shell locks decisions and text and keeps tabs, disclosures, item rows, copies, and buttons marked `data-rs-view-action` working.
 
-| Code | Meaning | Bot does |
-|---|---|---|
-| 0 | ok | continue |
-| 1 | unexpected crash (Python traceback on stderr) | report to the maintainer; read the result file directly |
-| 2 | invalid payload (stderr names the JSON pointer, e.g. `/data/message`), unknown template, wrong `version`, `run_id` already used, media outside the roots, payload over 2 MB, invalid JSON (incl. nesting deeper than 64); also command-line usage errors | fix the payload; never retry unchanged |
-| 3 | neither Edge nor Chrome found (`refusing to open a browser tab`) | tell the person in chat; never fall back to another browser |
-| 4 | port held by a foreign process, or the server did not start within 3 s | tell the maintainer; never pick another port on your own |
-| 5 | `wait` timed out | hand the wait to a background subagent, or catch up later with `results --since` |
-| 6 | unknown run (`wait`, `result`, `cancel`), no result yet (`result`), or already decided (`cancel`) | check the `run_id`; for `result`, try again later |
-| 7 | `wait`: no result by the run's expiry plus 2 minutes. Otherwise: `check` failed, `new` name exists or invalid, broken template registry | `wait`: treat as expired. Otherwise: fix the template |
+   `RS.draft.get()`, `.set(value)`, and `.clear()` keep a draft for this report.
 
-## D. Envelopes
+   To reuse a shipped UI, add `"extends": "<builtin id>"`. Inheritance is one level. `template.html`, `template.css`, and `template.js` come from that built-in. The user template owns its manifest, `schema.json`, `result.schema.json`, `fixtures/`, `README.md`, and template-relative media. The base must be a built-in that does not itself extend. Unknown bases, traversal, and a deeper chain fail in `check`.
 
-Payload `report-shell/payload@1` (max 2 MB; unknown top-level fields are rejected):
+   The shell reserves `data-rs-strip`, `data-rs-rail`, and the ids `rs-strip`, `rs-strip-nav`, `rs-strip-count`, `rs-rail`, and `rs-rail-nav`. A template must not use them.
+
+3. Add fixtures. `golden.json` is the realistic payload `data`. Add at least two `edge-*.json` files that are still valid, and at least two `invalid-*.json` files that `schema.json` must reject. `check` requires those counts. A missing `golden.json` fails as well.
+
+4. Add `fixtures/expect/golden.json`. The object may contain only `copies`, `counters`, `flow`, `keyboard`, and `result`.
+
+   - `copies` maps each `data-copy-id` to the exact clipboard string.
+   - `counters` maps each `data-counter-id` to `{count, limit, over}`.
+   - `flow` is the mouse path (`click`, `fill`, `press`, `type`, `repeat`).
+   - `keyboard` is the keys-only path (`press`, `type`, `repeat`).
+   - `result` is the exact result `data`.
+
+   `preview-post` may also ship `fixtures/expect/counter-cases.json`: an array of at least 30 cases, each `{name, platform, text, count, over}`.
+
+5. Run check.
+
+   ```text
+   python report_shell.py check <name>
+   python report_shell.py check <name> --visual
+   ```
+
+   Exit 0 passes. Exit 7 fails, and the findings are one line on stderr. There is no JSON on failure. `check` runs the contract, the template lint, and, when `fixtures/expect/` exists, `node tools/e2e.mjs expect <id>`. `--visual` then compares screenshots, and only after the contract passed. Screenshots are light and dark, at 1500 by 1000, stored as `golden/<fixture>.light.png` and `golden/<fixture>.dark.png`. A pixel counts when a channel differs by more than 16. At most 1% of pixels may differ.
+
+   `check` starts those Node tools with `RS_PYTHON` set to the Python that is running `check`, unless `RS_PYTHON` is already set. The tools that start the desk use that value, and so does the screenshot compare in `tools/visual.mjs` (`tools/pngdiff.py`). When a tool looks Python up with `RS_PYTHON` unset, it tries `py -3` on Windows. Elsewhere it tries `python3.14` down through `python3.11`, then `python3`, including the copies under `/opt/homebrew/bin` and `/usr/local/bin`. It keeps the first one that is Python 3.11 or newer.
+
+6. Approve goldens before you record them. Record with `node tools/visual.mjs --update <name>` only after you, or the maintainer, have looked at the screenshots and accepted them. A failing `--visual` is a reason to look, not a reason to overwrite the files.
+
+7. To share a template that lives in the data folder, send the whole `<data dir>/templates/<name>` folder. To add one to the repository, follow [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+New string keys in a data-folder template: ask the maintainer to add the English key and the German value to `core/i18n/de.json`. `check` fails until the key exists. Then list it in `template.json` `strings`.
+
+### Template READMEs
+
+Every built-in README uses the same order: what it is for, what the person sees, the payload `data`, the result `data`, how a person uses the keyboard, and the files. Strings, test hooks, and a golden result that is not the example on the page go under a final For maintainers heading. The first JSON block is payload `data` and validates against `schema.json`. Every later JSON block is result `data` and validates against `result.schema.json`.
+
+## Anti-patterns
+
+- Opening report HTML with `file://`, `Invoke-Item`, `Start-Process`, `start`, `os.startfile`, or `webbrowser.open`. That opens a tab. Only `show` and `open` open the window. A link inside a report is `RS.openUrl`.
+- Starting `msedge.exe` or `chrome.exe` yourself, or a second window per update. One window. New reports arrive in it.
+- Editing `core/`, `tokens.css`, the components, or `rs.js` from a template, or copying core CSS into a template.
+- Colour literals in template CSS. Literal UI text in `template.html` or `template.js`.
+- `//` comments in template files. The URL lint fails.
+- A preselected choice, more than three choices on one item, or more than 12 items on one `decide-list`.
+- Secrets or full message bodies in the payload.
+- Building the result path by hand. Use `result_path`. Reading the action log. Parsing the page.
+- `--timeout 0` from a bot, a timeout above the runtime's shell-call cap, or a background shell that is expected to wake the bot. Polling the result file in a tight loop.
+- A payload path or an image path that exists only on the bot's machine.
+- `--data -` from Windows PowerShell 5.1 when the payload is not ASCII. The pipe re-encodes the JSON. Write a file and pass that path. The desk reads the file as UTF-8 and strips one leading BOM.
+- Reusing a `run_id`. Leave it out and let the desk generate it.
+- `--focus` on every `show`. Using the person's real data folder and the default port in a test. Tests set `RS_DATA_DIR` and another port.
+
+## Envelopes
+
+### Payload
+
+`schema` is `report-shell/payload@1`. The maximum size is 2 MB. Unknown top-level fields are rejected. JSON nesting is limited to 64 levels.
 
 | Field | Rule |
 |---|---|
-| `schema` | `report-shell/payload@1` |
-| `template` | a registered template id (`list`) |
-| `version` | integer, equal to the template's `version` |
-| `run_id` | optional; `^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,20}-[0-9a-f]{4}(?:[0-9a-f]{8})?$`, unused. Best left out; generated ids use 12 hex characters and legacy explicit ids may use 4. |
-| `bot` | your bot id, `^[a-z0-9-]{1,40}$` (e.g. `example-bot`) |
-| `title` | 1-80 characters; becomes the window title (`<title> · <bot name>`; the name comes from `identity` or the bot registry, see below) |
-| `created` | ISO 8601 with an offset. More than 2 minutes ahead of the clock is clamped to now and `show` warns (see section 8) |
-| `dedupe_key` | optional, 1–120 printable ASCII characters. Same bot + key returns the existing open run, or the submitted/cancelled run from the last `dedupe_hours` (default 24). Expired never matches. See section 8 |
-| `dedupe_hours` | optional integer 1–168, only together with `dedupe_key` |
-| `expires_minutes` | optional, 5-10080, default 240 |
-| `notify` | optional `{"webhook_url"}`; the webhook is **off in v1**, bots use `wait` |
-| `data` | validated against the template's `schema.json` |
-| `identity` | optional `{"name", "avatar", "accent", "avatar_shape", "avatar_color"}`, each key optional; see *Bot identity* below. Never rejects the report |
-| `task` | optional `{"kind", "steps", "eta_min", "due", "why"}`: what the person does and who acts next; see *Task banner* below. Without it the kind is derived. An unknown field or kind, or a kind that contradicts `data`, is rejected with a pointer (exit 2) |
+| `schema` | `report-shell/payload@1`. |
+| `template` | A registered template id. |
+| `version` | Integer, equal to the template's `version`. |
+| `run_id` | Optional. Pattern `^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,20}-[0-9a-f]{4}(?:[0-9a-f]{8})?$`. Generated ids use 12 hex characters. Leave it out. |
+| `bot` | `^[a-z0-9-]{1,40}$`, for example `inbox-agent`. |
+| `title` | 1 to 80 characters. The window title is the title and the bot's display name. |
+| `created` | ISO 8601 with an offset. More than 2 minutes ahead is clamped to now, and `show` warns. |
+| `expires_minutes` | Optional integer 5 to 10080. Default 240. |
+| `notify` | Optional `{"webhook_url"}`. See [Configuration](#configuration). Bots normally use `wait`. |
+| `data` | Validated against the template's `schema.json`, then against the template's extra rules. |
+| `identity` | Optional. See [Bot identity](#bot-identity). Never rejects the report. |
+| `dedupe_key` | Optional. 1 to 120 printable ASCII characters, not starting with a space. The same bot and key returns the existing report. It does not change that report. |
+| `dedupe_hours` | Optional integer 1 to 168. Default 24. Only together with `dedupe_key`. |
+| `task` | Optional. See [Task banner](#task-banner). |
 
-Result `report-shell/result@1`: `schema`, `run_id`, `template`, `template_version`, `bot`, `status` (`submitted` \| `cancelled` \| `expired`), `created`, `decided`, `duration_s`, `log`, and `data` (only for `submitted`). Example in section A, step 4. When the page could not use part of the bot's identity, the result also carries `identity`: `{"name", "accent_fallback": ["light"|"dark"...], "warnings": [{"source", "field", "reason"}...]}` (the same warnings are in the action log `log` as `warning` events).
+The same bot and `dedupe_key` returns the open report, or the submitted or cancelled report from the last `dedupe_hours`. An expired report never matches. `show` then adds `deduped` and `state`.
 
-### Bot identity
+### Result
 
-Each bot can show its own **name**, **avatar** (an image or a built-in shape) and **accent colour**: the header shows the avatar, the bot's name in bold and the report title as one quiet line below it (times stay in the "…" menu, which repeats a small avatar next to "From <bot>"); with 2+ open reports the strip shows each report's avatar, named for screen readers and in its tooltip by the bot's name and the report title; the accent replaces the default accent for that report only (one accent is visible at a time; the strip never shows another report's accent).
+`schema` is `report-shell/result@1`. The file is written when the person submits, when the report is discarded, or when it expires. Open reports are not in this file and are not listed by `results`.
 
-- Sources: payload `identity` > user registry `<data dir>\bots.json` > shipped registry `core\bots.json` > defaults (name = bot id, initials avatar, theme accent). `name` and `accent` resolve per field. The avatar (`avatar`, `avatar_shape`, `avatar_color`) comes whole from the first source that states any of them: a payload with only `avatar_shape` beats a registry image, and a payload `"avatar": ""` clears it (shape or initials). Within that source: image > shape + colour > initials. The shipped registry holds names only (no images, shapes or accents).
-- Registry entries: `"example-bot": "Inbox Agent"` (legacy, means `{"name": ...}`) or `"example-bot": {"name": "Inbox Agent", "avatar": "avatars/inbox.png", "accent": "#0891b2", "avatar_shape": "blob", "avatar_color": "orange"}`.
-- `name`: plain text, trimmed, 1-40 characters, no control characters; always rendered as text.
-- `avatar`: PNG, JPEG, WebP or GIF only (no SVG), at most 256 KB, shown as a 32 px circle (strip and header; 24 px in the "…" menu). Either a `data:image/<type>;base64,...` URL, or a path relative to the template folder (payload; `%RS_TEMPLATE%/...` also works) or to the registry's folder (`<data dir>` for the user registry); no `..`, no UNC, absolute paths only inside `<data dir>`. The content must match the type. Missing or broken avatar: the shape avatar if one is set, else neutral initials (first letters of up to two words).
-- `avatar_shape`: one of `blob`, `squircle`, `pebble`, `hex`, `teardrop`, `tablet`; `avatar_color`: one of `blue`, `orange`, `yellow`, `magenta`, `red`, `violet`, `black`, `green`, `gray` (case-insensitive). The page draws the shape itself from the fixed set in `core\static\avatar-shapes.json` (a solid shape with two eye holes, no letter; never SVG from a bot) in the colour's fill for the theme (`--rs-avatar-<colour>` in `tokens.css`; `black` is drawn white in dark mode). Precedence on the page: image > shape > initials. Empty string = no value at that source (no warning; the source still decides the avatar, so initials if it states nothing else); a non-string value is skipped with a warning (if all avatar fields of a source are invalid, the next source decides); an unknown name is a warning and means no shape (initials circle) or no colour (the default accent colour fills the shape).
-- `accent`: `#RRGGBB`. Checked per theme: accent and its derived hover fill vs page and card >= 3:1, the label (black or white, whichever is higher) vs accent and hover >= 4.5:1, the focus ring (= accent) >= 3:1 on every focus background in `contrast-pairs.json`. A theme that fails uses the default accent and is listed in `accent_fallback`. For example, `#0891b2` falls back in light mode because its derived hover fill is below 3:1 against white, while `#a855f7` passes both themes. Without `accent`, `avatar_color` seeds the accent through the same checks (e.g. `blue` is used in light mode and falls back in dark mode, `orange` the other way round); a seeded theme that fails is listed in `accent_fallback` without a warning.
-- Problems never reject the report: an invalid value is skipped (the next source is used) and logged as a warning. `doctor` lists the problems of both registries under `identity_warnings`.
-- Grok Bot: a bot reads its own `profile.json` and passes `avatarShape` / `avatarColor` as `avatar_shape` / `avatar_color` (camelCase to snake_case); an empty profile value stays omitted.
+| Field | Rule |
+|---|---|
+| `schema` | `report-shell/result@1`. |
+| `run_id` | The report id. |
+| `template` | Template id. |
+| `template_version` | The payload `version`. |
+| `bot` | The payload `bot`. |
+| `status` | `submitted`, `cancelled`, or `expired`. |
+| `created` | Local ISO 8601 with an offset. |
+| `decided` | Local ISO 8601 with an offset, to the second. |
+| `duration_s` | Whole seconds from `created` to `decided`, at least 0. |
+| `log` | Path of the action log. |
+| `data` | Present only when `status` is `submitted`. Validated against `result.schema.json`. |
+| `identity` | Present when the page could not use the accent, or when identity warnings were recorded. `name`, `accent_fallback` (themes that fell back), and `warnings`. |
 
-### Task banner
+`python report_shell.py result` adds `data_dir` to this object on stdout. The file does not contain `data_dir`.
 
-A busy person who was interrupted should know within 10 seconds what to do. Every report therefore opens with a quiet byline (the bot's avatar and name, the open count while several wait, the `…` menu), the report title as the strongest line, and right under it a banner: one line with the task of its kind and `eta_min` / `due` as quiet meta (`~3 min`, `due today 15:00`, `overdue since 09:00`; local time), then at most three sentences of why. Steps show only where they add what the line and the buttons do not say: `task.steps` when the payload sets them, a mixed report's plan per actor, a list's `decide each, then <button>` (naming the footer as it reads now). A template's `summary`, `intro`, `context` or `notes` moves into the banner as the why only when it fits there whole (three sentences, 360 characters); otherwise it stays in the report. Line breaks in the why are kept; German abbreviations (`z. B.`, `ca.`, `Nr.`) and ordinals (`1. Schritt`) do not end a sentence; a cut falls at a word boundary and ends with `…`. A supplied `task.steps` stays as written: ticks, choices and a change request refresh the actor lines and the footer, and they do not replace that line. A longer payload why is folded behind `Mehr dazu` / `More on why`, the only control the banner may hold. A decided report keeps the banner, neutral and muted (`Gelesen: nichts weiter zu tun`, `Verworfen: der Bot macht nichts`).
+## Task banner
+
+The banner sits under the title. It has one task line, one steps line, at most three sentences of why, and the effort and the due date as quiet meta. English examples: "Approve and {bot} posts", "~{n} min", "due today {time}", "overdue since {when}", "More on why". A decided report keeps the banner, quiet. English: "Read: nothing more to do", "Discarded: the bot does nothing".
 
 `task` fields:
 
 | Field | Rule |
 |---|---|
-| `kind` | required: `post_yourself`, `approve_bot_acts`, `pick`, `fyi`, `review` or `blocking` |
-| `steps` | optional, one line, 1-140 characters. When set, this is the steps line for the whole open report; live updates do not replace it |
-| `eta_min` | optional integer 1-120 (minutes of the person's effort) |
-| `due` | optional calendar date `YYYY-MM-DD`, or an extended timestamp `YYYY-MM-DDTHH:MM[:SS[.fff]]Z` or with a `±HH:MM` offset. Basic ISO, week dates and other separators are rejected, so a deadline cannot vanish in the browser |
-| `why` | optional non-empty text. Aim for 3 sentences and 360 characters: past either limit, `show` warns and still accepts the report (exit 0). The banner shows the first three sentences, or the first 360 characters, and folds the rest. Without `why` the banner uses the template's lead (`summary`, `intro`, `context` or `notes`) the same way, and the template leaves that text out. A lead with a link stays in the template |
+| `kind` | Required when `task` is set. `post_yourself`, `approve_bot_acts`, `pick`, `fyi`, `review`, or `blocking`. |
+| `steps` | Optional. 1 to 140 characters, no control characters. When set, this is the steps line for the whole open report. Live updates do not replace it. |
+| `eta_min` | Optional integer 1 to 120. |
+| `due` | Optional `YYYY-MM-DD`, or an extended timestamp `YYYY-MM-DDTHH:MM[:SS[.fff]]Z` or with a `±HH:MM` offset. Seconds are optional. Fractional seconds need seconds. `Z` or `±HH:MM` is required on a timestamp. Other shapes are rejected, so a deadline cannot vanish in the browser. |
+| `why` | Optional non-empty text. Aim for 3 sentences and 360 characters. Past either limit, `show` warns and still accepts the report. The banner shows the first three sentences. A shown part longer than 360 characters is cut. The cut prefers a space or a newline. When the shown part has neither, it is cut at 360 characters, inside the word. An ellipsis is then added, so that visible line can be 361 characters. The rest is folded behind "More on why". That disclosure is the only control the banner may hold. |
 
-Without `task` the kind is derived:
+Line breaks in the why are kept. A line break ends a sentence. Abbreviations (`z. B.`, `ca.`, `Nr.`), ordinals, and dates (`15.`, `31.12.`) do not. `...`, `…`, and a year from 1900 through 2099 still do. Any other number, and a version (`2.4.`), stays in the same sentence. Without `why`, the banner uses the template's lead when that lead fits whole: `approve-one` `summary`, `review-doc` `summary`, `decide-list` `intro`, `pick-option` `context`, `preview-post` `notes`. A lead that contains a URL stays in the template. The template leaves out a lead that moved into the banner (`RS.task.why_from`).
+
+Steps also show, without `task.steps`, for a list of the bot's items, an all-user list, a list of replies, a mixed list, or a mixed preview. The line names the footer's current label. An all-user list says to do or skip each item. Replies say to post or skip each reply. A bot list or a mixed list says to decide each item. A mixed preview says to review the platforms, and names no platform. A single bot item has no steps line unless `task.steps` is set.
+
+Without `task`, the kind is derived:
 
 | Template | Derived kind |
 |---|---|
-| `preview-post` | every platform `manual`: `post_yourself`; any `auto`: `approve_bot_acts` |
-| `decide-list` | every item `actor: "user"`: `post_yourself`; else `approve_bot_acts` |
-| `pick-option` | `pick` |
-| `review-doc` | `review`; with `action`: `approve_bot_acts`; `actor: "user"`: `post_yourself`; `actor: "none"`: `fyi` |
-| `approve-one` | `approve_bot_acts`; `actor: "user"`: `post_yourself`; `actor: "none"`: `fyi` |
-| other templates | `review` |
+| `preview-post` | Every platform `manual`: `post_yourself`. Any `auto`: `approve_bot_acts`. |
+| `decide-list` | Every item `actor` `user`: `post_yourself`. Otherwise `approve_bot_acts`. |
+| `pick-option` | `pick`. |
+| `review-doc` | `review`. With `action`: `approve_bot_acts`. `actor` `user`: `post_yourself`. `actor` `none`: `fyi`. |
+| `approve-one` | `approve_bot_acts`. `actor` `user`: `post_yourself`. `actor` `none`: `fyi`. |
+| Any other template | `review`. |
 
-A given kind sets the matching actor when `data` leaves it out (for example `fyi` on `approve-one` means `actor: "none"`, `post_yourself` on `preview-post` makes every platform manual) and is rejected with a pointer when `data` says otherwise (`/data/actor`, `/data/platforms/1/mode`). Each built-in accepts only the kinds it can show (`pick-option`: `pick`, `blocking`). `blocking` keeps the derived kind's buttons and emphasises its primary. A template without an actor model (`_starter`, or a user template that does not extend a built-in) may set `review` or `blocking` only. An explicit `fyi` or any other kind is rejected at `/task/kind`: the banner would promise a button the template does not have. With no `task`, those templates still show the generic review banner and keep their own buttons.
+A derived `post_yourself` is the kind. It does not by itself choose the Posted label. See the button rules below.
 
-Buttons per kind (one table, `core\static\tasks.js`, used by the actor-model built-ins' footers and per-item controls; `RS.cta(value, {item, actor, content})` is the per-item path):
+A given kind sets the matching actor when `data` leaves it out. It is rejected, with a pointer, when `data` already says otherwise (`/data/actor`, `/data/platforms/N/mode`). Each built-in accepts only the kinds it can show. `pick-option` accepts `pick` and `blocking`. `blocking` keeps the derived kind's buttons and emphasises its primary. A template without an actor model (`_starter`, or a user template that does not extend a built-in) may set `review` or `blocking` only. Any other kind is rejected at `/task/kind`. With no `task`, those templates still show the generic review banner and keep their own buttons.
+
+Buttons, in English. German is what the person sees unless `RS_LANG=en`.
 
 | Kind | Who acts next | Primary | Other buttons |
 |---|---|---|---|
-| `post_yourself` | the person posts, then reports back | `Gepostet ✓` | `Überspringen`; per decide-list item also `Später` |
-| user, not a post | the person does it, then reports back | `Erledigt ✓`, or `Gesendet ✓` when `action` is `send` | `Überspringen`. `approve-one` also offers `Änderungen anfordern` when `allow_changes` is set. The hint names the real choices (`Wähle Gesendet oder Überspringen` for a send) |
-| `approve_bot_acts` | the bot, after approval | `Freigeben & posten` / `& senden` / `& weiter` (or the payload's `approve_label`) | `Änderungen anfordern` or `Ablehnen` |
-| `pick` | the bot, with the chosen option | `Auswählen` (`<Option> wählen` once picked) | an optional note; `Keine davon` asks for new options (the decided banner says `Neue Optionen angefragt`) |
-| `fyi` | nobody | `Verstanden`, enabled at once | no other decision, and no `Verwerfen`. One collapsed note (`Notiz hinzufügen`), closed by default |
-| `review` | the bot, with the verdict | `Passt` | `Änderungen anfordern` |
-| `blocking` | as the derived kind | the derived kind's primary, emphasised | as the derived kind |
+| `post_yourself` | The person, then reports back | Posted ✓, Sent ✓, or Done ✓. The mark rules below choose which. | Skip. On a list item, also Later. |
+| `approve_bot_acts` | The bot, after approval | Approve & post, Approve & send, or Approve & continue, or the payload's `approve_label` | Request changes, or Reject. |
+| `pick` | The bot, with the chosen option | Choose {name} once picked | An optional note. None of these asks for new options. |
+| `fyi` | Nobody | Got it, enabled at once | No other decision. One collapsed note, closed by default. |
+| `review` | The bot, with the verdict | Looks good | Request changes. |
+| `blocking` | As the derived kind | The derived primary, emphasised | As the derived kind. |
 
-The mark names what the person did. Post content — a manual `preview-post` platform, a decide-list item with `content` `post` or `reply`, or an explicit `task.kind` of `post_yourself` — reads `Gepostet ✓` / `Posted ✓`. A user task on `approve-one` or `review-doc` with `action` `send` reads `Gesendet ✓` / `Sent ✓` (`mark` stays `sent`). `Erledigt ✓` / `Done ✓` is only when there is no specific content or action. Result values stay `done` / `skipped` (and `later` on a list). A decide-list footer reads `Fertig` when every item is `actor: "user"`, otherwise `Entscheidungen senden` (`Entscheidung senden` for one item): it sends every choice at once and approves nothing by itself. A mixed report (a preview with `auto` and `manual` platforms, a list with `user` and `bot` items) gives each actor one banner line, the person first, the bot by its display name (from `identity` or the registry):
+On `approve-one`, `approve_label` leads that banner (`{label}, then {bot} posts`, `sends`, or `continues`) and is the bot primary. A name that is the raw bot id, or longer than 24 characters, reads as "the bot" in the banner and on the default primary. The header still shows the name.
 
-| State | Deutsch | English |
+A bot list's banner says make your decisions, then the bot continues. `action` `post` says posts. `action` `send` says sends. One item says decision.
+
+The mark names what the person did, and an explicit kind wins over a derived one:
+
+- An explicit `task.kind` of `post_yourself` reads Posted ✓. That includes `approve-one` and `review-doc` when `action` is `send`.
+- When the kind is only derived, a user actor on `approve-one` or `review-doc` reads Sent ✓ when `action` is `send`, and Done ✓ otherwise.
+- On `decide-list`, an item with `content` `post` or `reply` reads Posted ✓. Other user items read Done ✓, unless `task.kind` was set explicitly to `post_yourself`, in which case they read Posted ✓ too.
+
+Result values stay `done`, `skipped`, and, on a list, `later`. `approve-one` also offers Request changes when `allow_changes` is set, including for a user actor. It does not offer that when `actor` is `none`.
+
+A decide-list footer reads Done when every item is `actor` `user`. Otherwise it reads Send decisions, or Send decision for one item. It sends every choice at once. A mixed report gives each actor one banner line, the person first. English: "You post: {names}", "{bot} posts after approval: {names}". Platform names stop at three, then `{names} +{n}`. List items are counted as replies, posts, or items. A side with nothing left says so, for example "{bot} posts nothing". A platform that cannot be approved is left out of the plan from the start.
+
+A mixed preview's steps name no platform: "Review the platforms, then {button}". The footer reads Send response while both actors still have work, Approve & post when only auto platforms are ticked, and Posted ✓ when only manual ones are. The status splits the count, for example "{n} approved" and "{n} posted".
+
+Colours: one tint per kind, with a 4 pixel edge. Amber for `post_yourself`, green for `approve_bot_acts`, violet for `pick`, grey for `fyi`, teal for `review`. Red when the kind is `blocking`, or when `due` is today or past. The tint is a status colour. It is not the bot's accent. The banner holds no buttons, and at most the details toggle of a long why. Contrast pairs live in `contrast-pairs.json`.
+
+## Bot identity
+
+Each bot can show a name, an avatar, and an accent. The header shows the avatar and the name of the report on screen. With two or more open reports the strip shows one avatar per bot, with a count when that bot has more than one. The accent replaces the default accent for the report on screen. The strip does not paint another report's accent.
+
+Sources, first match wins: the payload `identity`, then `<data dir>/bots.json`, then the shipped `core/bots.json`, then the defaults (the name is the bot id, the avatar is initials, the accent is the theme accent). `name` and `accent` resolve per field. An invalid name or accent is skipped, and the next source is used for that field. The report is still accepted.
+
+`avatar`, `avatar_shape`, and `avatar_color` come together from the first source that states any of them. Inside that source the order is image, then shape plus colour, then initials.
+
+- An unknown shape or colour counts as stated. The search stops, and a later source is not used.
+- An unknown shape draws initials, unless this source also has a usable image.
+- An unknown colour keeps a known shape from this source and draws it in the default colour. With no shape and no usable image, the page draws initials.
+- A missing image file is an error on that field and does not by itself mark the source as stated. If that broken image is the only avatar field, a later source can still supply an image.
+- An empty `avatar` string (`"avatar": ""`) does mark the source as stated and clears the image, so a later source is not used.
+
+The shipped registry holds names only.
+
+A registry entry is `"inbox-agent": "Inbox Agent"` or an object `{"name", "avatar", "accent", "avatar_shape", "avatar_color"}`. The string form means a name only.
+
+| Field | Rule |
+|---|---|
+| `name` | Plain text, trimmed, 1 to 40 characters, no control characters and no bidi controls. Always rendered as text. |
+| `avatar` | PNG, JPEG, WebP, or GIF. No SVG. At most 256 KB. Shown at 32 pixels, and at 24 pixels in the overflow menu. A `data:image/<type>;base64,...` URL, or a path relative to the template folder (payload; `%RS_TEMPLATE%/...` works) or to the registry's folder. No `..`, no UNC. Absolute paths only inside the data directory. The bytes must match the type. |
+| `avatar_shape` | `blob`, `squircle`, `pebble`, `hex`, `teardrop`, or `tablet`. |
+| `avatar_color` | `blue`, `orange`, `yellow`, `magenta`, `red`, `violet`, `black`, `green`, or `gray`. The page draws the shape from `core/static/avatar-shapes.json`. `black` is drawn white in dark mode. |
+| `accent` | `#RRGGBB`. Checked per theme against `contrast-pairs.json`: accent and its hover fill versus the page and the card, the label versus the accent, and the focus ring. A theme that fails uses the default accent and is listed in `accent_fallback`. For example, `#0891b2` falls back in the light theme because its hover fill is too close to white. Without `accent`, `avatar_color` seeds the accent through the same checks. A seeded theme that fails is listed in `accent_fallback` and does not add a warning. |
+
+`doctor` lists registry problems in `identity_warnings`. The same warnings can appear on the result under `identity.warnings`, and as `warning` events in the action log.
+
+## Data folder and template resolution
+
+`RS_DATA_DIR`, when set, is the data folder, and it is never migrated. Otherwise:
+
+| System | Folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\grokbot-desk` |
+| macOS | `~/Library/Application Support/grokbot-desk` |
+
+On Windows the older folder `%LOCALAPPDATA%\spqrk-report-shell` stays in use while it still has a `runs` directory, the new folder does not yet hold a run or a result file, and either the new folder does not exist or the old folder holds a run or a result file. An empty new folder does not hide reports that are still in the old folder. After `migrate`, the old folder is not created again for normal use. A desk started with `RS_DATA_DIR` pointed at the old folder after the move refuses to start.
+
+The folder holds `runs/`, `results/`, `log/`, `media/`, `config.json`, and `templates/` for templates you add with `new`.
+
+Template ids resolve in this order everywhere. The first match wins.
+
+1. User templates: `<data dir>/templates/<id>/`.
+2. Shipped built-ins: `templates/builtin/<id>/`.
+3. Legacy namespace templates: `templates/<namespace>/<id>/`.
+
+A user template may shadow a built-in id. `check` and `doctor` report that as a warning. New templates go in the user directory, not in the install tree.
+
+Every file read from a template is checked by canonical path. A symlink or junction that leaves the template root fails closed, including the manifest, schemas, fixtures, HTML, CSS, JS, and `%RS_TEMPLATE%` media. The registry records the directory's identity when it scans. Serving a template file checks that identity again. The only files read from another root are `template.html`, `template.css`, and `template.js` inherited from a built-in.
+
+## Configuration
+
+`<data dir>/config.json` is optional. Missing keys use the defaults. `window` and `webhook` are merged onto the defaults, so a partial object keeps the other default fields. Other top-level keys are kept in memory and are not read.
+
+A command that reads the config for its settings (`show`, `wait`, `result`, `results`, `paths`, `status`, `open`, `cancel`, `stop`, `serve`) exits 2 when `config.json` cannot be read or is not an object. The stderr line is `report-shell: invalid config: ...`. A `port` that cannot be read as an integer, or a port outside 1 to 65535, exits 2 when that config port is the one selected. `--port` on the command uses the flag instead, so a bad config port is not read. A file that cannot be parsed still exits 2 with `--port`. `list`, `templates`, `doctor`, `check`, `new`, and `update` do not read `config.json`. `migrate` does not load it for a port or a window. On Windows, before the move, it reads the file and rewrites `media_roots` when those paths sit under the old folder. A file it cannot parse is left as it is.
+
+| Field | Default | Meaning |
 |---|---|---|
-| open | `Du postest: X` / `Inbox Agent postet nach Freigabe: LinkedIn` | `You post: X` / `Inbox Agent posts after approval: LinkedIn` |
-| a list | `Du postest: 2 Antworten` / `Inbox Agent sendet nach Freigabe: 3 Einträge` | `You post: 2 replies` / `Inbox Agent sends after approval: 3 items` |
-| only X ticked | `Du postest: X` / `Inbox Agent postet nichts: LinkedIn nicht angehakt` | `You post: X` / `Inbox Agent posts nothing: LinkedIn not ticked` |
-| decided | `Du hast gepostet: X` / `Inbox Agent postet jetzt: LinkedIn` | `You posted: X` / `Inbox Agent posts now: LinkedIn` |
-| changes asked | `Du hast Änderungen angefordert` / `Inbox Agent postet nichts` | `You asked for changes` / `Inbox Agent posts nothing` |
+| `port` | `18742` | Desk port, 1 to 65535. `--port` overrides it for one command. |
+| `window` | `{"x": 0, "y": 0, "width": 880, "height": 920}` | Window position and size. A non-positive width or height falls back to the default size. |
+| `media_roots` | The person's Downloads folder, and `<data dir>/media` | Absolute directories an ordinary media path must resolve under. A `%RS_TEMPLATE%` path is not checked against this list. |
+| `webhook.enabled` | `false` | Delivery is off unless this is true, `allow_prefixes` is non-empty, and the environment variable `GROKBOT_DESK_WEBHOOK_KEY` is set. |
+| `webhook.allow_prefixes` | `[]` | HTTPS prefixes. `notify.webhook_url` must use https and start with one of them, or `show` exits 2 with "webhook URL is not allowlisted". An empty list rejects every URL. |
 
-Platforms are named by their labels (up to three, then `LinkedIn, Instagram +2`); list items are counted (`Antworten` for `content: "reply"`, `Beiträge` for `post`, else `Einträge`). The person's verb is `postest` when every item of theirs is a post or reply, else `erledigst`. The bot's verb is the payload `action` (`post`, `send`, `continue`; `preview-post` always posts). The lines follow the ticks and choices: until something is ticked every approvable platform is planned; a platform that cannot be approved is left out of that plan from the start. After a tick, an unticked approvable platform, a skipped or deferred item and a rejected bot item are out, and a side with nothing left says so (`postet nichts`). A blocked platform is not described as merely unticked. A mixed preview's steps are one line that names no platform: `Plattformen prüfen, dann Rückmeldung senden` / `Review the platforms, then Send response`, ending with the footer as it reads now (`Freigeben & posten` when only auto platforms are ticked, `Gepostet ✓` when only manual ones are).
+When delivery is on, the desk POSTs a short notice in the background with `Authorization: Bearer <key>`. The body is `run_id`, `status`, `template`, `bot`, and `result_path`. It does not include the result JSON. Read the result file at `result_path` for the decision. The desk tries three times, waiting 1 second after the first attempt and 2 seconds after the second. A redirect is checked against the same prefix list. Bots normally ignore the webhook and use `wait`.
 
-A platform that cannot be approved (over its limit, Instagram without an image or a video) is not named in the actor's planned line. The actor lines, the steps and the footer use that same approvable set, including before any tick. The footer of a mixed preview names neither actor while both act: `Rückmeldung senden` / `Send response` (also, disabled, before anything is ticked), `Freigeben & posten` when only auto platforms are ticked, `Gepostet ✓` when only manual ones are. Its status splits the count: `1 freigegeben · 1 gepostet` / `1 approved · 1 posted`. A list's steps name the footer as it reads now (`Jeden Eintrag entscheiden, dann Entscheidungen senden`). A list of only the bot's actions asks for decisions, never for one choice: `Entscheidungen treffen, dann macht Inbox Agent weiter` / `Make your decisions, then Inbox Agent continues` (`Entscheidung treffen` for one item; `labels.approve` names only the item buttons and the status). A decided report words the same lines in the past tense.
+Environment variables the desk reads:
 
-Colours: one calm tint per kind with a 4 px edge (`--rs-task-<kind>-bg` / `-edge` in `tokens.css`): amber for `post_yourself`, green for `approve_bot_acts`, violet for `pick`, grey for `fyi`, teal for `review`. Red only for `blocking` or when `due` is today or past. Text on every tint is at least 4.5:1 and the edge at least 3:1 in light and dark (`contrast-pairs.json`).
+| Variable | Effect |
+|---|---|
+| `RS_DATA_DIR` | Data folder. Never migrated. |
+| `RS_LANG` | `en` selects English. Anything else, including unset, is German. |
+| `RS_TZ` | An IANA time zone for display and screenshots. Used when time-zone data is available. Without that data, a Central European name in the desk's built-in set (for example `Europe/Vienna`) uses the EU daylight-saving rule, and `UTC`, `Etc/UTC`, `Etc/GMT`, and `GMT` stay UTC. Any other name falls back to the machine's zone, and the page is told there is no pin. |
+| `RS_PYTHON` | Python for the Node tools that `check` starts, including the screenshot compare. `check` sets it to its own interpreter when it is unset. |
+| `RS_SERVER_START_TIMEOUT_MS` | How long the CLI waits for a new desk. Default 10 seconds. Bounded to 1 through 120 seconds. |
+| `RS_CLI_HTTP_TIMEOUT` | Timeout for CLI requests to the desk, other than the short hello. Default 3 seconds. Capped at 60. |
+| `GROKBOT_DESK_WEBHOOK_KEY` | Bearer token. Required before a webhook is sent. |
+| `RS_PLAYWRIGHT_CORE` | Where `check --visual` and the screenshot tools find Playwright. Set it when the package is not installed next to the tools. |
+| `REPORT_SHELL_PYTHON` | Replaces the `./report-shell` search. The only executable tried. A bad value exits 1 even when a suitable interpreter is installed. |
 
-The C16 exception: a report shows one accent and otherwise only neutral greys and small status dots (calm rule K6). The banner tint is a status colour, not the accent, and it is the only other colour allowed: exactly one banner, under the title, with no buttons in it and at most one details summary. The calm checker exempts that banner's background and edge, and neutral text on it; any other chromatic colour still fails, including inside the banner. One primary action and at most 3 buttons per item still hold. The information-only note is a closed disclosure, not a second action.
+The CLI waits up to 10 seconds for a new desk to answer. If this checkout's process is listening but not answering yet, it gets one more period of the same length. A port that opens as that wait ends is given 2 seconds to write `state.json` before it counts as another program.
 
-Templates read the kind as `RS.task` (`{kind, base, verb, why_from, mark, parties, steps_for}`) and a label as `RS.cta(value)` (`RS.cta('approve')` is `Freigeben & posten` for a post the bot makes, `Passt` for a review). `mark` is `posted`, `sent` or `done` when the person reports a completion: `posted` for post content, `sent` when a user task's `action` is `send`, `done` only when there is no specific content or action. `parties` lists a mixed report's platforms (`{id, role}`) or items (`{role, noun}`). A template keeps the per-actor lines true with `RS.setTaskLive({parties, changes, stepsFor, stepsKey, stepsButton, tone})`, each party with `on` (`true` ticked or approved, `false` left out, absent while undecided) and, for a platform that cannot be approved, `blocked: true` (left out of the planned names, not called unticked). `stepsFor: 'mixed_platforms'` words the platform steps line; `stepsKey` is any other steps key; both end with `stepsButton`. An explicit `task.steps` is authoritative: the call still updates the actor lines, the footer and the tone, and it does not replace that line.
+## Commands
 
-When no report is on screen while some wait (for example, a report failed to load), the window lists them under `Wartet auf dich` / `Waiting for you`: avatar, bot, title and the kind of task. A row opens its report.
+JSON on stdout is one compact line. Non-ASCII characters are `\u` escapes, so JSON is ASCII on every stream. Text, such as the `templates` table and error lines, follows the stream encoding. A UTF-8 stream (macOS, a Windows console, or a Windows pipe whose encoding is UTF-8) prints text as UTF-8. A stream that is not UTF-8, including a default Windows pipe, stays ASCII, and characters that do not fit are backslash escapes.
 
----
+Errors returned by a command are one line on stderr: `report-shell: <message>`. A usage error from the argument parser prints a usage block and a line beginning `grokbot-desk:` or `grokbot-desk <command>:`, and exits 2. A crash leaves a Python traceback and exits 1.
 
-## Deviations from the spec
+On the next `show` or `open`, an idle desk whose `version` is not this checkout's version is stopped and started again. That includes a missing version and a newer one. An equal version string is left as it is. A desk with open reports keeps running until those reports are decided. `status` field `version` is the version of the desk that answered, or `null` when the desk is down.
 
-- All CLI output (stdout and stderr) is pure ASCII: JSON escapes non-ASCII characters (`\u00e4`), so it survives any console code page. `ConvertFrom-Json` restores them.
-- `result` returns exit 6 both for an unknown run and for a known run without a result yet.
-- `show --data` also accepts a bare `data` object and wraps it in an envelope.
-- `list` exits 7, and `open` / `stop` can exit 4.
-- A payload file or stdin may start with one UTF-8 BOM, which is stripped; JSON nesting is limited to 64 levels (exit 2 beyond).
-- The template lint treats any `//` in `template.html`, `template.css` or `template.js` as a URL, so `//` comments fail.
-- Localised attributes use `data-rs-t-<attribute>` and literal UI strings in `template.js` fail the lint.
-- `check` also needs `node tools\visual.mjs` for `--visual` (exit 7 if missing) and runs `node tools\e2e.mjs expect <id>` when `fixtures\expect\` exists.
-- The `● ` prefix stays while any open run is unread, not only the active one.
-- The clipboard writer opens the clipboard with a message-only window (`CreateWindowExW`) so it does not depend on a visible UI window.
+The desk stops itself after 30 minutes with no open report and no page connected.
+
+```text
+show decide-list --data payload.json
+wait RUN_ID --timeout 60
+result RUN_ID
+```
+
+`--port N` (1 to 65535) works before or after the command. The default is `config.json` `port`, else 18742. `--version` prints `grokbot-desk` and the version.
+
+### show
+
+Open a report from a payload.
+
+```text
+python report_shell.py show <template> --data <path|-> [--focus] [--no-window]
+```
+
+| Flag | Meaning |
+|---|---|
+| `template` | Template id, for example `decide-list`. |
+| `--data` | Payload JSON file, or `-` for stdin. Required. |
+| `--focus` | Bring the window to the front on Windows, at most once per burst. |
+| `--no-window` | Register the report and do not open a window. |
+
+The file or stdin may be a full payload, or only the `data` object. A bare object is wrapped: `schema` is `report-shell/payload@1`, `template` is the id you named, `version` is the template's version, `bot` is the template's namespace (or `operations-agent` when the namespace is `global`), `title` is the template's `title_de`, and `created` is now. A value that already has `schema` is treated as a payload. The payload's `template` must equal the id on the command line. The maximum size is 2 MB. Nesting deeper than 64 fails. One leading UTF-8 BOM is stripped.
+
+Stdout:
+
+| Field | When |
+|---|---|
+| `run_id` | Always. |
+| `url` | Always. |
+| `result_path` | Always. |
+| `data_dir` | Always. |
+| `deduped` | A duplicate `dedupe_key` was returned. The existing report is unchanged. |
+| `state` | With `deduped`: `open`, `submitted`, or `cancelled`. |
+| `warnings` | A clamped `created`, or a `task.why` past the fold limit. |
+| `data_dir_warning` | The older Windows data folder is in use. The text names `migrate`. |
+
+A duplicate that is already decided does not open a second report and does not focus the window. If the window fails to launch after the report was registered, the command exits 3 and prints no JSON. The report may already be on the desk.
+
+Exit 0, 2, 3, or 4.
+
+### wait
+
+Wait until a report has a result. How a bot waits, catches up, and acknowledges is in the [skill](../skills/grokbot-desk/SKILL.md).
+
+```text
+python report_shell.py wait <run_id> [--timeout <seconds>]
+python report_shell.py wait <run_id> --until-expiry
+```
+
+A short wait is `wait RUN_ID --timeout 60`. Never use `--timeout 0`. Background shells may not wake the caller.
+
+| Flag | Meaning |
+|---|---|
+| `--timeout` | Seconds to wait. Default 0, which means no time limit. Exit 5 when the report is still open. |
+| `--until-expiry` | Wait until the report's expiry plus 2 minutes. Excludes `--timeout`. |
+
+The result file is checked every 200 ms. Stdout is `{"status", "result_path", "data_dir"}`.
+
+With a readable `expires`, the wait also ends at expiry plus 2 minutes (exit 7) when no result was written. If both a timeout and that expiry exist, the earlier one wins: exit 5 when the timeout is first, exit 7 when the expiry is first. A record without a readable `expires` has no expiry deadline, so only `--timeout` ends that wait.
+
+Exit 0, 2, 5, 6, or 7. Exit 2 covers a bad combination of the two flags and other usage errors. Exit 6 is an unknown `run_id`.
+
+### result
+
+Print the result of a decided report.
+
+```text
+python report_shell.py result <run_id>
+```
+
+Stdout is the result envelope plus `data_dir`. The file on disk is not modified. Exit 0, or 6 when the `run_id` is unknown or the result is not written yet. An open report has no result file yet.
+
+### results
+
+List results decided since a time, oldest first. Open reports are not included.
+
+```text
+python report_shell.py results --since <iso> [--bot <id>] [--wait <seconds>] [--seen <run_id>]
+```
+
+Before the first `show`, record the current time (ISO 8601 with an offset). Keep that time with the `run_id` that `show` returns. That time is the first `--since`. After that, pass `cursor` and `seen` back exactly as returned.
+
+| Flag | Meaning |
+|---|---|
+| `--since` | Required. ISO 8601 with an offset, or the `cursor` from last time. The comparison is inclusive on `decided`. |
+| `--bot` | Only this bot id. |
+| `--wait` | Seconds to wait for a first new result. Default 0. Capped at 3600. The command polls every 0.5 seconds. |
+| `--seen` | A `run_id` already handled. Repeat the flag. |
+
+Stdout is `{"data_dir", "results", "cursor", "seen"}`. Each item has `run_id`, `bot`, `template`, `status`, `decided`, `result_path`, `title` when a title is still known, and `summary` when the decision is compact.
+
+`summary` is decide-list counts (`2 approve, 1 defer`), a preview-post reading, the approve-one or review-doc decision word, or the pick-option id. A preview-post summary is present only when it is consistent. Manual is `posted by you` or `skipped`. Auto and approved is `approved`. The summary is not permission to post. Read `per_platform` and post only `auto` plus `approved`. A preview-post result whose mode and decision disagree is rejected when the person submits it.
+
+When any result matches `--since` before the `--seen` filter, `cursor` is that set's newest `decided`, and `seen` is every `run_id` decided in that same second. If every match was already listed in `--seen`, `results` is empty and `cursor` and `seen` still move to that newest match. `cursor` stays the `--since` you passed, and `seen` keeps the previous values, only when nothing matched before the filter.
+
+Exit 0, or 2 when `--since` is not ISO 8601 with an offset.
+
+### paths
+
+Print the data folder in use.
+
+```text
+python report_shell.py paths
+```
+
+Stdout: `data_dir`, `source` (`RS_DATA_DIR`, `legacy`, or `default`), `runs`, `results`, `log`, `config`. `unused_data_dirs` lists another candidate that still has a `results/` directory. `warning` is present while the older Windows folder is in use by default:
+
+```text
+this is the older data folder; run `python report_shell.py migrate` while the desk is closed to move it to the new name
+```
+
+A caller learns the directory from `paths`, `show`, `wait`, `result`, or `results`. It does not guess. Exit 0.
+
+### status
+
+Print whether the desk is running.
+
+```text
+python report_shell.py status
+```
+
+Stdout: `up`, `port`, `version`, `pid`, `open_runs`, `window_alive`, `data_dir`. `open_runs` is how many reports are open. When the desk is down, `up` is false, `version` and `pid` are null, `open_runs` is 0, and `window_alive` is false. `version` is the version of the desk that answered. Exit 0.
+
+### open
+
+Open the window for the reports that are open.
+
+```text
+python report_shell.py open
+```
+
+No open reports: `{"ok": true, "opened": false}`. The window is already up: the same object, and on Windows the window is brought to the front. On macOS that call does nothing. Otherwise the command launches the window: `opened` is true when this call launched it, and `pending` is true when a launch is already in progress. Exit 0, 3, or 4.
+
+### cancel
+
+Discard an open report. The result is `cancelled`. Cancel only when the person asks, or to replace your own open report with a newer version of the same thing. See [What a result means](#what-a-result-means).
+
+```text
+python report_shell.py cancel <run_id>
+```
+
+Stdout: `{"status": "cancelled", "result_path"}`. Exit 0, or 6 when the `run_id` is unknown, already decided, or the request fails.
+
+### list
+
+List templates as JSON.
+
+```text
+python report_shell.py list
+```
+
+Stdout: `[{"id", "namespace", "version"}, ...]`. Exit 0, or 7 when the registry is broken.
+
+### templates
+
+List installed templates as a table.
+
+```text
+python report_shell.py templates [--json] [--paths]
+```
+
+The table header is `ID`, `SOURCE`, `EXTENDS`, `TITLE`, separated by tabs. `EXTENDS` is `-` when the template does not extend. `--json` prints `[{"id", "source", "extends", "title"}, ...]`. `--paths` is a hidden flag: it forces JSON and adds `path`. Exit 0, or 7 when the registry is broken.
+
+### doctor
+
+Check installed templates, bot identities, and the data folder.
+
+```text
+python report_shell.py doctor
+```
+
+Stdout: `ok` (true), `templates` (the count), `warnings` (registry warnings, including a user template that shadows a built-in), `identity_warnings` (a list of strings). `data_dir_warning` is added while the older Windows folder is in use. Warnings do not fail the command. Exit 0, or 7 when the registry is broken.
+
+### check
+
+Check a template and its fixtures. This is a development command.
+
+```text
+python report_shell.py check <template>
+python report_shell.py check --all [--visual]
+```
+
+`<template>` and `--all` exclude each other. One of them is required. `--visual` also compares golden screenshots.
+
+On success, stdout is `ok`, `visual`, `warnings`, and either `template` (the id you named) or `templates` (the ids `--all` checked). On failure, exit 7, the findings are joined on stderr, and there is no JSON. An unknown id fails the same way. See [Build a template](#build-a-template) for what is checked and how Python is chosen.
+
+### new
+
+Create a template from the starter in the data folder.
+
+```text
+python report_shell.py new <namespace>/<name>
+```
+
+Stdout: `{"ok": true, "id", "path"}`. `id` is `<name>`. Exit 0, or 7 when the name is invalid, the target exists, or the destination would leave the data directory. See [Build a template](#build-a-template).
+
+### serve
+
+Run the desk in this terminal. Use the `serve` command when a runtime ends child processes. It stays in the foreground until the desk stops. A clean idle stop exits 0. Exit 4 when the port cannot be bound or the data folder is busy. Exit 7 when the registry is broken.
+
+### stop
+
+Stop the desk.
+
+```text
+python report_shell.py stop
+```
+
+Run `stop` before `migrate`, and when the person asks you to update and the older data folder is in use. Stdout: `{"ok": true, "stopped": true}` when a desk was stopped, or `stopped: false` when none was running (still exit 0). Exit 4 when the stop request fails.
+
+### migrate
+
+Move the older Windows data folder to the current name. Run `stop` first, while no report is open. macOS has nothing to migrate. `RS_DATA_DIR` is never moved.
+
+```text
+python report_shell.py stop
+python report_shell.py migrate
+```
+
+On Windows the command moves `%LOCALAPPDATA%\spqrk-report-shell` to `%LOCALAPPDATA%\grokbot-desk`. Before the move it rewrites media paths and identity paths in decided reports, and `media_roots` in `config.json`, so they point at the new folder. If the move fails, those files are put back.
+
+| Result | Stdout or error | Exit |
+|---|---|---|
+| `RS_DATA_DIR` is set | `{"migrated": false, "reason": "RS_DATA_DIR is set; it is never migrated"}` | 0 |
+| Not Windows, or no `LOCALAPPDATA` | `{"migrated": false, "reason": "nothing to migrate on this system"}` | 0 |
+| The old folder is absent | `{"migrated": false, "reason": "nothing to migrate", "from", "to"}` | 0 |
+| Moved | `{"migrated": true, "from", "to", "config_rewritten", "runs_rewritten"}` | 0 |
+| The new folder already holds files | nothing was changed | 7 |
+| A desk is running or starting in either folder, including a window still opening, another migrate is running, or a report in the old folder is still open | nothing was changed | 4 |
+| The move itself fails | the old folder stays in use | 7 |
+
+Housekeeping files alone (`server.lock`, `state.json`, `migrate.pending`) do not count as "holds files". A pending marker older than 2 minutes is stale. After a successful move the old folder is not created again for normal use. `wait` and `results` follow a migration that happens while they run.
+
+### update
+
+Fast-forward this git clone on its current branch (`git pull --ff-only`). It does not switch branches. Releases are on `main`. A checkout for testing builds may be on `develop`. Read `branch` in the output. If it is not `main`, and it is not `develop` when the person asked for testing builds, tell the person. Do not claim a latest release unless `branch` is `main`. Then follow `next`.
+
+A bot runs `update` only when the person or the maintainer asks. The install notes are in the [README](../README.md).
+
+```text
+python report_shell.py update
+```
+
+Stdout: `updated` (true when `HEAD` moved), `from` (the version before the pull, or null), `to` (the version after), `branch`, and `next`. `next` is a list of what is left to do. Today it has one entry when the older data folder is in use: decide or discard open reports, run `stop`, then `migrate`. When `next` is empty, the next `show` or `open` restarts an idle desk whose version differs from this checkout.
+
+Exit 7, before the pull and without changing the checkout, when the folder is not a git clone, the clone is on a fixed tag (detached `HEAD`), or it has local changes (untracked files are ignored). Git missing, or a git step that does not answer within 120 seconds, also exits 7. A pull that fails or times out exits 7 too. That pull can already have fetched objects and updated remote-tracking refs, and HEAD may already have moved. Exit 0 when the pull succeeds, including when it was already up to date.
+
+## Exit codes
+
+| Code | Meaning | What you do |
+|---|---|---|
+| 0 | Success. | Continue. |
+| 1 | Python is older than 3.11, or the process crashed. A crash leaves a Python traceback on stderr. | On macOS use `./report-shell`. Otherwise install Python 3.11 or newer ([README](../README.md)). After a crash, tell the person. The result file can still be read. |
+| 2 | Invalid payload, arguments, or config. Unknown template. Bad media. `--since` is not ISO 8601 with an offset. `--until-expiry` combined with `--timeout`. Port outside 1 to 65535 when that port is selected. A non-numeric `port` in `config.json` exits 2 only when the command uses that port. `--port` overrides it. A config file that cannot be parsed still exits 2. Unknown command or other usage error. Stderr names a JSON pointer when there is one, for example `/data/message`. | Fix the input. Do not retry it unchanged. |
+| 3 | The browser could not be started (`show`, `open`). On Windows that is usually no Edge or Chrome. On macOS a missing Edge or Chrome falls back to the default browser, so their absence alone is not exit 3. Exit 3 there means the launch itself failed. A launch can also fail after a browser was found. | Tell the person in chat. Do not open another browser yourself. |
+| 4 | The port is taken, or the desk did not start. Also: `show` got a network or HTTP error other than 400. `open` failed while starting. `stop` could not deliver the request. `serve` could not bind or the data folder is busy. `migrate` refused because a desk is running, another migrate is running, or a report is still open. | Run `status`, try once more, then tell the person. Never pick another port yourself. For `migrate`, stop the desk and decide or discard open reports, then run it again. |
+| 5 | `wait` reached `--timeout` while the report was still open. | Hand the wait to a background task that can wake you, or catch up with `results --since`. |
+| 6 | Unknown `run_id` (`wait`, `cancel`). `result` is unknown or not written yet. `cancel` of a report that is already decided, or a cancel request that failed. | Check the `run_id`. For `result`, try again later. |
+| 7 | `wait` passed expiry plus 2 minutes with no result. `check` found problems. `new` refused the name or the path. The registry is broken (`list`, `templates`, `doctor`, `serve`). `update` refused, the pull failed, git is missing, or a git step did not answer within 120 seconds. `migrate` found files in the new folder, or the move failed. | For `wait`, treat the report as expired. Otherwise fix the template, the clone, or the folders. A refused `update` that never started the pull changes nothing. A failed or timed-out pull may already have fetched objects. A refused `migrate` changes nothing. If the folder move itself fails, the error says the old folder stays in use. |

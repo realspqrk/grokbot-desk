@@ -57,7 +57,7 @@ test('kit and starter examples use fictional neutral identities and relative com
   assert.match(kit, /Social Agent/);
   assert.match(kit, /Inbox Agent/);
   assert.match(bots, /Operations Agent/);
-  assert.match(readme, /py -3 report_shell\.py new <namespace>\/<name>/);
+  assert.match(readme, /python report_shell\.py new <namespace>\/<name>/);
   assert.equal(schema.properties.choice.description, 'The option the user picked.');
   assert.match(fixture.copy.text, /files\.example\.invalid/);
 });

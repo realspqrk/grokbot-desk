@@ -1,83 +1,98 @@
-# `pick-option`: pick one of 2–4 options
+# Pick option
 
-Built-in template for one choice between 2 to 4 alternatives that the person should compare side by side: a venue, a laptop, a delivery slot, a plan. The question is the decision heading on top (left out when it only repeats the report title), then one card per option in one row (2, 3 or 4 columns; 3 or 4 options wrap to two columns when the window is narrow). The rows line up across the cards: name, short summary, then the facts in the same order.
+A question with two, three, or four options side by side. The person picks one. "None of these" asks what is missing and returns no choice.
 
-- The cards are the radios of one radio group. Nothing is preselected; the agent's `suggested` option is only marked *Suggested*.
-- The primary names the pick (*Choose Old Mill Studio*); until then it is disabled. The task banner already says *Pick one option*, so the footer adds no status of its own.
-- *Add note*, a quiet text button under the cards, opens an optional note.
-- *None of these* (a quiet footer alternative; `allow_none: false` hides it) puts the pick aside and asks *What is missing from these options?*. The note is required; the primary becomes *Send request*, *Cancel* brings the pick back, and picking a card also leaves this mode. The result is then a change request with no choice.
+The shell draws the header, the task banner, and the footer. The template fills the page. German is the default UI (`core/i18n/de.json`). `RS_LANG=en` selects the English strings below.
 
-Pick this template when the person chooses **one** of a few alternatives. For a yes/no decision, use `approve-one`; for several independent items, `decide-list`.
+## What the person sees
 
-## Payload `data` (`schema.json`)
+The question as the heading, unless it only repeats the report title. An optional context line sits under it. Options stay in payload order. The same fact labels, in the same order, line the rows up. A suggested option is marked and is never preselected. Add note is a quiet link under the cards. The primary reads Choose until an option is picked, then Choose {name}.
+
+`allow_none` defaults to true and offers None of these. That path asks for a note and returns `request_changes` with no `choice`. The decided banner says new options were requested, including when that report is opened again. Set `allow_none` to false to hide it.
+
+## Payload data
 
 ```json
 {
-  "question": "Which venue should we book for the spring team day?",
-  "context": "All three are free on Friday 15 May. Prices include room hire and lunch for 24 people.",
+  "question": "Where should the spring team day be?",
+  "context": "About twenty people, and one person uses a wheelchair.",
+  "suggested": "old-mill",
   "options": [
     {
-      "id": "boathouse",
-      "name": "Riverside Boathouse",
-      "summary": "Bright room on the water with a terrace. Kayaks for the afternoon if the weather holds.",
-      "facts": [
-        { "label": "Price", "value": "€1,450" },
-        { "label": "Travel", "value": "25 min by tram" },
-        { "label": "Rain plan", "value": "Indoor room only" }
-      ]
+      "id": "old-mill",
+      "name": "Old Mill",
+      "summary": "A garden room outside town."
     },
-    { "id": "old-mill", "name": "Old Mill Studio", "summary": "…", "facts": [ … ] },
-    { "id": "hilltop", "name": "Hilltop Farm", "summary": "…", "facts": [ … ] }
-  ],
-  "suggested": "old-mill"
+    {
+      "id": "river-hall",
+      "name": "River Hall",
+      "summary": "A room by the station."
+    }
+  ]
 }
 ```
 
 | Field | Rule |
 |---|---|
-| `question` | required, 1–200 characters, plain text. Shown as the decision heading; left out when it only repeats the report title |
-| `context` | optional, 1–600 characters: constraints, what the agent already checked. Shown as the why of the task banner unless the payload brings its own `task.why` or the text has a link |
-| `options` | required, 2–4 items, shown in this order |
-| `options[].id` | `^[a-z0-9][a-z0-9_-]{0,31}$`, unique: `show` rejects a repeated id (`x-rs-unique-key`) with exit 2 and a pointer such as `/data/options/1/id` |
-| `options[].name` | 1–48 characters; also used in the primary label |
-| `options[].summary` | optional, 1–240 characters. An http(s) address in the question, context, name, summary or a fact becomes a link under that option's card (the link only, not the surrounding words) |
-| `options[].copy` | optional, 1–4000 characters: the full text to copy, with a copy control in the same grid as that option's card, directly under it at every width, outside the selection button. The control is named for the option (`Copy: Offer` / `Kopieren: Offer`) |
-| `options[].facts` | optional, at most 6 `{ "label" (1–32), "value" (1–80) }`. Use the same labels in the same order in every option so the rows line up; a missing fact leaves its row empty |
-| `suggested` | optional option id; marked, never preselected; ignored when it names no option |
-| `allow_none` | optional boolean, default `true`: offer *None of these*. `false` hides it |
+| `question` | Required. 1 to 200 characters. http(s) addresses become links. |
+| `context` | Optional. 1 to 600 characters. http(s) addresses become links. |
+| `options` | Required. 2 to 4. Unique `id`. |
+| `allow_none` | Optional. Default true. |
+| `suggested` | Optional. An option `id`. Marked, never preselected. |
 
-## Result `data` (`result.schema.json`, oneOf)
+Each option has `id` (`^[a-z0-9][a-z0-9_-]{0,31}$`) and `name` (1 to 48). Optional: `summary` (1 to 240), `copy` (1 to 4000), and `facts` (at most 6, each `label` 1 to 32 and `value` 1 to 80). An http(s) address in `summary` is also shown as a link under the card.
 
-```json
-{ "choice": "old-mill", "note": "Please ask whether the garden has step-free access." }
-```
+## Result data
+
+A pick is `choice` (the option id) and `note` (max 1000, may be empty). None of these is `decision` `request_changes` and a `note` that contains a non-space character, with no `choice`.
+
+Picking Old Mill on the payload above:
 
 ```json
-{ "decision": "request_changes", "note": "All three are too far for the night shift." }
+{
+  "choice": "old-mill",
+  "note": "Please ask whether the garden has step-free access."
+}
 ```
 
-| Field | Rule |
+Asking for different options:
+
+```json
+{
+  "decision": "request_changes",
+  "note": "None of these has step-free access."
+}
+```
+
+## Keyboard path
+
+Tab reaches the options. Left and Right move between them and select the one you land on. A suggested option is marked, and nothing starts selected. Tab reaches Add note. None of these is a footer alternative: it clears the pick and asks for a note. Ctrl+Enter or Cmd+Enter sends. The exact golden key sequence is in `fixtures/expect/golden.json`.
+
+## Files
+
+`template.json`, `template.html`, `template.css`, `template.js`, `schema.json`, `result.schema.json`, `fixtures/golden.json`, `fixtures/edge-*.json`, `fixtures/invalid-*.json`, `fixtures/expect/golden.json`, and this README. The task banner is in [docs/GUIDE.md](../../../docs/GUIDE.md).
+
+## For maintainers
+
+### Strings used
+
+| Key | English |
 |---|---|
-| `choice` | the `id` of the picked option |
-| `note` | string, at most 1000 characters, may be empty |
-| `decision` | only `request_changes`, for *None of these*: then there is no `choice`, and `note` (1–1000, not only spaces) says what is missing. Offer new options or ask again |
+| `choice_group_label` | Decision: {what} |
+| `po_suggested` | Suggested |
+| `po_choose` | Choose {name} |
+| `po_choose_idle` | Choose |
+| `po_note_placeholder` | Optional |
+| `add_note` | Add note |
+| `note` | Note |
+| `copy` | Copy |
+| `copy_named` | Copy: {name} |
+| `po_none` | None of these |
+| `po_none_label` | What is missing from these options? |
+| `po_none_required` | Say briefly what is missing |
+| `request_send` | Send request |
+| `cancel` | Cancel |
 
-## Strings
+### Test hooks
 
-English and German tables (`core/i18n/en.json`, `core/i18n/de.json`): `po_suggested` (Suggested / Empfohlen), `po_choose` (Choose {name} / {name} wählen), `po_choose_idle` (Choose / Auswählen), `po_note_placeholder` (Optional), `po_none` (None of these / Keine davon), `po_none_label` (What is missing from these options? / Was fehlt an diesen Optionen?), `po_none_required` (Say briefly what is missing / Schreib kurz, was fehlt); shared: `choice_group_label` (accessible name of the group: Decision: {what}), `add_note`, `note`, `request_send` (Send request / Anfrage senden), `cancel`.
-
-## Fixtures
-
-| File | What it covers |
-|---|---|
-| `golden.json` | 3 venues, summaries, 3 aligned facts, a suggestion |
-| `edge-max.json` | 4 options, longest names and summaries, 6 facts each (4 columns; 2×2 when narrow) |
-| `edge-two.json` | 2 options with names only, no context, no suggestion |
-| `edge-de.json` | the golden comparison in German (question, context, option names, summaries and fact labels) for German reviews |
-| `edge-uneven.json` | German content, a missing summary and an uneven number of facts (rows stay aligned) |
-| `invalid-one-option.json`, `invalid-five-options.json`, `invalid-bad-id.json`, `invalid-duplicate-ids.json` | rejected at `/options` (too few, too many), `/options/0/id` and `/options/1/id` (two different options share the id `slot`) |
-| `expect/golden.json` | `flow` (mouse) and `keyboard` (keys only) produce the same `result` |
-
-## Keyboard path (golden, one report open)
-
-Tab ×2 enters the option group (after the `…` menu) on the first card. ArrowRight moves to *Old Mill Studio* and picks it (the arrow keys move and pick, wrapping at the ends; Space picks the focused card). Tab reaches *Add note*; Space opens the note and focuses it; type. Ctrl+Enter sends.
+Option copy number `n` (1-based index in `options`) is `data-copy-id="option-<n>"`. The first option is `option-1`.

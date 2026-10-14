@@ -2,15 +2,17 @@
 
 Instructions for coding agents working in this repository. Human contributor
 rules live in [CONTRIBUTING.md](CONTRIBUTING.md); the template author guide is
-[docs/GUIDE.md](docs/GUIDE.md). This file does not repeat them; read them when
-a task touches their area.
+[docs/GUIDE.md](docs/GUIDE.md). Setup, the test commands, and the hard rules
+are repeated here on purpose, so an agent can act without opening those files.
+Read them when a task touches their area. This file does not copy the rest.
 
 ## What this is
 
-grokbot-desk is a local desktop review and approval window for AI agents. A
-bot sends a JSON payload for a template (`show`), a person decides in one
-Edge/Chrome app window, the bot reads the result JSON (`wait`, `result`).
-Python 3.11+ standard library only at runtime; Windows and macOS.
+grokbot-desk is a local desk: a window where a person decides and reads what
+bots send. A bot runs `show` with a JSON payload for a template, the person
+decides in one Edge or Chrome app window, and the bot reads the result JSON
+(`wait`, `result`, `results`). Python 3.11+ standard library only at runtime;
+Windows and macOS.
 
 Entry points: `report_shell.py` (Python), `report-shell` (macOS/POSIX
 launcher that finds a Python 3.11+), `report-shell.cmd` (Windows, `py -3`).
@@ -19,9 +21,9 @@ launcher that finds a Python 3.11+), `report-shell.cmd` (Windows, `py -3`).
 
 | Path | What |
 |---|---|
-| `core/cli.py` | CLI: `show wait result results paths status open cancel list templates doctor check new serve stop migrate` |
+| `core/cli.py` | CLI: `show wait result results paths status open cancel list templates doctor check new serve stop migrate update` |
 | `core/server.py` | `ThreadingHTTPServer` on `127.0.0.1` (product port 18742), API + event stream |
-| `core/runs.py`, `core/results.py`, `core/envelope.py` | run store, result files, payload/result envelopes |
+| `core/runs.py`, `core/results.py`, `core/envelope.py` | report store (`runs/`), result files, payload and result envelopes |
 | `core/registry.py`, `core/schema.py`, `core/check.py`, `core/lint.py` | template registry, restricted JSON Schema, `check`, template lint |
 | `core/tasks.py` + `core/static/tasks.js` | task banner and button labels per task kind |
 | `core/identity.py`, `core/launcher.py`, `core/launch_coordination.py` | bot identity/avatars, browser app-window launch, burst coordination |
@@ -46,6 +48,18 @@ design). Env for Node checks: `RS_PLAYWRIGHT_CORE` = absolute path to
 `node_modules/playwright-core/index.mjs`, `RS_PYTHON` = the pytest Python,
 optional `RS_BROWSER_CHANNEL` (`msedge` default on Windows, `chrome` elsewhere).
 
+Windows (PowerShell):
+
+```powershell
+python -m pytest -q
+$env:RS_E2E_PORT=18921; node tools/node-tests.mjs gate
+$env:RS_E2E_PORT=18921; node tools/node-tests.mjs all
+python tools/lint_src.py
+python report_shell.py check <template> # --visual compares screenshots
+```
+
+macOS:
+
 ```bash
 python -m pytest -q                                  # Python suite
 RS_E2E_PORT=18921 node tools/node-tests.mjs gate     # CI blocking: unit + browser smoke
@@ -54,30 +68,31 @@ python tools/lint_src.py                             # source policy lint
 python report_shell.py check <template> [--visual]   # one template
 ```
 
-Run the narrowest test first, the full set before declaring done. CI
-(`.github/workflows/ci.yml`, Windows + macOS, Python 3.11/3.12) blocks on
-pytest, lint and `gate`; the full browser suite is advisory there.
+Run the narrowest test first, and the full set before you call the work done.
+What CI blocks on, and what stays advisory, is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Hard rules
 
 - **Runtime is stdlib only.** `lint_src.py` rejects non-stdlib imports
   (C15a), `webbrowser`, `os.startfile` outside `open_url`, and shell
-  `start`/URL launches (C3). No new dependencies without maintainer approval.
+  `start` or URL launches (C3: no second way to open a browser). No new
+  dependencies without maintainer approval.
 - **Publishable only.** No organization, person, machine, account, drive or
   bot-specific names, no personal paths, no real data in code, fixtures,
   screenshots, logs or commit messages. This file included.
 - **Ports.** Tests use a temporary `RS_DATA_DIR` and ports `18920`–`18939`.
   Never use 18742 and never touch a real data directory.
 - **Calm UI.** CSS uses `var(--rs-*)` tokens; spacing only `var(--space-*)`,
-  `0` or `1px` (lint C16-K7a). Template rules: docs/GUIDE.md section 9.
-  Checker limits: docs/calm-checker-limits.md.
+  `0` or `1px`. C16-K7a is the lint that rejects any other spacing length.
+  Template rules: [docs/GUIDE.md](docs/GUIDE.md). Checker limits:
+  [docs/calm-checker-limits.md](docs/calm-checker-limits.md).
 - **No literal UI strings** in templates; strings go through `core/i18n`.
 - **Golden screenshots** are re-recorded (`node tools/visual.mjs --update`)
   only after a person approved the new screenshots. Never to make a test pass.
 - **Fixtures** per template: `golden.json`, 2+ `edge-*.json`, 2+
   `invalid-*.json`, `fixtures/expect/golden.json`.
-- **Version** lives in `core/__init__.py`, `pyproject.toml` and the README
-  badge; `CHANGELOG.md` names it.
+- **Version** lives in `core/__init__.py`, `pyproject.toml`, the README
+  badge and the README Status line; `CHANGELOG.md` names it.
 
 ## Working conventions
 
@@ -88,9 +103,9 @@ pytest, lint and `gate`; the full browser suite is advisory there.
   New browser test files are picked up automatically by content
   (`loadChromium` / `chromium.launch`). Smoke-set test names in
   `tools/node-tests.mjs` are exact; renaming such a test means updating `SMOKE`.
-- Commits: Conventional Commits, lower-case subject that states the outcome
-  (`fix(popup): say so when the browser refuses to close the app window`).
-  Branch for larger work; merge and push only on the maintainer's go.
+- Commits, issues, and branches follow [CONTRIBUTING.md](CONTRIBUTING.md).
+  The subject is a lower-case outcome (`fix(popup): say so when the browser
+  refuses to close the app window`). Merge and push only on the maintainer's go.
 - User-facing text (README, CHANGELOG, SKILL.md, UI strings): plain, short
   sentences, concrete behavior, no internal phase labels or jargon.
 - Line endings are LF except `*.cmd` (CRLF); see `.gitattributes`.
