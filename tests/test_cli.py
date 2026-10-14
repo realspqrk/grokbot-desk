@@ -1520,3 +1520,18 @@ def test_a_config_port_that_is_no_number_is_an_invalid_config(tmp_path, port):
     )
     assert result.returncode == 2, result.stderr
     assert "invalid config" in result.stderr and "Traceback" not in result.stderr
+
+
+def test_update_reports_git_that_hangs_mid_way_as_a_refusal(clone, monkeypatch, capsys):
+    real = cli_module._git
+    calls = []
+
+    def hanging(root, *args):
+        calls.append(args)
+        if len(calls) > 1:
+            raise subprocess.TimeoutExpired(["git", *args], 1)
+        return real(root, *args)
+
+    monkeypatch.setattr(cli_module, "_git", hanging)
+    assert cli_module.command_update(clone) == 7
+    assert "git" in capsys.readouterr().err

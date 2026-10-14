@@ -901,11 +901,16 @@ def _clone_version(root):
 def command_update(root=ROOT):
     """Fast-forward this clone to its upstream branch. Refuses local changes;
     names what is left to do (stop and migrate) afterwards."""
-    root = Path(root)
     try:
-        inside = _git(root, "rev-parse", "--show-toplevel")
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        return _update(Path(root))
+    except OSError as exc:
         return error(f"update needs git: {exc}", 7)
+    except subprocess.TimeoutExpired as exc:
+        return error(f"git did not answer within {GIT_TIMEOUT_S} seconds ({' '.join(exc.cmd)})", 7)
+
+
+def _update(root):
+    inside = _git(root, "rev-parse", "--show-toplevel")
     if inside.returncode or Path(inside.stdout.strip()).resolve() != root.resolve():
         return error(f"{root} is not a git clone; update it the way you installed it", 7)
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
@@ -915,10 +920,7 @@ def command_update(root=ROOT):
         return error("this clone has local changes; commit or discard them, then update", 7)
     before = _clone_version(root)
     head = _git(root, "rev-parse", "HEAD").stdout.strip()
-    try:
-        pulled = _git(root, "pull", "--ff-only", "--quiet")
-    except subprocess.TimeoutExpired:
-        return error(f"git pull did not finish within {GIT_TIMEOUT_S} seconds; nothing changed", 7)
+    pulled = _git(root, "pull", "--ff-only", "--quiet")
     if pulled.returncode:
         detail = (pulled.stderr or pulled.stdout).strip().splitlines()
         return error(f"git pull failed: {detail[-1] if detail else pulled.returncode}", 7)
