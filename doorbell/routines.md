@@ -16,7 +16,7 @@ Trigger: webhook
 
 Content:
 
-The desk sends JSON in one of three shapes. A decision has `status`, `bot`, `bot_name`, `run_id`, and `title`. A plain test is only `{"status": "test"}`. An addressed test is `{"status": "test"}` plus `bot_name`. A test has no run id. Do not read a result for it. `status` is `submitted`, `cancelled`, `expired`, or `test`. `bot` is the desk id. `bot_name` is the name to match. On a decision it is the payload `identity.name` when the report gives one, otherwise the bot id. A name in the bot registry does not count.
+This routine runs on a webhook trigger. The desk sends JSON in one of three shapes. A decision has `status`, `bot`, `bot_name`, `run_id`, and `title`. A plain test is only `{"status": "test"}`. An addressed test is `{"status": "test"}` plus `bot_name`. A test has no run id. Do not read a result for it. `status` is `submitted`, `cancelled`, `expired`, or `test`. `bot` is the desk id. `bot_name` is the name to match. On a decision it is the payload `identity.name` when the report gives one, otherwise the bot id. A name in the bot registry does not count.
 
 When `status` is `test` and there is no `bot_name`, write exactly this line in your own chat and nothing else:
 
@@ -50,4 +50,4 @@ Trigger: weekly schedule. The person picks the day and time when they turn this 
 
 Content:
 
-Follow the desk-update skill. Run the update in the clone folder from setup. On Windows use the Python call from setup. On macOS use ./report-shell. Report in one line. After update, compare the clone's doorbell/ texts with your own routine texts, skills, and description. Update your routine instructions with your routine tool. Keep each routine's trigger, webhook address, key, and schedule. Never create a second webhook routine. Update your skills and description when your tools allow it. Anything you cannot change yourself, name in that line so the person can paste it. Say which file. Never re-import the template. Never install a second Desk Doorbell. Do not force the update.
+This routine runs on a weekly schedule that the person picks. Follow the desk-update skill. Run the update in the clone folder from setup. On Windows use the Python call from setup. On macOS use ./report-shell. Report in one line. After update, compare the clone's doorbell/ texts with your own routine texts, skills, and description. Update your routine instructions with your routine tool. Keep each routine's trigger, webhook address, key, and schedule. Never create a second webhook routine. Update your skills and description when your tools allow it. Anything you cannot change yourself, name in that line so the person can paste it. Say which file. Never re-import the template. Never install a second Desk Doorbell. Do not force the update.
