@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Updates take effect on the next `show`.** A desk still running the
+  older version is restarted when no report is open. With open reports it
+  keeps running until they are decided.
+- **Umlauts in text output.** `templates` and error messages print text as
+  is on macOS and in a Windows console. Output piped on Windows stays ASCII;
+  JSON output is unchanged.
+- **`check` on macOS.** It no longer needs the Windows `py` launcher. The
+  browser tools use the same Python as `check`, or `python3`.
+
 ## 1.0.0-beta.3 (2026-10-13)
 
 This is the release candidate for 1.0. The desk is calmer, and you decide in one click.

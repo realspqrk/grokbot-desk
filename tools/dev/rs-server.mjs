@@ -18,9 +18,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-export function resolvePythonExecutable(environment = process.env, run = spawnSync) {
-  const command = environment.RS_PYTHON || 'py';
-  const commandArgs = environment.RS_PYTHON ? [] : ['-3'];
+// RS_PYTHON wins; otherwise the py launcher on Windows, python3 elsewhere.
+export function pythonCommand(environment = process.env, platform = process.platform) {
+  if (environment.RS_PYTHON) return { command: environment.RS_PYTHON, args: [] };
+  return platform === 'win32' ? { command: 'py', args: ['-3'] } : { command: 'python3', args: [] };
+}
+
+export function resolvePythonExecutable(environment = process.env, run = spawnSync, platform = process.platform) {
+  const { command, args: commandArgs } = pythonCommand(environment, platform);
   const result = run(
     command,
     [...commandArgs, '-c', 'import sys; print(sys.executable)'],

@@ -196,7 +196,7 @@ Five built-in templates:
 
 Run `python report_shell.py templates` to list what is installed. If none of these fits, `python report_shell.py new example/my-template` writes a template into your data directory, and `python report_shell.py check my-template` checks it. See the [template guide](docs/GUIDE.md).
 
-`show`, `wait`, `result`, `templates`, and `new` need only Python at runtime. `check` is a development check: it also needs Node.js, an existing playwright-core installation (set `RS_PLAYWRIGHT_CORE` to its entry point), and a supported browser. The check uses `py -3` unless `RS_PYTHON` names a working Python executable; for example, in PowerShell: `$env:RS_PYTHON = (Get-Command python).Source`, on macOS: `export RS_PYTHON=python3.12`.
+`show`, `wait`, `result`, `templates`, and `new` need only Python at runtime. `check` is a development check: it also needs Node.js, an existing playwright-core installation (set `RS_PLAYWRIGHT_CORE` to its entry point), and a supported browser. The check runs its browser tools with the same Python it runs on; set `RS_PYTHON` to use another one.
 
 ## Bot identity
 

@@ -20,6 +20,7 @@ import { isSameOriginPath } from '../tools/dev/browser-safety.mjs';
 import {
   browserChannel,
   loadChromium,
+  pythonCommand,
   resolvePythonExecutable,
   ROOT,
   serverStderrTail,
@@ -104,6 +105,12 @@ function stopServerSandbox(overrides = {}) {
   vm.runInContext(implementation, value);
   return { stopServer: value.stopServer, removed };
 }
+
+test('the test server finds Python on every platform without RS_PYTHON', () => {
+  assert.deepEqual(pythonCommand({}, 'win32'), { command: 'py', args: ['-3'] });
+  assert.deepEqual(pythonCommand({}, 'darwin'), { command: 'python3', args: [] });
+  assert.deepEqual(pythonCommand({ RS_PYTHON: '/opt/python3.12' }, 'darwin'), { command: '/opt/python3.12', args: [] });
+});
 
 test('resolved interpreter spawn retains python itself instead of the py launcher', () => {
   const resolveCalls = [];

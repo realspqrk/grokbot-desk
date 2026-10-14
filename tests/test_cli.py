@@ -1379,3 +1379,58 @@ def test_a_port_taken_without_our_state_is_still_foreign(tmp_path, monkeypatch):
         if "server" in holder:
             holder["server"].shutdown()
             holder["server"].server_close()
+
+
+def _old_server_double(monkeypatch, open_runs):
+    """A desk from an older version answers on the port; record what show does."""
+    calls = []
+    state = {"up": True}
+
+    def hello(port, timeout=.35):
+        if not state["up"]:
+            return None
+        if "launched" in calls:
+            return {"runner": RUNNER_ID, "version": cli_module.__version__, "open_runs": 0}
+        return {"runner": RUNNER_ID, "version": "0.0.1", "open_runs": open_runs}
+
+    def request(port, path, token=None, **_):
+        calls.append(path)
+        state["up"] = False
+        return {"ok": True}
+
+    def launch(script, port, base):
+        calls.append("launched")
+        state["up"] = True
+        return 4242
+
+    monkeypatch.setattr(cli_module, "_hello", hello)
+    monkeypatch.setattr(cli_module, "_request", request)
+    monkeypatch.setattr(cli_module, "_port_open", lambda port: state["up"])
+    monkeypatch.setattr(cli_module, "launch_server", launch)
+    return calls
+
+
+def test_after_an_update_an_idle_desk_from_the_older_version_is_replaced(tmp_path, monkeypatch):
+    calls = _old_server_double(monkeypatch, open_runs=0)
+    hello = cli_module._ensure_server(tmp_path, free_port())
+    assert calls == ["/stop", "launched"]
+    assert hello["version"] == cli_module.__version__
+
+
+def test_an_older_desk_with_open_desks_keeps_running(tmp_path, monkeypatch):
+    calls = _old_server_double(monkeypatch, open_runs=2)
+    hello = cli_module._ensure_server(tmp_path, free_port())
+    assert calls == []
+    assert hello["version"] == "0.0.1"
+
+
+def test_text_output_keeps_umlauts_on_a_utf8_stream(tmp_path):
+    env = dict(os.environ, RS_DATA_DIR=str(tmp_path / "data"), PYTHONIOENCODING="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "report_shell.py"), "templates"],
+        cwd=ROOT, env=env, capture_output=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    text = result.stdout.decode("utf-8")
+    assert "\\x" not in text and "\\u" not in text
+    assert not text.isascii()  # the built-in titles are German

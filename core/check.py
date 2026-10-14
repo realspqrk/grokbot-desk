@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from .jsonutil import loads
@@ -112,12 +113,12 @@ def _expect_error(value, result_schema, counter_cases=False):
 
 
 def _tool_env(registry):
-    if registry.user_templates_root is None:
-        return None
-    return dict(
-        os.environ,
-        RS_DATA_DIR=str(registry.user_templates_root.parent),
-    )
+    # the Node tools start the desk with this same Python
+    env = dict(os.environ)
+    env.setdefault("RS_PYTHON", sys.executable)
+    if registry.user_templates_root is not None:
+        env["RS_DATA_DIR"] = str(registry.user_templates_root.parent)
+    return env
 
 
 def contract_findings(registry, repo_root, selected=None, run_expect_backend=False):

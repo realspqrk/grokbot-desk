@@ -1,5 +1,6 @@
 """Command-line interface for report-shell."""
 import argparse
+import codecs
 import json
 import math
 import os
@@ -221,9 +222,25 @@ def _await_own_state(base, port, launched_at):
     return _started_by_us(base, port, launched_at)
 
 
+def _replace_outdated(base, port, hello):
+    """After an update, stop an idle desk that still runs the older code.
+    One with open desks keeps running until they are decided. Returns
+    whether it is gone."""
+    if hello.get("version") == __version__ or hello.get("open_runs"):
+        return False
+    try:
+        _request(port, "/stop", token=_state(base).get("token"))
+    except (OSError, ValueError):
+        return False
+    until = time.monotonic() + 5
+    while _port_open(port) and time.monotonic() < until:
+        time.sleep(.05)
+    return not _port_open(port)
+
+
 def _ensure_server(base, port):
     hello = _hello(port)
-    if hello:
+    if hello and not _replace_outdated(base, port, hello):
         return hello
     if _port_open(port):
         raise RuntimeError("port is held by a foreign process")
@@ -920,7 +937,10 @@ def build_parser():
 def main(argv=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="ascii", errors="backslashreplace")
+            # A UTF-8 stream (macOS, a Windows console) prints text as is; any
+            # other (a Windows pipe) stays ASCII. JSON output is ASCII anyway.
+            utf8 = codecs.lookup(stream.encoding or "ascii").name == "utf-8"
+            stream.reconfigure(encoding="utf-8" if utf8 else "ascii", errors="backslashreplace")
     argv = list(sys.argv[1:] if argv is None else argv)
     for index, item in enumerate(argv):
         if item == "--port" and index > 0 and index + 1 < len(argv):
