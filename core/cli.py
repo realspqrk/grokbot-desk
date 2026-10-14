@@ -4,9 +4,11 @@ import codecs
 import json
 import math
 import os
+import re
 import shutil
 import socket
 import stat
+import subprocess
 import sys
 import time
 import urllib.error
@@ -880,6 +882,59 @@ def command_new(args):
         return error(str(exc), 7)
 
 
+GIT_TIMEOUT_S = 120
+
+
+def _git(root, *args):
+    return subprocess.run(
+        ["git", *args], cwd=root, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=GIT_TIMEOUT_S,
+    )
+
+
+def _clone_version(root):
+    text = (Path(root) / "core" / "__init__.py").read_text(encoding="utf-8")
+    found = re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.M)
+    return found.group(1) if found else None
+
+
+def command_update(root=ROOT):
+    """Fast-forward this clone to its upstream branch. Refuses local changes;
+    names what is left to do (stop and migrate) afterwards."""
+    root = Path(root)
+    try:
+        inside = _git(root, "rev-parse", "--show-toplevel")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return error(f"update needs git: {exc}", 7)
+    if inside.returncode or Path(inside.stdout.strip()).resolve() != root.resolve():
+        return error(f"{root} is not a git clone; update it the way you installed it", 7)
+    branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if branch == "HEAD":
+        return error("this clone is on a fixed tag; check out main (git checkout main), then update", 7)
+    if _git(root, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+        return error("this clone has local changes; commit or discard them, then update", 7)
+    before = _clone_version(root)
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    try:
+        pulled = _git(root, "pull", "--ff-only", "--quiet")
+    except subprocess.TimeoutExpired:
+        return error(f"git pull did not finish within {GIT_TIMEOUT_S} seconds; nothing changed", 7)
+    if pulled.returncode:
+        detail = (pulled.stderr or pulled.stdout).strip().splitlines()
+        return error(f"git pull failed: {detail[-1] if detail else pulled.returncode}", 7)
+    steps = []
+    if migration_advice(data_dir()):
+        steps.append("the older data folder is in use: decide or discard open reports, run stop, then migrate")
+    output({
+        "updated": _git(root, "rev-parse", "HEAD").stdout.strip() != head,
+        "from": before,
+        "to": _clone_version(root),
+        "branch": branch,
+        "next": steps,
+    })
+    return 0
+
+
 def command_stop(base, port):
     hello = _hello(port)
     if not hello:
@@ -893,48 +948,67 @@ def command_stop(base, port):
         return error(str(exc), 4)
 
 
+HELP_EPILOG = """typical flow:
+  show decide-list --data payload.json   open a report, prints run_id
+  wait RUN_ID --timeout 60               wait for the decision
+  result RUN_ID                          print the result JSON
+
+Output is JSON on stdout. Guide: docs/GUIDE.md. Bots: skills/grokbot-desk/SKILL.md.
+"""
+
+
 def build_parser():
-    parser = argparse.ArgumentParser(prog=PRODUCT_NAME)
-    parser.add_argument("--port", type=int)
+    parser = argparse.ArgumentParser(
+        prog=PRODUCT_NAME,
+        description="A local desk where you decide and read what your bots send.",
+        epilog=HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--port", type=int, help="desk port (default: config.json, else 18742)")
     parser.add_argument("--version", action="version", version=f"{PRODUCT_NAME} {__version__}")
-    commands = parser.add_subparsers(dest="command", required=True)
-    show = commands.add_parser("show")
-    show.add_argument("template")
-    show.add_argument("--data", required=True)
-    show.add_argument("--focus", action="store_true")
-    show.add_argument("--no-window", action="store_true")
-    wait = commands.add_parser("wait")
-    wait.add_argument("run_id")
+    commands = parser.add_subparsers(dest="command", required=True, metavar="<command>")
+
+    def command(name, text):
+        return commands.add_parser(name, help=text, description=text)
+
+    show = command("show", "open a report on the desk from a payload")
+    show.add_argument("template", help="template id, e.g. decide-list")
+    show.add_argument("--data", required=True, help="payload JSON file, or - for stdin")
+    show.add_argument("--focus", action="store_true", help="bring the window to the front (Windows)")
+    show.add_argument("--no-window", action="store_true", help="register the report without opening a window")
+    wait = command("wait", "wait until a report has a result")
+    wait.add_argument("run_id", help="the run_id that show printed")
     wait_limit = wait.add_mutually_exclusive_group()
-    wait_limit.add_argument("--timeout", type=float, default=0)
-    wait_limit.add_argument("--until-expiry", action="store_true")
-    result = commands.add_parser("result")
-    result.add_argument("run_id")
-    results = commands.add_parser("results")
-    results.add_argument("--since", required=True)
-    results.add_argument("--bot")
-    results.add_argument("--wait", type=float, default=0)
-    results.add_argument("--seen", action="append", default=[])
-    commands.add_parser("paths")
-    commands.add_parser("status")
-    commands.add_parser("open")
-    cancel = commands.add_parser("cancel")
-    cancel.add_argument("run_id")
-    commands.add_parser("list")
-    templates = commands.add_parser("templates")
-    templates.add_argument("--json", action="store_true")
+    wait_limit.add_argument("--timeout", type=float, default=0, help="seconds to wait (exit 5 when still open)")
+    wait_limit.add_argument("--until-expiry", action="store_true", help="wait until the report expires")
+    result = command("result", "print the result of a decided report")
+    result.add_argument("run_id", help="the run_id that show printed")
+    results = command("results", "list results decided since a time, oldest first")
+    results.add_argument("--since", required=True, help="ISO 8601 time with offset, or the cursor from last time")
+    results.add_argument("--bot", help="only this bot id")
+    results.add_argument("--wait", type=float, default=0, help="seconds to wait for a first new result")
+    results.add_argument("--seen", action="append", default=[], help="run_id already handled (repeat it)")
+    command("paths", "print the data folder in use and why")
+    command("status", "print whether the desk runs, its version and open reports")
+    command("open", "open the window for the reports that are open")
+    cancel = command("cancel", "discard an open report (the result is cancelled)")
+    cancel.add_argument("run_id", help="the run_id that show printed")
+    command("list", "list templates as JSON")
+    templates = command("templates", "list installed templates as a table")
+    templates.add_argument("--json", action="store_true", help="print JSON instead of a table")
     templates.add_argument("--paths", action="store_true", help=argparse.SUPPRESS)
-    commands.add_parser("doctor")
-    check = commands.add_parser("check")
+    command("doctor", "check installed templates, bot identities and the data folder")
+    check = command("check", "check a template and its fixtures (development)")
     group = check.add_mutually_exclusive_group(required=True)
-    group.add_argument("template", nargs="?")
-    group.add_argument("--all", action="store_true")
-    check.add_argument("--visual", action="store_true")
-    new = commands.add_parser("new")
-    new.add_argument("name")
-    commands.add_parser("serve")
-    commands.add_parser("stop")
-    commands.add_parser("migrate")
+    group.add_argument("template", nargs="?", help="template id")
+    group.add_argument("--all", action="store_true", help="check every installed template")
+    check.add_argument("--visual", action="store_true", help="also compare golden screenshots")
+    new = command("new", "create a template from the starter in the data folder")
+    new.add_argument("name", help="<namespace>/<id>, e.g. example-bot/weekly")
+    command("serve", "run the desk in this terminal (when a runtime ends child processes)")
+    command("stop", "stop the desk server")
+    command("migrate", "move the older Windows data folder to the new name (desk stopped)")
+    command("update", "pull the newest version into this clone (git pull --ff-only)")
     return parser
 
 
@@ -964,6 +1038,8 @@ def main(argv=None):
         return command_check(args)
     if args.command == "new":
         return command_new(args)
+    if args.command == "update":
+        return command_update()
     if args.command == "migrate":
         return command_migrate()
     # serve checks and lays out its folder itself (it refuses a migrated one)

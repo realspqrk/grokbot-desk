@@ -1451,3 +1451,58 @@ def test_check_all_names_the_templates_it_checked(tmp_path, monkeypatch, capsys)
     value = json.loads(capsys.readouterr().out)
     assert checked == ["--all"]
     assert "template" not in value and value["templates"] == ["_starter", "approve-one"]
+
+
+def _git(cwd, *args):
+    return subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True, check=True, timeout=30,
+    ).stdout.strip()
+
+
+def _release(repo, version):
+    (repo / "core").mkdir(exist_ok=True)
+    (repo / "core" / "__init__.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", version)
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """A clone of a project whose upstream has a newer release."""
+    upstream = tmp_path / "upstream"
+    upstream.mkdir()
+    _git(upstream, "init", "-q", "-b", "main")
+    _release(upstream, "1.0.0")
+    clone = tmp_path / "clone"
+    _git(tmp_path, "clone", "-q", str(upstream), str(clone))
+    _release(upstream, "1.1.0")
+    return clone
+
+
+def test_update_pulls_the_newer_release_and_names_both_versions(clone, monkeypatch, capsys):
+    monkeypatch.setattr(cli_module, "migration_advice", lambda base: None)
+    assert cli_module.command_update(clone) == 0
+    value = json.loads(capsys.readouterr().out)
+    assert value["updated"] is True
+    assert (value["from"], value["to"], value["branch"]) == ("1.0.0", "1.1.0", "main")
+    assert value["next"] == []
+    assert cli_module.command_update(clone) == 0
+    assert json.loads(capsys.readouterr().out)["updated"] is False
+
+
+def test_update_names_migrate_when_the_older_data_folder_is_in_use(clone, monkeypatch, capsys):
+    monkeypatch.setattr(cli_module, "migration_advice", lambda base: "older folder")
+    assert cli_module.command_update(clone) == 0
+    assert any("migrate" in step for step in json.loads(capsys.readouterr().out)["next"])
+
+
+def test_update_refuses_local_changes_and_leaves_the_clone_alone(clone, capsys):
+    (clone / "core" / "__init__.py").write_text('__version__ = "local"\n', encoding="utf-8")
+    assert cli_module.command_update(clone) == 7
+    assert "local changes" in capsys.readouterr().err
+    assert "local" in (clone / "core" / "__init__.py").read_text(encoding="utf-8")
+
+
+def test_update_outside_a_git_clone_says_how_to_update(tmp_path, capsys):
+    assert cli_module.command_update(tmp_path) == 7
+    assert "not a git clone" in capsys.readouterr().err
