@@ -109,23 +109,20 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* -------------------------------------------------------- task banner -- */
 /* What to do and who acts next, under the title of every report: one line
-   (what, then effort and due date), the why, and steps only where they add
-   something the line and the buttons do not say. The tint
-   is a status colour, one per kind (tokens.css --rs-task-*), not the accent:
-   it is the only large non-accent colour on the page (the C16 exception,
-   checked by tools/calm.mjs). Red only for blocking or a due date that is
-   today or past. It holds no buttons, at most the details toggle of a long
-   why. A decided report keeps it, neutral and muted. */
+   (what, then urgency and due date), then the why. The tint is a status
+   colour per ask (approve, do, read; tokens.css --rs-task-*), not the
+   accent: it is the only large non-accent colour on the page (the C16
+   exception, checked by tools/calm.mjs). Red only for urgent or a due date
+   that is today or past. It holds no buttons, at most the details toggle
+   of a long why. A decided report keeps it, neutral and muted. */
 .rs-task { padding: 0 var(--space-6) var(--space-4); }
 
 .rs-task {
   --rs-task-bg: var(--rs-task-fyi-bg);
   --rs-task-edge: var(--rs-task-fyi-edge);
 }
-.rs-task[data-tone="post_yourself"] { --rs-task-bg: var(--rs-task-post-yourself-bg); --rs-task-edge: var(--rs-task-post-yourself-edge); }
-.rs-task[data-tone="approve_bot_acts"] { --rs-task-bg: var(--rs-task-approve-bot-acts-bg); --rs-task-edge: var(--rs-task-approve-bot-acts-edge); }
-.rs-task[data-tone="pick"] { --rs-task-bg: var(--rs-task-pick-bg); --rs-task-edge: var(--rs-task-pick-edge); }
-.rs-task[data-tone="review"] { --rs-task-bg: var(--rs-task-review-bg); --rs-task-edge: var(--rs-task-review-edge); }
+.rs-task[data-tone="do"] { --rs-task-bg: var(--rs-task-post-yourself-bg); --rs-task-edge: var(--rs-task-post-yourself-edge); }
+.rs-task[data-tone="approve"] { --rs-task-bg: var(--rs-task-approve-bot-acts-bg); --rs-task-edge: var(--rs-task-approve-bot-acts-edge); }
 .rs-task[data-tone="urgent"] { --rs-task-bg: var(--rs-task-urgent-bg); --rs-task-edge: var(--rs-task-urgent-edge); }
 
 .rs-task__inner {
@@ -145,16 +142,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   gap: var(--space-1) var(--space-3);
 }
 .rs-task__what { font-weight: var(--rs-fw-strong); }
-/* a mixed report: one line per actor, the person first, inside the measure */
-.rs-task__what[data-actors] {
-  display: grid;
-  flex-basis: 100%;
-  max-width: var(--rs-measure);
-  min-width: 0;
-}
-.rs-task__actor { min-width: 0; }
 .rs-task__meta { color: var(--rs-muted); font-size: var(--rs-fs-sm); white-space: nowrap; }
-.rs-task__steps { max-width: var(--rs-measure); min-width: 0; font-size: var(--rs-fs-sm); }
 .rs-task__why,
 .rs-task__more > p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .rs-task__more > summary {
@@ -169,9 +157,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-task[data-state="decided"] .rs-task__what { color: var(--rs-muted); font-weight: var(--rs-fw-normal); }
 .rs-task[data-state="decided"] .rs-task__why { color: var(--rs-muted); }
 
-/* blocking: the underlying kind's primary, emphasised by a ring in the
-   accent it already has (no second colour) */
-.rs-btn--primary[data-rs-emphasis] { box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper), 0 0 0 var(--space-1) var(--rs-accent); }
+/* urgent: the primary, emphasised by a ring in the accent it already has
+   (no second colour) */
+.rs-btn--primary[data-rs-emphasis]:not(:disabled) { box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper), 0 0 0 var(--space-1) var(--rs-accent); }
 
 /* ------------------------------------------------------------- header -- */
 
@@ -211,7 +199,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-byline__count { flex: none; white-space: nowrap; }
 .rs-bot:not([hidden]) + .rs-byline__count::before { content: "\00B7" / ""; padding-right: var(--space-2); }
 .rs-byline__count:empty { display: none; }
-.rs-byline > .rs-more { margin-left: auto; }
+.rs-byline::after { content: ""; flex: 1 1 0; order: 1; }
+.rs-byline > .rs-more { order: 2; }
 
 /* what the report is about: the strongest line on the page (the h1) */
 .rs-header__title {
@@ -492,11 +481,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-size: var(--rs-fs-sm);
 }
 .rs-overview__kind > .rs-dot { background: var(--rs-task-edge); }
-.rs-overview__kind[data-tone="post_yourself"] { --rs-task-edge: var(--rs-task-post-yourself-edge); }
-.rs-overview__kind[data-tone="approve_bot_acts"] { --rs-task-edge: var(--rs-task-approve-bot-acts-edge); }
-.rs-overview__kind[data-tone="pick"] { --rs-task-edge: var(--rs-task-pick-edge); }
-.rs-overview__kind[data-tone="fyi"] { --rs-task-edge: var(--rs-task-fyi-edge); }
-.rs-overview__kind[data-tone="review"] { --rs-task-edge: var(--rs-task-review-edge); }
+.rs-overview__kind[data-tone="do"] { --rs-task-edge: var(--rs-task-post-yourself-edge); }
+.rs-overview__kind[data-tone="approve"] { --rs-task-edge: var(--rs-task-approve-bot-acts-edge); }
+.rs-overview__kind[data-tone="read"] { --rs-task-edge: var(--rs-task-fyi-edge); }
 .rs-overview__kind[data-tone="urgent"] { --rs-task-edge: var(--rs-task-urgent-edge); }
 
 .rs-banner {
@@ -521,8 +508,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------- submit bar -- */
 
-/* right under a short report (the mount's bottom padding is the gap);
-   at the window bottom, over a hairline, once the report scrolls */
+/* Every report ends here: the composer (reply chips over one note that
+   grows from one line to six), then one row with the status, at most two
+   quiet alternatives and the one primary. Right under a short report (the
+   mount's bottom padding is the gap); at the window bottom, over a
+   hairline, once the report scrolls. */
 .rs-submitbar {
   padding: 0 var(--space-6) var(--space-4);
   border-top: var(--rs-border) solid transparent;
@@ -535,19 +525,105 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 .rs-submitbar__inner {
   position: relative;
-  display: flex;
+  display: grid;
+  gap: var(--space-3);
+}
+.rs-submitbar__composer:empty,
+.rs-submitbar__composer:not(:has(> .rs-composer:not([hidden]))) { display: none; }
+
+/* one field: the chips sit inside it, above the text */
+.rs-composer {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--rs-border) solid var(--rs-line-strong);
+  border-radius: var(--rs-r-lg);
+  background: var(--rs-card);
+  cursor: text;
+  transition: border-color var(--rs-dur) var(--rs-ease);
+}
+.rs-composer:hover { border-color: var(--rs-muted); }
+.rs-composer:has(> .rs-composer__input:focus-visible) {
+  outline: var(--rs-focus-width) solid var(--rs-focus);
+  outline-offset: var(--rs-focus-offset);
+}
+.rs-composer__input {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: var(--space-1) 0;
+  border: 0;
+  background: transparent;
+  color: var(--rs-ink);
+  font: inherit;
+  line-height: var(--rs-lh);
+  resize: none;
+  overflow-y: hidden;
+}
+.rs-composer__input:focus-visible { outline: none; }
+.rs-composer__input::placeholder { color: var(--rs-muted); }
+/* a decided report: what was sent, as quiet text */
+.rs-composer:has(> .rs-composer__input[readonly]) { border-color: var(--rs-line); background: transparent; cursor: default; }
+.rs-composer__input[readonly] { color: var(--rs-muted); }
+
+/* reply chips: what the note refers to, quoted, each removable */
+.rs-refs { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.rs-refs[hidden] { display: none; }
+.rs-ref {
+  display: inline-flex;
   align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-height: var(--rs-icon-btn);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--rs-r-pill);
+  background: var(--rs-selected);
+  color: var(--rs-ink);
+  font-size: var(--rs-fs-sm);
+  line-height: var(--rs-lh-tight);
+}
+.rs-ref:not(:has(> .rs-ref__remove)) { padding-right: var(--space-2); }
+.rs-ref__mark { display: inline-grid; color: var(--rs-muted); }
+.rs-ref__mark > .rs-ico { width: 14px; height: 14px; }
+.rs-ref__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rs-ref__remove {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--rs-muted);
+  cursor: pointer;
+}
+.rs-ref__remove > .rs-ico { width: 14px; height: 14px; }
+.rs-ref__remove:hover { background: var(--rs-hover); color: var(--rs-ink); }
+
+/* status left, then the quiet alternatives and the primary */
+.rs-submitbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
+.rs-submitbar__actions[hidden] { display: none; }
+.rs-composer__open { color: var(--rs-muted); padding: 0 var(--space-2); }
+.rs-composer__open:hover { color: var(--rs-ink); }
+.rs-composer__open > .rs-ico { width: 16px; height: 16px; }
+.rs-composer__open[hidden] { display: none; }
 
 .rs-submitbar__status {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
   color: var(--rs-muted);
-  white-space: normal;
-  overflow: visible;
+  font-size: var(--rs-fs-sm);
   overflow-wrap: anywhere;
 }
+.rs-submitbar__status:empty { visibility: hidden; }
 /* errors stay neutral text; a small status dot carries the hue (K6) */
 .rs-submitbar__status[data-tone="danger"] { color: var(--rs-ink); }
 .rs-submitbar__status[data-tone="danger"]::before,
@@ -559,6 +635,13 @@ button, input, textarea, select { font: inherit; color: inherit; }
   margin-right: var(--space-2);
   border-radius: 50%;
   background: var(--rs-status-danger);
+}
+
+/* narrow windows: the primary takes the full row, the alternatives sit above it */
+@media (max-width: 480px) {
+  .rs-submitbar__status { flex-basis: 100%; }
+  .rs-submitbar__status:empty { display: none; }
+  .rs-submitbar__actions > .rs-btn--primary { flex: 1 1 100%; }
 }
 
 /* ------------------------------------------------------------- buttons -- */

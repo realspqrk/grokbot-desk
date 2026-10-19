@@ -13,6 +13,7 @@ from .media import MediaEntry, MediaError, open_validated_media, replace_block_m
 from .payload import BLOCK_SCHEMAS, ResultError, validate_result
 from .results import ResultExists, write_result
 from .timeutil import format_local, to_local, local_now
+from .why import present_why
 
 
 RESULT_SCHEMA = "grokbot-desk/result@2"
@@ -339,6 +340,9 @@ class RunStore:
                     for media_id, item in record.get("media", {}).items()
                 },
             })
+            # the banner shows three sentences (360 characters) and folds the rest
+            if isinstance(payload.get("why"), str) and payload["why"].strip():
+                detail["why_shown"], detail["why_more"] = present_why(payload["why"])
             result = self._submitted_data(run_id, record)
             if result is not None:
                 detail["result"] = result

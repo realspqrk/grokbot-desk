@@ -81,3 +81,30 @@ def test_a_long_run_is_cut_at_a_word_boundary_with_an_ellipsis():
     head = shown[:-1]
     assert text.startswith(head) and text[len(head)] == " ", "cut between two words"
     assert more and (head + " " + more).split() == text.split()
+
+
+def test_run_detail_carries_the_banner_why_split(tmp_path):
+    """The page shows why_shown in the banner and folds why_more; the
+    splitter lives here only (German abbreviations, 360 characters)."""
+    from core.actionlog import ActionLog
+    from core.envelope import validate_payload
+    from core.paths import ensure_layout, load_config
+    from core.runs import RunStore
+
+    data_dir = ensure_layout(tmp_path / "data")
+    store = RunStore(data_dir, load_config(data_dir), ActionLog(data_dir))
+
+    def detail(**extra):
+        payload = {
+            "schema": "grokbot-desk/payload@2", "bot": "why-bot", "title": "Why",
+            "created": "2026-10-18T09:00:00+02:00", "ask": "read",
+            "blocks": [{"type": "text", "md": "Body."}], **extra,
+        }
+        return store.detail(store.register(validate_payload(payload))["run_id"])
+
+    why = "Wir nehmen z. B. den Saal am Fluss.\nDer 1. Termin ist fix. Zwei. Drei folgt. Vier."
+    shown = detail(why=why)
+    assert (shown["why"], shown["why_shown"], shown["why_more"]) == (
+        why, "Wir nehmen z. B. den Saal am Fluss.\nDer 1. Termin ist fix. Zwei.", "Drei folgt. Vier.")
+    plain = detail()
+    assert "why_shown" not in plain and "why_more" not in plain

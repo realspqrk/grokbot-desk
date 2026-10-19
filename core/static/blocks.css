@@ -287,33 +287,3 @@
 /* ---------------------------------------------------------------- copy -- */
 .rs-copies { display: grid; gap: var(--space-3); max-width: var(--rs-measure); }
 
-/* ----------------------------------------------------- reply references -- */
-.rs-submitbar__inner:has(> .rs-refs:not([hidden])) { flex-wrap: wrap; }
-.rs-refs { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.rs-ref {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 100%;
-  min-height: var(--rs-icon-btn);
-  padding: 0 var(--space-1) 0 var(--space-2);
-  border: var(--rs-border) solid var(--rs-line);
-  border-radius: var(--rs-r-pill);
-  background: var(--rs-hover);
-  font-size: var(--rs-fs-sm);
-}
-.rs-ref__mark { color: var(--rs-muted); }
-.rs-ref__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rs-ref__remove {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--rs-muted);
-  cursor: pointer;
-}
-.rs-ref__remove:hover { background: var(--rs-selected); color: var(--rs-ink); }

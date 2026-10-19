@@ -17,7 +17,8 @@
   <script src="/static/md.js"></script>
   <script src="/static/charts.js"></script>
   <script src="/static/blocks.js"></script>
-  <script src="/static/tasks.js"></script>
+  <script src="/static/ask.js"></script>
+  <script src="/static/composer.js"></script>
   <script src="/static/rs.js"></script>
   <script src="/static/components.js"></script>
 </head>
@@ -60,11 +61,13 @@
 
       <div class="rs-submitbar" id="rs-submitbar">
         <div class="rs-column rs-submitbar__inner">
-          <div class="rs-refs" id="rs-refs" role="group" data-rs-t-aria-label="blk_refs_label" hidden></div>
-          <div class="rs-submitbar__status" id="rs-status" aria-live="polite"></div>
-          <button type="button" class="rs-btn rs-btn--quiet" id="rs-alt" hidden></button>
-          <button type="button" class="rs-btn rs-btn--quiet" id="rs-alt-2" hidden></button>
-          <button type="button" class="rs-btn rs-btn--primary" id="rs-submit" data-rs-primary aria-keyshortcuts="Control+Enter Meta+Enter" disabled><span id="rs-submit-label" data-rs-t="submit"></span></button>
+          <div class="rs-submitbar__composer" id="rs-composer"></div>
+          <div class="rs-submitbar__actions" id="rs-actions">
+            <p class="rs-submitbar__status" id="rs-status" aria-live="polite"></p>
+            <button type="button" class="rs-btn rs-btn--quiet" id="rs-alt" hidden></button>
+            <button type="button" class="rs-btn rs-btn--quiet" id="rs-alt-2" hidden></button>
+            <button type="button" class="rs-btn rs-btn--primary" id="rs-submit" data-rs-primary aria-keyshortcuts="Control+Enter Meta+Enter" disabled><span id="rs-submit-label" data-rs-t="submit"></span></button>
+          </div>
         </div>
       </div>
     </main>

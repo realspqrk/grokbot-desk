@@ -145,7 +145,7 @@ describe('content blocks (served, headless browser)', { skip }, () => {
         assert.match(await page.getAttribute('[data-rs-block-type="media"] img', 'src'), /^\/media\/m_[0-9a-f]{32}$/);
         assert.equal(await page.locator('[data-rs-block-type="media"] video').count(), 1);
         /* read: one primary, Got it */
-        assert.equal(await page.textContent('#rs-submit-label'), de.got_it);
+        assert.equal(await page.textContent('#rs-submit-label'), de.ask_got_it);
         assert.equal(await page.isDisabled('#rs-submit'), false);
         assert.deepEqual(await seriousViolations(page), [], colorScheme);
         assert.deepEqual(log.errors, [], colorScheme);
@@ -255,7 +255,7 @@ describe('content blocks (served, headless browser)', { skip }, () => {
     const run = show(withMedia(load('review')));
     const { ctx, page, log } = await open(run);
     try {
-      assert.equal(await page.textContent('#rs-submit-label'), de.looks_good);
+      assert.equal(await page.textContent('#rs-submit-label'), de.ask_looks_good);
       await page.click('#rs-submit');
       assert.deepEqual(await submitted(run), { decision: 'accept', note: '', refs: [] });
       assert.deepEqual(log.errors, []);

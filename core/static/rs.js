@@ -1,12 +1,14 @@
 /* grokbot-desk page core.
  *
  * Load order (shell.html <head>): count.js, md.js, charts.js, blocks.js,
- * tasks.js, rs.js, components.js. Everything that touches the DOM starts on
- * DOMContentLoaded.
+ * ask.js, composer.js, rs.js, components.js. Everything that touches the
+ * DOM starts on DOMContentLoaded.
  *
  * A report is a list of blocks; mountRun renders each through RSBlocks with
- * a ctx bound to that report (blocks.js). window.RS is the page-wide API
- * (components use RS.t / copy / toast / count).
+ * a ctx bound to that report (blocks.js). Every report ends in the footer:
+ * one composer (RSComposer: note and reply chips), the quiet alternatives
+ * and one primary, as the report's ask says (RSAsk). window.RS is the
+ * page-wide API (components use RS.t / copy / toast / count).
  */
 (function () {
   'use strict';
@@ -166,18 +168,17 @@
     result: null,
     touched: false,
     listeners: [],
-    status: null,
-    submitLabel: null,
     operations: {},    // run id -> { token, kind }; completions clear only their own token
-    alternatives: [],  // up to two quiet footer actions { label, run }, in render order
-    taskSteps: null,   // { key, button }: a banner steps line that names the footer's primary
+    footer: null,      // RSAsk.footer as rendered: { status, primary, alts }
+    mode: 'decide',    // footer mode: decide, request (Request changes) or none-of-these
+    composer: null,    // RSComposer of the shown report
+    input: null,       // the input block's handle (blocks.js), or null
+    inputDraft: null,  // a saved input snapshot waiting for its handle
     pending: null,     // run id being loaded
     discardTarget: null, // run id the open Verwerfen confirmation is about
     reading: {},       // run id -> true while POST /read is in flight
-    hydrated: null,    // key of the decided run the template shows (hydrationKey)
+    hydrated: null,    // key of the decided run the page shows (hydrationKey)
     requestGen: 0,     // activation request order; stale responses are ignored
-    refs: [],          // reply references {block, item, label} of the shown report
-    taskLive: null,    // { runId, parties, changes }: a mixed report's banner as the template last set it
     gone: {},          // run id -> true once this page decided it (before SSE says so)
     done: null,        // null, 'closing' or 'kept': the calm done state after the last decision
     order: [],         // open run ids in arrival order (arrivals append)
@@ -691,53 +692,19 @@
   }
 
   // ------------------------------------------------------ task banner --
-  /* Above the title of every report: what to do and who acts next, so a
+  /* Above the blocks of every report: what to do and who acts next, so a
      person who was interrupted can act within seconds. One line for the
-     task (by kind), one for the steps, at most three sentences of why (the
-     rest folded in a details), effort and due date as quiet meta. The kind
-     and the why come from the server (core/tasks.py), the wording from
-     RS_TASKS (tasks.js).
-     C16 exception: the banner tint is a status colour per kind, not the
-     accent, and the only large non-accent colour on the page; red only for
-     blocking or a due date that is today or past. The banner holds no
-     buttons, at most the details toggle, so one primary action and at most
-     3 buttons per item still hold (K1, K2, K6 in tools/calm.mjs). A decided
-     report keeps the banner, neutral, saying what happened. */
-  var TASKS = window.RS_TASKS;
-  var localDay = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
-  var localClock = new Intl.DateTimeFormat(LOCALE, { timeZone: ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-
-  /* the banner's task from the report's ask (tasks.js kinds until the
-     ask-driven footer replaces them) */
-  var ASK_KINDS = { read: 'fyi', review: 'review', approve: 'approve_bot_acts', 'do': 'post_yourself', choose: 'pick' };
-  function taskOf(run) {
-    var kind = run && Object.prototype.hasOwnProperty.call(ASK_KINDS, run.ask) ? ASK_KINDS[run.ask] : 'review';
-    var task = { kind: kind, base: kind, why: run && run.why, due: run && run.due };
-    if (run && run.urgent) task.kind = 'blocking';
-    return task;
-  }
-
-  /* "due today 15:00", "due Oct 15 15:00", "overdue since 09:00"; urgent
-     when the day is today (local time) or the moment has passed */
-  function dueInfo(due, now) {
-    if (typeof due !== 'string' || !due) return null;
-    var dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(due);
-    var moment = toDate(due);
-    if (isNaN(moment.getTime())) return null;
-    var today = localDay.format(now);
-    var day = dateOnly ? due : localDay.format(moment);
-    var clock = dateOnly ? '' : localClock.format(moment);
-    var past = dateOnly ? day < today : moment.getTime() < now.getTime();
-    var text;
-    if (past) text = t('task_overdue', { when: [day === today ? '' : date(day), clock].filter(Boolean).join(' ') });
-    else if (day === today) text = clock ? t('task_due_today', { time: clock }) : t('task_due_today_date');
-    else text = clock ? t('task_due_on', { date: date(day), time: clock }) : t('due', { date: date(day) });
-    return { text: text, urgent: past || day === today };
-  }
-
-  function taskTone(task, due) {
-    return task.kind === 'blocking' || (due && due.urgent) ? 'urgent' : TASKS.baseOf(task);
-  }
+     task (by ask, RSAsk.banner), urgency and due date as quiet meta, then at
+     most three sentences of why (the server splits it: why_shown, the rest
+     folded in a details as why_more).
+     C16 exception: the banner tint is a status colour per ask (approve, do,
+     read), not the accent, and the only large non-accent colour on the
+     page; red only for urgent or a due date that is today or past. The
+     banner holds no buttons, at most the details toggle, so one primary
+     action and at most 3 buttons per item still hold (K1, K2, K6 in
+     tools/calm.mjs). A decided report keeps the banner, neutral, saying
+     what happened (RSAsk.decidedLine). */
+  if (window.RSAsk) window.RSAsk.use({ t: t, date: date, zone: ZONE });
 
   function textNode(tag, cls, text) {
     var node = document.createElement(tag);
@@ -746,36 +713,9 @@
     return node;
   }
 
-  /* the banner's steps line, right under the task line; empty removes it */
-  function setSteps(text) {
-    var box = el.taskInner;
-    var node = box.querySelector('.rs-task__steps');
-    if (!text) {
-      if (node) node.remove();
-      return;
-    }
-    if (!node) {
-      node = textNode('p', 'rs-task__steps', '');
-      var line = box.querySelector('.rs-task__line');
-      box.insertBefore(node, line ? line.nextSibling : box.firstChild);
-    }
-    node.textContent = String(text);
-  }
-
-  /* "An Release Bot senden": the bot by its display name while it fits;
-     a bare bot id or a long name reads "An Bot senden" */
-  var SUBMIT_NAME_MAX = 24;
-  function botNameOf(run) {
-    var name = run ? identityOf(run).name : '';
-    return name && name !== run.bot && Array.from(name).length <= SUBMIT_NAME_MAX ? name : '';
-  }
-  function defaultSubmitLabel(run) {
-    var name = botNameOf(run);
-    return name ? t('submit_to', { bot: name }) : t('submit');
-  }
-  function currentSubmitLabel(run) {
-    return state.submitLabel || defaultSubmitLabel(run || state.active);
-  }
+  /* the bot by its display name while it fits; a bare bot id or a long
+     name is "the bot" (RSAsk.botName) */
+  function botNameOf(run) { return run ? window.RSAsk.botName(run) : ''; }
 
   function renderTask(run) {
     var box = el.taskInner;
@@ -784,136 +724,27 @@
       el.task.hidden = true;
       return;
     }
-    var task = taskOf(run);
     var decided = !!run.state && run.state !== 'open';
-    var due = decided ? null : dueInfo(task.due, new Date());
-    el.task.setAttribute('data-kind', task.kind);
-    el.task.setAttribute('data-tone', decided ? 'quiet' : taskTone(task, due));
+    var banner = decided ? null : window.RSAsk.banner(run, new Date());
+    el.task.setAttribute('data-ask', run.ask || '');
+    el.task.setAttribute('data-tone', decided ? 'quiet' : banner.tone);
     el.task.setAttribute('data-state', decided ? 'decided' : 'open');
-    if (due && due.urgent) el.task.setAttribute('data-due-urgent', 'true');
-    else el.task.removeAttribute('data-due-urgent');
     var line = document.createElement('p');
     line.className = 'rs-task__line';
-    var whatKey = TASKS.lineKey(task, run.state, run.result);
-    var what = textNode('span', 'rs-task__what', whatKey ? t(whatKey, { label: task.label || '', bot: botNameOf(run) || t('task_the_bot') }) : '');
-    if (!whatKey) {
-      fillActors(what, run);
-      line.setAttribute('data-actors', '');
-    }
-    line.appendChild(what);
-    var meta = [];
-    if (!whatKey && !decided && task.kind === 'blocking') meta.push(t('task_kind_blocking'));
-    if (!decided && task.eta_min) meta.push(t('task_eta', { n: number(task.eta_min) }));
-    if (due) meta.push(due.text);
+    line.appendChild(textNode('span', 'rs-task__what', decided ? window.RSAsk.decidedLine(run, run.result) : banner.lines[0]));
+    var meta = decided ? [] : banner.lines.slice(1);
     if (meta.length) line.appendChild(textNode('span', 'rs-task__meta', meta.join(' ' + t('sep') + ' ')));
     box.appendChild(line);
-    /* steps only where they add something: the payload's own, a mixed
-       preview's "review the platforms, then <button>", a list's "decide
-       each, then <button>". The
-       button is the footer as it reads now (renderBar keeps it current). */
-    state.taskSteps = null;
-    if (!decided) {
-      if (task.steps) setSteps(task.steps);
-      else if (task.steps_for === 'mixed_platforms') setSteps(t('task_steps_platforms', { button: t('submit_mixed') }));
-      else if (TASKS.stepsKey(task)) {
-        state.taskSteps = { key: TASKS.stepsKey(task), button: null };
-        setSteps(t(state.taskSteps.key, { button: currentSubmitLabel(run) }));
-      }
-    }
-    if (task.why) box.appendChild(textNode('p', 'rs-task__why', task.why));
-    if (task.why_more) {
+    var why = typeof run.why_shown === 'string' ? run.why_shown : typeof run.why === 'string' ? run.why : '';
+    if (why) box.appendChild(textNode('p', 'rs-task__why', why));
+    if (typeof run.why_more === 'string' && run.why_more) {
       var more = document.createElement('details');
       more.className = 'rs-task__more';
       more.appendChild(textNode('summary', '', t('task_why_more')));
-      more.appendChild(textNode('p', '', task.why_more));
+      more.appendChild(textNode('p', '', run.why_more));
       box.appendChild(more);
     }
     el.task.hidden = false;
-  }
-
-  function partyLabel(party) {
-    if (!party) return '';
-    if (party.name) return party.name;
-    if (!party.id) return '';
-    var key = 'platform_' + party.id;
-    var label = t(key);
-    return label && label !== key ? label : party.id;
-  }
-
-  /* Platforms by their labels ("LinkedIn, Instagram +2"), items by count
-     ("2 replies"). */
-  function partyNames(parties) {
-    if (parties[0].noun) {
-      var noun = TASKS.nounOf(parties);
-      return parties.length === 1 ? t('task_noun_' + noun + '_one') : t('task_noun_' + noun, { n: number(parties.length) });
-    }
-    var list = TASKS.shortList(parties.map(partyLabel).filter(Boolean));
-    var names = list.shown.join(t('sep_names'));
-    return list.more ? t('task_names_more', { names: names, n: number(list.more) }) : names;
-  }
-
-  /* The parties of a mixed report as the template last reported them
-     (ticks, choices, a change request), else as the payload lists them. */
-  function liveParties(run) {
-    var live = state.taskLive;
-    if (live && run && live.runId === run.run_id) return live;
-    return { parties: taskOf(run).parties || [], changes: false };
-  }
-
-  /* "You post: X" / "Research Agent posts after OK: LinkedIn". One line
-     per actor, the person first; the bot by its display name. */
-  function fillActors(what, run) {
-    var task = taskOf(run);
-    var live = liveParties(run);
-    var decided = !!run.state && run.state !== 'open';
-    var bot = identityOf(run).name;
-    what.textContent = '';
-    what.setAttribute('data-actors', '');
-    TASKS.actorLines(live.parties, { verb: task.verb, decided: decided, changes: live.changes }).forEach(function (entry) {
-      var text = t(entry.key, { bot: bot, names: entry.names.length ? partyNames(entry.names) : '' });
-      if (entry.dropped.length && entry.dropped[0].id) text = t('task_unticked', { line: text, names: partyNames(entry.dropped) });
-      var node = textNode('span', 'rs-task__actor', text);
-      node.setAttribute('data-actor', entry.actor);
-      what.appendChild(node);
-    });
-  }
-
-  /* A template updates the banner when the selection changes who acts:
-     parties with on (ticked or chosen) or changes (a change request) for a
-     mixed report, which also words the decided banner. stepsFor
-     mixed_platforms words the steps from those parties (on, blocked) and
-     stepsButton. An explicit task.steps stays as written: live updates
-     refresh the actor lines and the footer, not that line. Due-today and
-     blocking keep the urgent tone; a decided banner stays quiet. */
-  function applyTaskLive(patch) {
-    if (!patch || !state.active) return;
-    var run = state.active;
-    var task = taskOf(run);
-    var decided = run.state !== 'open';
-    var what = el.taskInner.querySelector('.rs-task__what');
-    if (patch.parties) {
-      state.taskLive = { runId: run.run_id, parties: patch.parties, changes: !!patch.changes };
-      if (what && what.hasAttribute('data-actors')) fillActors(what, run);
-    } else if (patch.what != null && what) what.textContent = String(patch.what);
-    /* without stepsButton the steps name the footer as it reads now */
-    var fixed = patch.stepsButton != null ? String(patch.stepsButton) : null;
-    var button = fixed !== null ? fixed : currentSubmitLabel(run);
-    if (!task.steps && !decided) {
-      if (patch.stepsKey) {
-        state.taskSteps = { key: patch.stepsKey, button: fixed };
-        setSteps(t(patch.stepsKey, { button: button }));
-      } else if (patch.stepsFor === 'mixed_platforms' && patch.parties) {
-        state.taskSteps = null;
-        setSteps(t('task_steps_platforms', { button: button }));
-      } else if (patch.steps != null) {
-        state.taskSteps = null;
-        setSteps(String(patch.steps));
-      }
-    }
-    var blocking = taskOf(run).kind === 'blocking';
-    if (patch.tone && !decided && el.task.getAttribute('data-due-urgent') !== 'true' && !blocking) {
-      el.task.setAttribute('data-tone', patch.tone);
-    }
   }
 
   // ------------------------------------------------------------ strip --
@@ -1244,31 +1075,44 @@
     return operation;
   }
 
+  /* The footer: the composer, a status line, at most two quiet
+     alternatives and exactly one primary, as RSAsk.footer words them for
+     the report's ask, its input block and the mode (decide, request,
+     none-of-these). In a request mode the note is required and the
+     primary sends revise, so Ctrl+Enter can never approve while the person
+     writes a request. A decided report keeps only what was sent, read-only.
+     Discard lives in the "…" menu behind its confirmation, not on read. */
+  function noteWritten() {
+    return !!(state.composer && /\S/.test(state.composer.text()));
+  }
+
+  function currentFooter() {
+    var a = state.active;
+    if (!a) return null;
+    return window.RSAsk.footer(a, state.input, state.mode, { note: noteWritten() });
+  }
+
   function renderBar() {
     var a = state.active;
     var open = !!(a && a.state === 'open');
     var busy = activeBusy();
-    var task = a ? taskOf(a) : null;
-    el.submit.disabled = !open || state.result === null || busy;
-    /* Discard report lives in the "…" menu, behind its confirmation. The
-       CTA table per kind (tasks.js): information only offers just its
-       primary; blocking emphasises the underlying kind's primary */
+    var f = open ? currentFooter() : null;
+    state.footer = f;
+    el.submit.disabled = !f || !f.primary.enabled || busy;
     el.discard.disabled = !open || busy;
-    el.discard.hidden = !open || !!(task && !TASKS.CTA[TASKS.baseOf(task)].discard);
-    el.submit.toggleAttribute('data-rs-emphasis', !!(open && task && task.kind === 'blocking'));
-    var label = currentSubmitLabel(a);
-    el.submitLabel.textContent = label;
-    if (open && state.taskSteps && state.taskSteps.button === null) {
-      setSteps(t(state.taskSteps.key, { button: label }));
-    }
-    /* the alternatives exist only while a template offers them, in the
+    el.discard.hidden = !open || !window.RSAsk.discard(a);
+    el.submit.toggleAttribute('data-rs-emphasis', !!(open && a.urgent));
+    el.submitLabel.textContent = f ? f.primary.label : '';
+    /* the alternatives exist only while the footer offers them, in the
        given order, before the primary */
     var shown = [];
     el.alts.forEach(function (button, i) {
-      var alt = open ? state.alternatives[i] : null;
+      var alt = f ? f.alts[i] : null;
       if (alt) {
         button.textContent = alt.label;
         button.hidden = false;
+        if (alt.mode) button.setAttribute('data-rs-mode', alt.mode);
+        else button.removeAttribute('data-rs-mode');
         shown.push(button);
       } else if (button.isConnected) {
         button.remove();
@@ -1281,12 +1125,53 @@
       if (shown[i].nextElementSibling !== after) after.parentNode.insertBefore(shown[i], after);
       after = shown[i];
     }
-    var s = state.status;
-    el.status.textContent = s ? s.text : '';
-    if (s && s.label) el.status.setAttribute('aria-label', s.label);
-    else el.status.removeAttribute('aria-label');
-    if (s && s.tone) el.status.setAttribute('data-tone', s.tone); else el.status.removeAttribute('data-tone');
-    el.bar.hidden = !open;
+    el.status.textContent = f ? f.status : '';
+    if (state.composer) state.composer.setBusy(busy);
+    var keep = !open && !!state.composer && state.composer.isOpen();
+    el.actions.hidden = !open;
+    el.bar.hidden = !open && !keep;
+  }
+
+  /* Request changes / None of these: the note becomes required and takes
+     focus; Cancel (or Escape) returns to the decision and its button. */
+  var MODE_PLACEHOLDER = { request: 'cmp_placeholder_request', 'none-of-these': 'cmp_placeholder_none' };
+  function setMode(mode) {
+    var a = state.active;
+    if (!a || a.state !== 'open' || !state.composer) return;
+    var previous = state.mode;
+    state.mode = Object.prototype.hasOwnProperty.call(MODE_PLACEHOLDER, mode) ? mode : 'decide';
+    state.composer.setRequired(state.mode !== 'decide', MODE_PLACEHOLDER[state.mode] ? t(MODE_PLACEHOLDER[state.mode]) : null);
+    renderBar();
+    saveDraft();
+    if (state.mode !== 'decide') { state.composer.focus(); return; }
+    var back = el.alts.filter(function (b) { return b.isConnected && b.getAttribute('data-rs-mode') === previous; })[0];
+    (back || (el.submit.disabled ? null : el.submit) || el.title).focus();
+  }
+
+  function onAlt(i) {
+    var alt = state.footer && state.footer.alts[i];
+    if (!alt || activeBusy()) return;
+    if (alt.mode) setMode(alt.mode);
+    else if (alt.decision) submit(null, alt.decision);
+  }
+
+  // ----------------------------------------------------------- drafts --
+  /* What the person prepared survives a reload or a closed window: the
+     composer (note, chips, opened), the footer mode and the input block's
+     snapshot. Saved on every change while the report is open. */
+  function saveDraft() {
+    var a = state.active;
+    if (!a || a.state !== 'open' || !state.composer || state.operations[a.run_id]) return;
+    var note = state.composer.snapshot();
+    var input = state.input && typeof state.input.snapshot === 'function' ? state.input.snapshot() : state.inputDraft;
+    var empty = !note.text && !note.refs.length && state.mode === 'decide' && !(a.ask === 'read' && note.open) && input == null;
+    draftSet(a.run_id, empty ? null : { v: 2, mode: state.mode, composer: note, input: input == null ? null : input });
+  }
+
+  function composerChanged() {
+    markTouched();
+    renderBar();
+    saveDraft();
   }
 
   function setBanner(kind) {
@@ -1481,6 +1366,9 @@
     var operation = state.operations[state.active.run_id];
     if (operation) restoreDecisionState(decisionRoot(), operation.snapshot);
     state.active.state = kind;
+    state.mode = 'decide';
+    if (state.composer) state.composer.lock();
+    if (state.input && typeof state.input.lock === 'function') state.input.lock();
     renderTask(state.active);
     closeDiscardFor(state.active.run_id);
     setBanner(kind);
@@ -1541,49 +1429,63 @@
       copyImage: function (id) { return live() ? copyMediaFor(run.run_id, id, 'image') : stale(); },
       copyPath: function (id) { return live() ? copyMediaFor(run.run_id, id, 'path') : stale(); },
       reveal: function (id) { return live() ? revealFor(run.run_id, id) : stale(); },
-      addRef: function (ref) { if (live()) addRef(ref); }
+      /* a reply anchor quotes its target as a chip in the composer */
+      addRef: function (ref) { if (live() && state.composer) state.composer.addRef(ref); },
+      /* the input block hands over its handle (answer, progress,
+         primaryLabel, snapshot, restore, lock) and calls changed() on every
+         answer; a saved draft is handed back to it once */
+      input: function (handle) {
+        if (!live()) return;
+        state.input = handle || null;
+        if (state.input && state.inputDraft != null && typeof state.input.restore === 'function') state.input.restore(state.inputDraft);
+        state.inputDraft = null;
+        if (state.input && run.state !== 'open' && typeof state.input.lock === 'function') state.input.lock();
+        renderBar();
+      },
+      changed: function () {
+        if (!live()) return;
+        markTouched();
+        renderBar();
+        saveDraft();
+      }
     };
   }
 
-  // ------------------------------------------------------------ refs --
-  /* Reply references: a removable chip per target, de-duplicated; they go
-     with the decision as `refs`. (The footer composer replaces this.) */
-  function addRef(ref) {
-    if (!state.active || state.active.state !== 'open' || !ref) return;
-    var exists = state.refs.some(function (r) { return r.block === ref.block && r.item === ref.item; });
-    if (!exists) state.refs.push({ block: String(ref.block), item: String(ref.item), label: String(ref.label) });
-    renderRefs();
-    var chip = el.refs.querySelector('[data-rs-ref="' + CSS.escape(ref.block + '/' + ref.item) + '"] button');
-    if (chip) chip.focus();
-  }
-  function removeRef(index) {
-    state.refs.splice(index, 1);
-    renderRefs();
-    if (state.refs.length) el.refs.querySelector('[data-rs-ref] button').focus();
-    else el.submit.focus();
-  }
-  function renderRefs() {
-    el.refs.textContent = '';
-    state.refs.forEach(function (ref, i) {
-      var chip = textNode('span', 'rs-ref', '');
-      chip.setAttribute('data-rs-ref', ref.block + '/' + ref.item);
-      var mark = textNode('span', 'rs-ref__mark', '↩');
-      mark.setAttribute('aria-hidden', 'true');
-      chip.appendChild(mark);
-      chip.appendChild(textNode('span', 'rs-ref__label', ref.label));
-      var remove = textNode('button', 'rs-ref__remove', '×');
-      remove.type = 'button';
-      remove.setAttribute('aria-label', t('blk_ref_remove', { what: ref.label }));
-      remove.addEventListener('click', function () { removeRef(i); });
-      chip.appendChild(remove);
-      el.refs.appendChild(chip);
+  /* The composer of a report: open on every ask but read (a quiet "Add a
+     note" there); a decided report shows what was sent, read-only; an open
+     one gets its draft back. */
+  function mountComposer(run) {
+    var composer = window.RSComposer.create({
+      t: t,
+      bot: botNameOf(run),
+      collapsed: run.ask === 'read',
+      onChange: function () { if (state.composer === composer) composerChanged(); }
     });
-    el.refs.hidden = !state.refs.length;
+    el.composerSlot.textContent = '';
+    el.composerSlot.appendChild(composer.el);
+    var oldOpener = el.actions.querySelector('[data-rs-note-open]');
+    if (oldOpener) oldOpener.remove();
+    el.actions.insertBefore(composer.opener, el.status);
+    state.composer = composer;
+    state.mode = 'decide';
+    state.input = null;
+    state.inputDraft = null;
+    if (run.state !== 'open') {
+      var sent = run.result && typeof run.result === 'object' ? run.result : {};
+      composer.restore({ text: typeof sent.note === 'string' ? sent.note : '', refs: Array.isArray(sent.refs) ? sent.refs : [] });
+      composer.lock();
+      return;
+    }
+    var draft = draftGet(run.run_id);
+    if (!draft || draft.v !== 2) return;
+    composer.restore(draft.composer);
+    state.inputDraft = draft.input == null ? null : draft.input;
+    var mode = draft.mode;
+    if (mode !== 'decide' && window.RSAsk.footer(run, null, mode).primary.decision === 'revise') {
+      state.mode = mode;
+      composer.setRequired(true, t(MODE_PLACEHOLDER[mode]));
+    }
   }
-
-  /* read: Got it; review: Looks good. The other asks get their footer
-     with the input blocks. */
-  var ASK_PRIMARY = { read: { decision: 'read', label: 'got_it' }, review: { decision: 'accept', label: 'looks_good' } };
 
   /** Renders a fetched run detail: blocks, banner/lock, bar, strip, title. */
   function mountRun(run, opts) {
@@ -1591,19 +1493,12 @@
     state.hydrated = run.state === 'open' ? null : hydrationKey(run);
     state.active = run;
     state.activeId = run.run_id;
-    state.result = null;
     state.listeners = [];
-    state.status = null;
-    state.submitLabel = null;
-    state.taskLive = null;
-    state.refs = [];
     state.touched = draftGet(run.run_id) !== null;
     var nextUrl = new URL(location.href);
     nextUrl.searchParams.set('run', run.run_id);
     history.replaceState(history.state, '', nextUrl.pathname + nextUrl.search + nextUrl.hash);
     query.set('run', run.run_id);
-    state.alternatives = [];
-    state.taskSteps = null;
     el.moreExtra.textContent = '';
     closeMore();
 
@@ -1620,6 +1515,7 @@
     el.meta.appendChild(bot);
     el.meta.appendChild(created);
 
+    mountComposer(run);
     el.mount.textContent = '';
     el.mount.scrollTop = 0;
     var root = document.createElement('div');
@@ -1632,19 +1528,14 @@
     });
     if (failed) toast(t('blk_error'));
     el.mount.appendChild(root);
-    var primary = Object.prototype.hasOwnProperty.call(ASK_PRIMARY, run.ask) ? ASK_PRIMARY[run.ask] : null;
-    if (primary && run.state === 'open') {
-      state.result = { decision: primary.decision };
-      state.submitLabel = t(primary.label);
-    }
-    renderRefs();
-    if (run.state === 'open') renderPendingOperation(run.run_id, root);
-    if (run.state === 'open') restoreReloadFocus(run.run_id, root);
-    if (run.state !== 'open') { setBanner(run.state); lockTemplate(); }
-    /* a restored draft that is ready to send: focus the primary (the
-       template already focused its own target when work is left) */
-    else if (state.touched && document.activeElement === document.body && !el.submit.disabled) el.submit.focus();
     renderBar();
+    if (run.state === 'open') renderPendingOperation(run.run_id, root);
+    var refocused = run.state === 'open' && restoreReloadFocus(run.run_id, root);
+    if (run.state !== 'open') { setBanner(run.state); lockTemplate(); }
+    /* a restored request goes back to its note; a restored draft that is
+       ready to send focuses the primary */
+    else if (!refocused && state.mode !== 'decide') state.composer.focus();
+    else if (state.touched && document.activeElement === document.body && !el.submit.disabled) el.submit.focus();
     renderStrip();
     updateTitle();
     maybeMarkRead();
@@ -1702,11 +1593,15 @@
     state.pending = null;
     state.active = null;
     state.activeId = null;
-    state.result = null;
     state.touched = false;
     state.listeners = [];
-    state.refs = [];
-    renderRefs();
+    state.composer = null;
+    state.input = null;
+    state.inputDraft = null;
+    state.mode = 'decide';
+    el.composerSlot.textContent = '';
+    var opener = el.actions.querySelector('[data-rs-note-open]');
+    if (opener) opener.remove();
     el.title.textContent = doorbellPage ? t('doorbell_title') : '';
     renderBot(null);
     renderTask(null);
@@ -1901,13 +1796,13 @@
     var list = document.createElement('ul');
     list.className = 'rs-overview__list';
     runs.forEach(function (run) {
-      var task = taskOf(run);
+      var kindOf = window.RSAsk.kindOf(run, new Date());
       var item = document.createElement('li');
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'rs-overview__item';
       button.setAttribute('data-run-id', run.run_id);
-      button.setAttribute('data-kind', task.kind);
+      button.setAttribute('data-ask', run.ask || '');
       button.appendChild(avatarBox(identityOf(run)));
       var text = document.createElement('span');
       text.className = 'rs-overview__text';
@@ -1916,15 +1811,15 @@
       button.appendChild(text);
       var kind = document.createElement('span');
       kind.className = 'rs-overview__kind';
-      kind.setAttribute('data-tone', taskTone(task, null));
+      kind.setAttribute('data-tone', kindOf.tone);
       var dot = document.createElement('span');
       dot.className = 'rs-dot';
       dot.setAttribute('data-rs-status', '');
       dot.setAttribute('aria-hidden', 'true');
       kind.appendChild(dot);
-      kind.appendChild(document.createTextNode(t(TASKS.kindKey(task))));
+      kind.appendChild(document.createTextNode(kindOf.text));
       button.appendChild(kind);
-      button.setAttribute('aria-label', t('overview_item', { bot: identityOf(run).name, title: run.title, kind: t(TASKS.kindKey(task)) }));
+      button.setAttribute('aria-label', t('overview_item', { bot: identityOf(run).name, title: run.title, kind: kindOf.text }));
       button.addEventListener('click', function () { activate(run.run_id, { focusTitle: true }); });
       item.appendChild(button);
       list.appendChild(item);
@@ -2095,14 +1990,34 @@
   }
 
   // ------------------------------------------------- submit/discard --
-  function submit(ownedRunId) {
+  /* The primary sends the footer's decision; a quiet alternative passes
+     its own (reject, skipped), which never carries the input's answer. The
+     note and the chips go with every decision. */
+  function submit(ownedRunId, decision) {
     var a = state.active;
     if (!a || a.state !== 'open' || (ownedRunId && a.run_id !== ownedRunId)) return Promise.resolve(false);
     var id = a.run_id;
-    if (state.operations[id]) return Promise.resolve(false);
-    if (state.result === null) { toast(t('submit_not_ready')); return Promise.resolve(false); }
-    /* the decision with the reply references (the note comes with the composer) */
-    var data = { decision: state.result.decision, note: '', refs: state.refs.slice() };
+    if (state.operations[id] || !state.composer) return Promise.resolve(false);
+    var answers = false;
+    if (!decision) {
+      var f = currentFooter();
+      if (!f || !f.primary.enabled) {
+        /* an empty request: back to the note, nothing is sent */
+        if (f && f.primary.needsNote) { renderBar(); state.composer.focus(); }
+        else toast(t('submit_not_ready'));
+        return Promise.resolve(false);
+      }
+      decision = f.primary.decision;
+      answers = f.primary.answers;
+    }
+    var data = { decision: decision, note: state.composer.text().trim(), refs: state.composer.refs() };
+    if (answers) {
+      var kind = window.RSAsk.inputOf(a);
+      var answer = state.input ? state.input.answer() : null;
+      if (!kind || answer == null) { toast(t('submit_not_ready')); return Promise.resolve(false); }
+      data.blocks = {};
+      data.blocks[kind.id] = answer;
+    }
     var successors = successorsOf(id);
     var token = beginOperation(id, 'submit');
     return post('/submit', { run_id: id, data: data }).then(function (r) {
@@ -2235,6 +2150,12 @@
       el.moreBtn.focus();
       return;
     }
+    /* Escape leaves a request (as Cancel does) */
+    if (e.key === 'Escape' && state.mode !== 'decide' && state.active && state.active.state === 'open' && !activeBusy()) {
+      e.preventDefault();
+      setMode('decide');
+      return;
+    }
     /* Ctrl+Enter on Windows, Cmd+Enter on macOS */
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === 'Enter') {
       e.preventDefault();
@@ -2290,7 +2211,8 @@
       status: document.getElementById('rs-status'),
       submit: document.getElementById('rs-submit'),
       submitLabel: document.getElementById('rs-submit-label'),
-      refs: document.getElementById('rs-refs'),
+      actions: document.getElementById('rs-actions'),
+      composerSlot: document.getElementById('rs-composer'),
       discard: document.getElementById('rs-discard'),
       toasts: document.getElementById('rs-toasts'),
       discardDialog: document.getElementById('rs-discard-dialog')
@@ -2304,10 +2226,7 @@
       if (!el.morePanel.hidden && !e.target.closest('#rs-more')) closeMore();
     });
     el.alts.forEach(function (button, i) {
-      button.addEventListener('click', function () {
-        var alt = state.alternatives[i];
-        if (alt && typeof alt.run === 'function') alt.run();
-      });
+      button.addEventListener('click', function () { onAlt(i); });
     });
 
     el.theme.setAttribute('aria-pressed', effectiveTheme() === 'dark' ? 'true' : 'false');
