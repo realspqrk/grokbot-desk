@@ -18,7 +18,6 @@ from . import __version__, doorbell
 from .actionlog import ActionLog
 from .browse import open_url
 from .urls import url_allowed
-from .check import contract_findings
 from .envelope import EnvelopeError, MAX_PAYLOAD, validate_payload_bytes
 from .identity import SHIPPED_REGISTRY, display_names, load_registry
 from .jsonutil import JSONBoundaryError, dumps as json_dumps, loads as json_loads
@@ -45,9 +44,8 @@ from .platform import (
 )
 from .platform_types import LaunchResult
 from .product import RUNNER_ID
-from .registry import RegistryError, scan_registry
 from .runs import AlreadyDecided, RunIdAlreadyUsed, RunStore, UnknownRun
-from .schema import SchemaError
+from .payload import ResultError
 
 
 CSP = (
@@ -259,18 +257,12 @@ class ReportHTTPServer(ThreadingHTTPServer):
         socketserver.TCPServer.server_bind(self)
         self.server_name, self.server_port = self.server_address[:2]
 
-    def __init__(self, address, handler, data_dir, registry, config):
-        if registry:
-            repo_root = registry.templates_root.parent
-            findings = contract_findings(registry, repo_root)
-            if findings:
-                raise RegistryError("; ".join(findings))
+    def __init__(self, address, handler, data_dir, config):
         # Everything slow (runs from disk, the page) happens before the
         # socket listens: the CLI treats a listening port without state.json
         # as a foreign process, so the gap until run_server writes it must
         # stay short.
         self.data_dir = Path(data_dir)
-        self.registry = registry
         self.config = config
         self.port = address[1]
         self.token = secrets.token_urlsafe(32)
@@ -278,10 +270,10 @@ class ReportHTTPServer(ThreadingHTTPServer):
         # display names of the shipped registry (runs carry their resolved identity)
         self.bots = display_names(load_registry(SHIPPED_REGISTRY, "shipped")[0])
         self.action_log = ActionLog(data_dir)
-        self.runs = RunStore(data_dir, registry, config, self.action_log)
+        self.runs = RunStore(data_dir, config, self.action_log)
         self.hub = SSEHub()
         self.window_title = None
-        self.page = build_page(registry, self.csrf, self.port).encode("utf-8")
+        self.page = build_page(self.csrf, self.port).encode("utf-8")
         self.static_dir = Path(__file__).parent / "static"
         # relative posix names ("rs.js", "icons/icon.svg"): a request can only
         # reach a file listed here
@@ -798,9 +790,7 @@ class Handler(BaseHTTPRequestHandler):
             for attempt in range(attempts):
                 used_ids = self.server.runs.ids() if explicit_run_id else ()
                 warnings.clear()
-                payload = validate_payload_bytes(
-                    raw, self.server.registry, used_ids, warnings
-                )
+                payload = validate_payload_bytes(raw, used_ids, warnings)
                 # one lock for look-up and registration: two pushes of the
                 # same dedupe_key at once still make one run
                 with self.server.runs._lock:
@@ -855,13 +845,13 @@ class Handler(BaseHTTPRequestHandler):
         """Open one http(s) URL from this run's payload in the system browser.
 
         The page never navigates itself. The URL must occur verbatim in the
-        run's payload data, be http or https, have a hostname and a valid
+        run's blocks, be http or https, have a hostname and a valid
         port, carry no credentials in the authority and no control characters,
         and be at most 2048 characters.
         """
         run_id, url = value["run_id"], value["url"]
         try:
-            data = self.server.runs.detail(run_id)["data"]
+            data = self.server.runs.payload(run_id)["blocks"]
         except UnknownRun:
             self._json(404, {"error": "unknown_run"})
             return
@@ -1030,7 +1020,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "unknown_run"})
         except AlreadyDecided:
             self._json(409, {"error": "already_decided"})
-        except SchemaError as error:
+        except ResultError as error:
             self._json(400, {"error": error.message, "pointer": error.pointer})
         else:
             self.server.broadcast_runs(run_id, status)
@@ -1113,7 +1103,7 @@ def _maintenance(server):
                 pass
 
 
-def run_server(data_dir, port, repo_root):
+def run_server(data_dir, port):
     data_dir = Path(data_dir)
     if legacy_gone(data_dir):
         # spawned for the older folder just before `migrate` moved it
@@ -1133,19 +1123,16 @@ def run_server(data_dir, port, repo_root):
             os.close(lock)
         raise DataDirBusy("migrate is moving this data folder; start the desk again after it")
     try:
-        _serve(data_dir, port, repo_root)
+        _serve(data_dir, port)
     finally:
         if lock is not None:
             os.close(lock)
 
 
-def _serve(data_dir, port, repo_root):
+def _serve(data_dir, port):
     retain_recent(data_dir)
-    registry = scan_registry(
-        Path(repo_root) / "templates", Path(data_dir) / "templates"
-    )
     config = load_config(data_dir)
-    server = ReportHTTPServer(("127.0.0.1", port), Handler, data_dir, registry, config)
+    server = ReportHTTPServer(("127.0.0.1", port), Handler, data_dir, config)
     _write_state(server)
     maintenance = threading.Thread(target=_maintenance, args=(server,), daemon=True)
     maintenance.start()

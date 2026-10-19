@@ -10,7 +10,7 @@ def test_cli_uses_published_product_name():
 
 
 def test_page_uses_product_name_for_brand_and_empty_title():
-    page = build_page({}, "csrf", 18920)
+    page = build_page("csrf", 18920)
     match = re.search(
         r'<script id="rs-boot" type="application/json">(.*?)</script>',
         page,

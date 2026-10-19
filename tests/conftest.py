@@ -21,68 +21,41 @@ ROOT = Path(__file__).resolve().parents[1]
 os.environ["RS_TZ"] = "Europe/Vienna"
 
 
-def install_minimal_template(repo_root, template_id="_starter"):
-    target = Path(repo_root) / "templates" / "global" / template_id
-    target.mkdir(parents=True)
-    files = {
-        "template.json": {
-            "id": template_id,
-            "namespace": "global",
-            "version": 1,
-            "title_de": "Minimaler Testbericht",
-            "description": "Test-owned minimal template.",
-            "components": [],
-            "strings": ["acknowledge"],
-        },
-        "schema.json": {
-            "type": "object",
-            "required": ["message"],
-            "additionalProperties": False,
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200,
-                }
-            },
-        },
-        "result.schema.json": {
-            "type": "object",
-            "required": ["acknowledged"],
-            "additionalProperties": False,
-            "properties": {"acknowledged": {"const": True}},
-        },
-        "fixtures/golden.json": {"message": "Hello"},
-        "fixtures/edge-max.json": {"message": "x" * 200},
-        "fixtures/edge-unicode.json": {"message": "Grüße 👋 – 日本語"},
-        "fixtures/invalid-empty.json": {"message": ""},
-        "fixtures/invalid-type.json": {"message": 42},
+FIXTURES = ROOT / "tests" / "fixtures" / "payloads"
+
+
+def minimal_payload(**changes):
+    """The smallest report: one text block for the person to read."""
+    from core.timeutil import iso_now
+
+    payload = {
+        "schema": "grokbot-desk/payload@2",
+        "bot": "automation-agent",
+        "title": "Safety test",
+        "created": iso_now(),
+        "ask": "read",
+        "blocks": [{"type": "text", "md": "Hello"}],
     }
-    for name, content in files.items():
-        path = target / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(content, ensure_ascii=False),
-            encoding="utf-8",
-        )
-    (target / "template.html").write_text(
-        '<p data-rs-field="message"></p>',
-        encoding="utf-8",
-    )
-    (target / "template.js").write_text(
-        "root.querySelector('[data-rs-field=\"message\"]').textContent = "
-        "RS.data.message;\n",
-        encoding="utf-8",
-    )
-    (target / "template.css").write_text(
-        ":host { display: block; }\n",
-        encoding="utf-8",
-    )
-    (target / "README.md").write_text(
-        "# Minimal test template\n",
-        encoding="utf-8",
-    )
-    return target
+    payload.update(changes)
+    return payload
+
+
+def show_fixture(name, **changes):
+    """A fixture payload ready to show now: created is the current time, its
+    dedupe fields are dropped (tests opt in), then `changes` apply (None
+    removes a field)."""
+    from core.timeutil import iso_now
+
+    payload = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+    payload["created"] = iso_now()
+    payload.pop("dedupe_key", None)
+    payload.pop("dedupe_hours", None)
+    for key, value in changes.items():
+        if value is None:
+            payload.pop(key, None)
+        else:
+            payload[key] = value
+    return payload
 
 
 TEST_PORT_FIRST = 18920

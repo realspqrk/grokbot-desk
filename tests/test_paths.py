@@ -59,21 +59,15 @@ def _legacy_with_run(local, decided=True):
     (local / "spqrk-report-shell" / "config.json").write_text('{"port": 18930}')
 
 
-def _scan(base):
-    from core.registry import scan_registry
-
-    return scan_registry(paths.ROOT / "templates", base / "templates")
-
-
 def _reload(base):
     from core.actionlog import ActionLog
     from core.runs import RunStore
 
-    return RunStore(base, _scan(base), paths.load_config(base), ActionLog(base))
+    return RunStore(base, paths.load_config(base), ActionLog(base))
 
 
 def _preview_with_legacy_media(local):
-    """A preview-post run whose image lives in the legacy media folder, with
+    """A report whose image lives in the legacy media folder, with
     config.json naming that folder as a media root."""
     from core.envelope import validate_payload
 
@@ -85,21 +79,14 @@ def _preview_with_legacy_media(local):
     (legacy / "config.json").write_text(json.dumps({"media_roots": [str(legacy / "media")]}))
     store = _reload(legacy)
     detail = store.register(validate_payload({
-        "schema": "report-shell/payload@1",
-        "template": "preview-post",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2",
         "bot": "example-bot",
         "title": "Post",
         "created": "2026-10-08T10:39:00+02:00",
-        "data": {
-            "author": {"name": "Example", "handle": "example"},
-            "text": "Hello",
-            "hashtags": [],
-            "image": {"path": str(image), "alt": "One pixel", "ratio": "1:1"},
-            "platforms": [{"platform": "linkedin", "mode": "auto"}],
-        },
-    }, store.registry))
-    media_id = detail["data"]["image"]["path"]
+        "ask": "read",
+        "blocks": [{"type": "media", "path": str(image), "alt": "One pixel"}],
+    }))
+    media_id = detail["blocks"][0]["path"]
     assert media_id in store.media
     return detail["run_id"], media_id
 
@@ -108,7 +95,7 @@ def _decide(base, run_id):
     from core.actionlog import ActionLog
     from core.runs import RunStore
 
-    RunStore(base, _scan(base), paths.load_config(base), ActionLog(base)).decide(run_id, "cancelled")
+    RunStore(base, paths.load_config(base), ActionLog(base)).decide(run_id, "cancelled")
 
 
 def test_migrate_refuses_while_a_run_is_open_and_moves_once_decided(tmp_path):
@@ -140,13 +127,8 @@ def test_a_submitted_report_keeps_its_media_after_migrate(tmp_path):
 
     run_id, media_id = _preview_with_legacy_media(tmp_path)
     legacy, current = tmp_path / "spqrk-report-shell", tmp_path / "grokbot-desk"
-    store = RunStore(legacy, _scan(legacy), paths.load_config(legacy), ActionLog(legacy))
-    store.decide(run_id, "submitted", {
-        "decision": "approve",
-        "platforms": ["linkedin"],
-        "comment": "",
-        "per_platform": {"linkedin": {"mode": "auto", "decision": "approved"}},
-    })
+    store = RunStore(legacy, paths.load_config(legacy), ActionLog(legacy))
+    store.decide(run_id, "submitted", {"decision": "read"})
 
     assert migrate.migrate(tmp_path)["migrated"] is True
 
@@ -164,14 +146,14 @@ def test_migrate_rewrites_only_path_fields_never_reviewed_text(tmp_path):
     old_media = str(legacy / "media" / "incident.png")
     run_file = next((legacy / "runs").glob("*.json"))
     run_file.write_text(json.dumps({
-        "payload": {"data": {"doc": old_media + "\nThe path in the old incident log."}},
+        "payload": {"blocks": [{"type": "text", "md": old_media + "\nThe path in the old incident log."}]},
         "media": {"m1": {"path": old_media, "roots": [str(legacy / "media")]}},
     }))
 
     assert migrate.migrate(tmp_path)["migrated"] is True
 
     record = json.loads((current / "runs" / run_file.name).read_text(encoding="utf-8"))
-    assert record["payload"]["data"]["doc"].startswith(old_media)
+    assert record["payload"]["blocks"][0]["md"].startswith(old_media)
     assert record["media"]["m1"]["path"] == str(current / "media" / "incident.png")
     assert record["media"]["m1"]["roots"] == [str(current / "media")]
 
@@ -227,11 +209,11 @@ def test_a_server_does_not_start_while_migrate_runs(tmp_path, monkeypatch):
     base = paths.ensure_layout(tmp_path / "data")
     (base / "migrate.pending").write_text("1")
     with pytest.raises(migrate.DataDirBusy):
-        run_server(base, 18923, paths.ROOT)
+        run_server(base, 18923)
     moved = tmp_path / "spqrk-report-shell"
     (tmp_path / "grokbot-desk" / "runs").mkdir(parents=True)  # where it went
     with pytest.raises(migrate.DataDirBusy):
-        run_server(moved, 18923, paths.ROOT)
+        run_server(moved, 18923)
     assert not moved.exists()
 
 
@@ -312,14 +294,14 @@ def test_a_migrated_old_folder_is_never_created_again(tmp_path, monkeypatch):
     assert not legacy.exists()
     (legacy / "log").mkdir(parents=True)  # a stray write after the move
     with pytest.raises(migrate.DataDirBusy):
-        run_server(legacy, 18923, paths.ROOT)
+        run_server(legacy, 18923)
     assert not (legacy / "runs").exists()
 
 
 def test_an_explicit_data_dir_with_the_old_name_is_used_as_given(tmp_path, monkeypatch, capsys):
     """Only the real default old folder is redirected. A custom RS_DATA_DIR
     that happens to carry the old name is a new, empty folder like any
-    other: new, show (ensure_layout) and serve all use it."""
+    other: show (ensure_layout) and serve both use it."""
     from core import cli, server
 
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
@@ -333,16 +315,11 @@ def test_an_explicit_data_dir_with_the_old_name_is_used_as_given(tmp_path, monke
     assert paths.migration_advice(explicit) is None
     assert paths.data_dir_report(explicit)["source"] == "RS_DATA_DIR"
 
-    assert cli.main(["new", "example/review-test"]) == 0
-    capsys.readouterr()
-    assert (explicit / "templates" / "review-test").is_dir()
-    assert "review-test" in _scan(explicit)
-
     served = []
-    monkeypatch.setattr(server, "_serve", lambda base, port, root: served.append(Path(base)))
+    monkeypatch.setattr(server, "_serve", lambda base, port: served.append(Path(base)))
     for name in ("runs", "results"):
         os.rmdir(explicit / name)  # a fresh folder: serve lays it out itself
-    server.run_server(explicit, 18923, paths.ROOT)
+    server.run_server(explicit, 18923)
     assert served == [explicit] and (explicit / "runs").is_dir()
 
 
@@ -360,8 +337,8 @@ def test_an_explicit_data_dir_at_the_old_location_is_served_when_nothing_moved(t
     assert not paths.legacy_gone(explicit)
 
     served = []
-    monkeypatch.setattr(server, "_serve", lambda base, port, root: served.append(Path(base)))
-    server.run_server(explicit, 18923, paths.ROOT)
+    monkeypatch.setattr(server, "_serve", lambda base, port: served.append(Path(base)))
+    server.run_server(explicit, 18923)
     assert served and served[0].resolve() == explicit.resolve()
     assert (explicit / "runs").is_dir()
 

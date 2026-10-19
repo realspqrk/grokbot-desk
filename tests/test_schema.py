@@ -12,7 +12,6 @@ from core.envelope import (
     validate_payload_bytes,
 )
 from core.jsonutil import loads
-from core.registry import scan_registry
 from core.schema import SchemaError, check_schema, validate
 
 
@@ -89,16 +88,9 @@ def test_url_keyword_accepts_only_true_or_a_scheme_string(policy):
 
 def test_url_keyword_rejects_every_bad_vector_on_both_url_fields():
     vectors = json.loads((ROOT / "tests" / "fixtures" / "url_vectors.json").read_text(encoding="utf-8"))
-    preview = json.loads(
-        (ROOT / "templates" / "builtin" / "preview-post" / "schema.json").read_text(encoding="utf-8")
-    )
-    listing = json.loads(
-        (ROOT / "templates" / "builtin" / "decide-list" / "schema.json").read_text(encoding="utf-8")
-    )
-    target = preview["properties"]["target"]["properties"]["url"]
-    bot_item, user_item = listing["properties"]["items"]["items"]["oneOf"]
-    item = bot_item["properties"]["url"]
-    assert user_item["properties"]["url"] == item, "bot and user items share one URL rule"
+    blocks = json.loads((ROOT / "core" / "blocks.schema.json").read_text(encoding="utf-8"))
+    target = blocks["post"]["properties"]["target"]["properties"]["url"]
+    item = blocks["decide"]["properties"]["items"]["items"]["properties"]["url"]
     assert target["x-rs-url"] == "https" and target["maxLength"] == 2048
     assert item["x-rs-url"] is True and "pattern" in item
     for bad in vectors["bad"]:
@@ -144,29 +136,14 @@ def test_schema_definition_rejects_malformed_keywords(schema):
         check_schema(schema)
 
 
-def test_starter_fixture_contract():
-    registry = scan_registry(ROOT / "templates")
-    template = registry["_starter"]
-    schema = json.loads((template.path / "schema.json").read_text(encoding="utf-8"))
-    for fixture in sorted((template.path / "fixtures").glob("*.json")):
-        data = json.loads(fixture.read_text(encoding="utf-8"))
-        if fixture.name.startswith("invalid-"):
-            with pytest.raises(SchemaError) as error:
-                validate(data, schema)
-            assert error.value.pointer
-        else:
-            validate(data, schema)
-
-
 def valid_payload():
     return {
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2",
         "bot": "automation-agent",
         "title": "Test report",
         "created": "2026-10-08T10:39:00+02:00",
-        "data": {"message": "Hello"},
+        "ask": "read",
+        "blocks": [{"type": "text", "md": "Hello"}],
     }
 
 
@@ -199,17 +176,16 @@ def test_envelope_rejects_bad_contract(field, value):
     payload[field] = value
     raw = json.dumps(payload).encode()
     with pytest.raises(EnvelopeError):
-        validate_payload_bytes(raw, scan_registry(ROOT / "templates"))
+        validate_payload_bytes(raw)
 
 
 def test_envelope_rejects_unknown_field_and_oversize():
-    registry = scan_registry(ROOT / "templates")
     payload = valid_payload()
     payload["unknown"] = True
     with pytest.raises(EnvelopeError, match="/unknown"):
-        validate_payload_bytes(json.dumps(payload).encode(), registry)
+        validate_payload_bytes(json.dumps(payload).encode())
     with pytest.raises(EnvelopeError, match="2 MB"):
-        validate_payload_bytes(b" " * (2 * 1024 * 1024 + 1), registry)
+        validate_payload_bytes(b" " * (2 * 1024 * 1024 + 1))
 
 
 @pytest.mark.parametrize(
@@ -226,7 +202,7 @@ def test_envelope_rejects_present_invalid_ids_and_malformed_field_types(field, v
     payload = valid_payload()
     payload[field] = value
     with pytest.raises(EnvelopeError) as error:
-        validate_payload(payload, scan_registry(ROOT / "templates"))
+        validate_payload(payload)
     assert error.value.pointer == pointer
 
 
@@ -243,7 +219,7 @@ def test_finding_1_rejects_null_notify_and_unrepresentable_created(
     payload = valid_payload()
     payload[field] = value
     with pytest.raises(EnvelopeError) as error:
-        validate_payload(payload, scan_registry(ROOT / "templates"))
+        validate_payload(payload)
     assert error.value.pointer == pointer
 
 
@@ -252,7 +228,7 @@ def test_finding_1_rejects_expiry_outside_datetime_range():
     payload["created"] = "9999-12-25T12:00:00+00:00"
     payload["expires_minutes"] = 10080
     with pytest.raises(EnvelopeError) as error:
-        validate_payload(payload, scan_registry(ROOT / "templates"))
+        validate_payload(payload)
     assert error.value.pointer == "/expires_minutes"
 
 
@@ -308,32 +284,20 @@ def test_unique_key_compares_json_values():
     validate([{"id": 1}, {"id": True}], {"type": "array", "x-rs-unique-key": "id"})
 
 
-@pytest.mark.parametrize(
-    ("template", "fixture", "array", "key"),
-    [("pick-option", "edge-two", "options", "id"), ("review-doc", "edge-max", "images", "key")],
-)
-def test_builtin_payload_rejects_repeated_keys_before_registration(template, fixture, array, key):
-    registry = scan_registry(ROOT / "templates")
-    path = registry[template].path / "fixtures" / f"{fixture}.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
-    validate(data, json.loads((registry[template].path / "schema.json").read_text(encoding="utf-8")))
-    data[array].append(dict(data[array][0]))
-    payload = dict(valid_payload(), template=template, data=data)
+@pytest.mark.parametrize(("block", "array", "key"), [
+    ({"type": "pick", "options": [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}]}, "options", "id"),
+    ({"type": "text", "md": "![x](one)", "images": [{"key": "one", "path": "/srv/media/a.png", "alt": "A"}]},
+     "images", "key"),
+])
+def test_payload_rejects_repeated_keys_before_registration(block, array, key):
+    block = json.loads(json.dumps(block))
+    block[array].append(dict(block[array][0]))
+    ask = "choose" if block["type"] == "pick" else "read"
+    payload = dict(valid_payload(), ask=ask, blocks=[block])
     with pytest.raises(EnvelopeError) as error:
-        validate_payload(payload, registry)
-    assert error.value.pointer == f"/data/{array}/{len(data[array]) - 1}/{key}"
-    assert f"already used by /data/{array}/0" in error.value.message
-
-
-def test_pick_option_duplicate_id_fixture_names_the_second_option():
-    template = scan_registry(ROOT / "templates")["pick-option"]
-    data = json.loads((template.path / "fixtures" / "invalid-duplicate-ids.json").read_text(encoding="utf-8"))
-    assert data["options"][0]["id"] == data["options"][1]["id"]
-    assert data["options"][0]["name"] != data["options"][1]["name"]
-    assert data["options"][0]["facts"] != data["options"][1]["facts"]
-    with pytest.raises(SchemaError) as error:
-        validate(data, json.loads((template.path / "schema.json").read_text(encoding="utf-8")), "/data")
-    assert error.value.pointer == "/data/options/1/id"
+        validate_payload(payload)
+    assert error.value.pointer == f"/blocks/0/{array}/{len(block[array]) - 1}/{key}"
+    assert f"already used by /blocks/0/{array}/0" in error.value.message
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])

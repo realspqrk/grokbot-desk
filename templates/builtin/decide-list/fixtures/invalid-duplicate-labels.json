@@ -1,7 +1,0 @@
-{
-  "labels": {"approve": "Pay", "defer": "Next week"},
-  "items": [
-    {"id": "hosting", "title": "Hosting invoice for October, 48.00 EUR"},
-    {"id": "duplicate-fee", "title": "Second card fee for the same order, 3.90 EUR", "labels": {"reject": "Pay"}}
-  ]
-}

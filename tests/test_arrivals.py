@@ -3,7 +3,6 @@ paths, and one attention request per burst of pushes."""
 import io
 import json
 import os
-import shutil
 import threading
 import time
 from contextlib import redirect_stdout
@@ -16,13 +15,10 @@ import pytest
 
 import core.cli as cli
 import core.server as server_module
-from conftest import ROOT, install_minimal_template
-from core.actionlog import ActionLog
+from conftest import ROOT, show_fixture
 from core.envelope import EnvelopeError, validate_payload
-from core.schema import SchemaError
 from core.paths import ensure_layout, load_config
-from core.registry import scan_registry
-from core.runs import RunStore
+from core.payload import ResultError
 from core.server import Handler, ReportHTTPServer
 from test_safety import request, valid_payload
 
@@ -32,7 +28,7 @@ def live(tmp_path):
     data_dir = ensure_layout(tmp_path / "data")
     server = ReportHTTPServer(
         ("127.0.0.1", 0), Handler, data_dir,
-        scan_registry(ROOT / "templates"), load_config(data_dir),
+        load_config(data_dir),
     )
     server.port = server.server_port
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -89,23 +85,21 @@ def test_an_expired_run_is_not_a_duplicate(live):
     {"dedupe_hours": 3},
 ])
 def test_dedupe_fields_are_validated(bad):
-    registry = scan_registry(ROOT / "templates")
     with pytest.raises(EnvelopeError):
-        validate_payload(dict(valid_payload(), **bad), registry)
+        validate_payload(dict(valid_payload(), **bad))
 
 
 def test_a_created_stamp_in_the_future_is_clamped_with_a_warning():
-    registry = scan_registry(ROOT / "templates")
     ahead = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(timespec="seconds")
     warnings = []
-    payload = validate_payload(dict(valid_payload(), created=ahead), registry, warnings=warnings)
+    payload = validate_payload(dict(valid_payload(), created=ahead), warnings=warnings)
     created = datetime.fromisoformat(payload["created"])
     assert abs((created - datetime.now(timezone.utc)).total_seconds()) < 5
     assert len(warnings) == 1 and "/created" in warnings[0]
     # a minute ahead (clock skew) is left alone
     near = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat(timespec="seconds")
     warnings = []
-    assert validate_payload(dict(valid_payload(), created=near), registry, warnings=warnings)["created"] == near
+    assert validate_payload(dict(valid_payload(), created=near), warnings=warnings)["created"] == near
     assert warnings == []
 
 
@@ -159,7 +153,7 @@ def test_results_since_lists_new_decisions_oldest_first(live):
 
 def _decided(base, run_id, stamp, bot="inbox-agent"):
     (base / "results" / f"{run_id}.json").write_text(json.dumps({
-        "run_id": run_id, "bot": bot, "template": "decide-list",
+        "run_id": run_id, "bot": bot,
         "status": "submitted", "decided": stamp,
     }), encoding="utf-8")
 
@@ -204,184 +198,137 @@ def test_results_wait_skips_seen_runs_instead_of_returning_at_once(tmp_path):
     assert out["results"] == [] and time.monotonic() - began >= 0.5
 
 
+STAMP = "2026-10-11T11:00:00+02:00"
+
+
+def _stored(base, run_id, payload):
+    """A run record as the desk saves it, and its payload."""
+    stored = validate_payload(dict(payload, run_id=run_id))
+    stored.pop("identity", None)
+    (base / "runs" / f"{run_id}.json").write_text(json.dumps({"payload": stored}), encoding="utf-8")
+    return stored
+
+
+def _submitted(base, run_id, data, bot="inbox-agent"):
+    (base / "results" / f"{run_id}.json").write_text(json.dumps({
+        "schema": "grokbot-desk/result@2", "run_id": run_id, "bot": bot,
+        "status": "submitted", "decided": STAMP, "data": data,
+    }), encoding="utf-8")
+
+
+RUN_IDS = {name: f"20261011-110000-{name}-abcd" for name in ("list", "post", "one", "pick", "manual")}
+
+
+def _post(ask, platforms):
+    return show_fixture("approve-post", ask=ask, blocks=[{
+        "type": "post", "id": "post", "author": {"name": "Shop", "handle": "shop"},
+        "text": "Hello.", "hashtags": [], "platforms": platforms,
+    }])
+
+
 def test_results_since_carries_a_title_and_a_compact_summary(tmp_path):
-    """A one-line ack needs the topic, and a summary where the decision is compact."""
+    """A one-line ack needs the topic, and a summary of what the person decided."""
     base = ensure_layout(tmp_path / "data")
-    stamp = "2026-10-11T11:00:00+02:00"
-
-    def write_run(run_id, title):
-        (base / "runs" / f"{run_id}.json").write_text(
-            json.dumps({"payload": {"run_id": run_id, "title": title}}), encoding="utf-8"
-        )
-
-    def write_result(run_id, template, data, bot="inbox-agent"):
-        (base / "results" / f"{run_id}.json").write_text(json.dumps({
-            "run_id": run_id, "bot": bot, "template": template,
-            "status": "submitted", "decided": stamp, "data": data,
-        }), encoding="utf-8")
-
-    write_run("run-list", "Two requests need a decision")
-    write_result("run-list", "decide-list", {"items": [
-        {"id": "travel", "choice": "approve", "note": ""},
-        {"id": "laptop", "choice": "defer", "note": ""},
-        {"id": "toner", "choice": "approve", "note": ""},
-    ], "note": ""})
-    write_run("run-post", "That prompt should be a button")
-    write_result("run-post", "preview-post", {
-        "decision": "approve", "platforms": ["linkedin"], "comment": "",
-        "per_platform": {
-            "x": {"mode": "manual", "decision": "done"},
-            "linkedin": {"mode": "auto", "decision": "approved"},
-        },
-    }, bot="social-agent")
-    write_result("run-one", "approve-one", {"decision": "approve", "comment": ""})
-    code, out = _run(cli.command_results, base, since=stamp, bot=None, wait=0)
+    _stored(base, RUN_IDS["list"], show_fixture("approve-decide", title="Three invoices need a decision"))
+    _submitted(base, RUN_IDS["list"], {"decision": "submit", "note": "", "refs": [], "blocks": {"invoices": {"items": [
+        {"id": "hosting", "choice": "approve"}, {"id": "toner", "choice": "later"},
+        {"id": "parking", "choice": "approve"},
+    ]}}})
+    _stored(base, RUN_IDS["post"], _post("approve", ["x", "linkedin"]))
+    _submitted(base, RUN_IDS["post"], {"decision": "approve", "note": "", "refs": [], "blocks": {"post": {"platforms": [
+        {"platform": "x", "included": False}, {"platform": "linkedin", "included": True},
+    ]}}}, bot="social-bot")
+    _stored(base, RUN_IDS["manual"], _post("do", ["x", "linkedin"]))
+    _submitted(base, RUN_IDS["manual"], {"decision": "submit", "note": "", "refs": [], "blocks": {"post": {"platforms": [
+        {"platform": "x", "choice": "posted"}, {"platform": "linkedin", "choice": "skipped"},
+    ]}}}, bot="social-bot")
+    _stored(base, RUN_IDS["pick"], show_fixture("choose"))
+    _submitted(base, RUN_IDS["pick"], {"decision": "choose", "note": "", "refs": [], "blocks": {"date": {"choice": "thu"}}})
+    _submitted(base, RUN_IDS["one"], {"decision": "approve", "note": "", "refs": []})
+    code, out = _run(cli.command_results, base, since=STAMP, bot=None, wait=0)
     assert code == 0
     by_id = {item["run_id"]: item for item in out["results"]}
-    listed = by_id["run-list"]
-    assert listed["title"] == "Two requests need a decision"
-    assert listed["summary"] == "2 approve, 1 defer"
-    assert list(listed) == [
-        "run_id", "bot", "template", "title", "status", "decided", "result_path", "summary",
-    ]
-    post = by_id["run-post"]
-    assert post["summary"] == "x posted by you, linkedin approved"
-    assert post["template"] == "preview-post" and post["bot"] == "social-agent"
-    one = by_id["run-one"]
-    assert one["summary"] == "approve" and "title" not in one
+    listed = by_id[RUN_IDS["list"]]
+    assert listed["title"] == "Three invoices need a decision"
+    assert listed["summary"] == "submit · 2 approve, 1 later"
+    assert list(listed) == ["run_id", "bot", "title", "status", "decided", "result_path", "summary"]
+    post = by_id[RUN_IDS["post"]]
+    assert post["summary"] == "approve · linkedin" and post["bot"] == "social-bot"
+    assert by_id[RUN_IDS["manual"]]["summary"] == "submit · x posted, linkedin skipped"
+    assert by_id[RUN_IDS["pick"]]["summary"] == "choose thu"
+    # no run record left: no title and no summary (nothing to read the data against)
+    one = by_id[RUN_IDS["one"]]
+    assert "summary" not in one and "title" not in one
 
 
-def test_preview_post_summary_omits_inconsistent_and_legacy_results(tmp_path):
-    """A summary never calls a manual platform approved."""
+def test_a_summary_never_reads_a_result_that_does_not_answer_its_report(tmp_path):
+    """A summary never calls a platform approved that the answer does not include."""
     base = ensure_layout(tmp_path / "data")
-    stamp = "2026-10-11T11:00:00+02:00"
-
-    def write_result(run_id, data):
-        (base / "runs" / f"{run_id}.json").write_text(
-            json.dumps({"payload": {"run_id": run_id, "title": run_id}}), encoding="utf-8"
-        )
-        (base / "results" / f"{run_id}.json").write_text(json.dumps({
-            "run_id": run_id, "bot": "social-agent", "template": "preview-post",
-            "status": "submitted", "decided": stamp, "data": data,
-        }), encoding="utf-8")
-
-    write_result("manual-approved", {
-        "decision": "approve", "platforms": [], "comment": "",
-        "per_platform": {"x": {"mode": "manual", "decision": "approved"}},
-    })
-    write_result("auto-done", {
-        "decision": "approve", "platforms": [], "comment": "",
-        "per_platform": {"linkedin": {"mode": "auto", "decision": "done"}},
-    })
-    write_result("unknown-decision", {
-        "decision": "approve", "platforms": ["x"], "comment": "",
-        "per_platform": {"x": {"mode": "auto", "decision": "posted"}},
-    })
-    write_result("legacy", {"decision": "approve", "platforms": ["linkedin"], "comment": ""})
-    write_result("platforms-disagree", {
-        "decision": "approve", "platforms": ["x"], "comment": "",
-        "per_platform": {"x": {"mode": "manual", "decision": "done"}},
-    })
-    code, out = _run(cli.command_results, base, since=stamp, bot=None, wait=0)
-    assert code == 0
+    _stored(base, "20261011-110000-post-abcd", _post("approve", ["x", "linkedin"]))
+    broken = [
+        {"decision": "approve", "blocks": {"post": {"platforms": [{"platform": "x", "choice": "posted"}]}}},
+        {"decision": "approve", "blocks": {"post": {"platforms": [{"platform": "x", "included": True}]}}},
+        {"decision": "approve"},
+        {"decision": "approve", "platforms": ["linkedin"], "comment": "",
+         "per_platform": {"linkedin": {"mode": "auto", "decision": "approved"}}},
+    ]
+    for index, data in enumerate(broken):
+        run_id = f"20261011-110000-bad{index}-abcd"
+        _stored(base, run_id, _post("approve", ["x", "linkedin"]))
+        _submitted(base, run_id, data, bot="social-agent")
+    # a result of a payload@1 report: readable, never summarised
+    (base / "runs" / "legacy-run.json").write_text(json.dumps({"payload": {
+        "schema": "report-shell/payload@1", "template": "preview-post", "run_id": "legacy-run", "title": "Old",
+    }}), encoding="utf-8")
+    (base / "results" / "legacy-run.json").write_text(json.dumps({
+        "schema": "report-shell/result@1", "run_id": "legacy-run", "bot": "social-agent", "template": "preview-post",
+        "status": "submitted", "decided": STAMP,
+        "data": {"decision": "approve", "platforms": ["linkedin"], "comment": "",
+                 "per_platform": {"linkedin": {"mode": "auto", "decision": "approved"}}},
+    }), encoding="utf-8")
+    code, out = _run(cli.command_results, base, since=STAMP, bot=None, wait=0)
+    assert code == 0 and len(out["results"]) == len(broken) + 1
     for item in out["results"]:
         assert "summary" not in item, item["run_id"]
+    assert {item["title"] for item in out["results"]} == {"Post: autumn opening hours", "Old"}
 
 
-def test_results_poll_returns_a_valid_preview_beside_a_malformed_one(tmp_path):
-    """A historical mode or decision that is not text is omitted, and the poll still returns."""
+def test_results_poll_returns_a_valid_result_beside_malformed_ones(tmp_path):
+    """Malformed data (wrong types anywhere) is left unsummarised and the poll still returns."""
     base = ensure_layout(tmp_path / "data")
-    stamp = "2026-10-11T11:00:00+02:00"
-
-    def write_result(run_id, data):
-        (base / "runs" / f"{run_id}.json").write_text(
-            json.dumps({"payload": {"run_id": run_id, "title": run_id}}), encoding="utf-8"
-        )
-        (base / "results" / f"{run_id}.json").write_text(json.dumps({
-            "run_id": run_id, "bot": "social-agent", "template": "preview-post",
-            "status": "submitted", "decided": stamp, "data": data,
-        }), encoding="utf-8")
-
-    valid = {
-        "decision": "approve", "platforms": ["linkedin"], "comment": "",
-        "per_platform": {"linkedin": {"mode": "auto", "decision": "approved"}},
-    }
-    write_result("valid-post", valid)
-    malformed = [
-        ([], "done"),
-        ({}, "done"),
-        (None, "done"),
-        (1, "done"),
-        (1.0, "approved"),
-        ("auto", []),
-        ("auto", {}),
-        ("auto", None),
-        ("manual", 0),
-    ]
-    for index, (mode, decision) in enumerate(malformed):
-        write_result(f"bad-{index}", {
-            "decision": "approve", "platforms": [], "comment": "",
-            "per_platform": {"x": {"mode": mode, "decision": decision}},
-        })
-    code, out = _run(cli.command_results, base, since=stamp, bot=None, wait=0)
+    _stored(base, "20261011-110000-valid-abcd", _post("approve", ["linkedin"]))
+    _submitted(base, "20261011-110000-valid-abcd", {"decision": "approve", "blocks": {"post": {"platforms": [
+        {"platform": "linkedin", "included": True}]}}})
+    malformed = [[], {}, None, 1, 1.0, "approve", {"decision": []}, {"decision": "approve", "blocks": []},
+                 {"decision": "approve", "blocks": {"post": {"platforms": [{"platform": [], "included": True}]}}},
+                 {"decision": "approve", "blocks": {"post": {"platforms": [{"platform": "linkedin", "included": "yes"}]}}}]
+    for index, data in enumerate(malformed):
+        run_id = f"20261011-110000-bad{index}-abcd"
+        _stored(base, run_id, _post("approve", ["linkedin"]))
+        _submitted(base, run_id, data)
+    code, out = _run(cli.command_results, base, since=STAMP, bot=None, wait=0)
     assert code == 0
     by_id = {item["run_id"]: item for item in out["results"]}
-    assert set(by_id) == {"valid-post", *(f"bad-{index}" for index in range(len(malformed)))}
-    assert by_id["valid-post"]["summary"] == "linkedin approved"
+    assert len(by_id) == len(malformed) + 1
+    assert by_id["20261011-110000-valid-abcd"]["summary"] == "approve · linkedin"
     for run_id, item in by_id.items():
-        if run_id != "valid-post":
+        if run_id != "20261011-110000-valid-abcd":
             assert "summary" not in item
 
 
-def test_a_user_template_shadowing_preview_post_submits_its_own_result(tmp_path):
-    """The shipped agreement check follows the built-in directory, not the template id."""
-    staged = tmp_path / "staged"
-    install_minimal_template(staged, "preview-post")
-    user_root = tmp_path / "templates"
-    shutil.copytree(
-        staged / "templates" / "global" / "preview-post",
-        user_root / "preview-post",
-    )
-    registry = scan_registry(ROOT / "templates", user_root)
-    chosen = registry["preview-post"]
-    assert chosen.source == "user"
-    data_dir = ensure_layout(tmp_path / "data")
-    store = RunStore(
-        data_dir, registry, load_config(data_dir), ActionLog(data_dir),
-    )
-    detail = store.register(validate_payload(
-        dict(valid_payload(), template="preview-post", data={"message": "Hello"}),
-        registry,
-    ))
-    store.decide(detail["run_id"], "submitted", {"acknowledged": True})
-    saved = json.loads(
-        (data_dir / "results" / f"{detail['run_id']}.json").read_text(encoding="utf-8")
-    )
-    assert saved["status"] == "submitted"
-    assert saved["data"] == {"acknowledged": True}
-
-
-def test_preview_post_submit_rejects_an_inconsistent_result(live):
-    golden = json.loads(
-        (ROOT / "templates" / "builtin" / "preview-post" / "fixtures" / "golden.json")
-        .read_text(encoding="utf-8")
-    )
-    detail = live.runs.register(validate_payload(
-        dict(valid_payload(), template="preview-post", data=golden), live.registry
-    ))
-    with pytest.raises(SchemaError) as error:
-        live.runs.decide(detail["run_id"], "submitted", {
-            "decision": "approve", "platforms": [], "comment": "",
-            "per_platform": {"x": {"mode": "manual", "decision": "approved"}},
-        })
-    assert error.value.pointer == "/data/per_platform"
-    live.runs.decide(detail["run_id"], "submitted", {
-        "decision": "approve", "platforms": ["linkedin"], "comment": "",
-        "per_platform": {
-            "x": {"mode": "manual", "decision": "done"},
-            "linkedin": {"mode": "auto", "decision": "approved"},
-        },
-    })
+def test_submit_rejects_a_result_that_does_not_answer_the_report(live):
+    detail = live.runs.register(validate_payload(_post("approve", ["x", "linkedin"])))
+    with pytest.raises(ResultError) as error:
+        live.runs.decide(detail["run_id"], "submitted", {"decision": "approve", "blocks": {"post": {"platforms": [
+            {"platform": "x", "choice": "posted"}, {"platform": "linkedin", "included": True}]}}})
+    assert error.value.pointer == "/data/blocks/post/platforms/0/choice"
+    assert live.runs.detail(detail["run_id"])["state"] == "open"
+    live.runs.decide(detail["run_id"], "submitted", {"decision": "approve", "blocks": {"post": {"platforms": [
+        {"platform": "x", "included": True}, {"platform": "linkedin", "included": False}]}}})
+    saved = json.loads((live.runs.results_dir / f"{detail['run_id']}.json").read_text(encoding="utf-8"))
+    assert saved["schema"] == "grokbot-desk/result@2" and "template" not in saved
+    assert saved["data"] == {"decision": "approve", "note": "", "refs": [], "blocks": {"post": {"platforms": [
+        {"platform": "x", "included": True}, {"platform": "linkedin", "included": False}]}}}
 
 
 def test_results_empty_answer_without_any_result_echoes_the_cursor(tmp_path):
@@ -511,7 +458,7 @@ def test_marking_a_read_run_read_again_does_not_rewrite_it(live):
     """Each window focus posts /read. Only the first marks the run read and
     saves it; later ones change nothing and must not queue another fsync
     under the store lock that every API read waits on."""
-    detail = live.runs.register(validate_payload(valid_payload(), live.registry))
+    detail = live.runs.register(validate_payload(valid_payload()))
     run_id = detail["run_id"]
     saved = []
     original = live.runs._save
@@ -526,3 +473,81 @@ def test_marking_a_read_run_read_again_does_not_rewrite_it(live):
     assert saved == [run_id]
     on_disk = json.loads((live.runs.runs_dir / f"{run_id}.json").read_text(encoding="utf-8"))
     assert on_disk["unread"] is False
+
+
+# ------------------------------------------------ payload@2 over the API ----
+
+
+def _api(live, path):
+    status, body = request(live.port, "GET", path, headers={
+        "Host": f"127.0.0.1:{live.port}", "X-RS-CSRF": live.csrf,
+    })
+    return status, json.loads(body)
+
+
+def test_api_run_serves_the_payload_without_its_internals(live):
+    status, pushed = live.push(show_fixture("approve-decide", dedupe_key="invoices-w43", urgent=True))
+    assert status == 200
+    status, detail = _api(live, f"/api/run/{pushed['run_id']}")
+    assert status == 200
+    for gone in ("schema", "dedupe_key", "dedupe_hours", "expires_minutes", "template", "data", "task"):
+        assert gone not in detail, gone
+    assert detail["run_id"] == pushed["run_id"] and detail["ask"] == "approve"
+    assert detail["title"] == "Two invoices this week" and detail["why"] == "Hosting is due Friday."
+    assert detail["urgent"] is True and detail["due"] == "2026-10-23"
+    assert [block["id"] for block in detail["blocks"]] == ["b1", "invoices"]
+    assert detail["state"] == "open" and detail["expires"]
+    assert detail["identity"]["name"] == "Office Bot" and "accent" in detail["identity"]
+    assert detail["bot"] == "office-bot" and detail["bot_display"] == "Office Bot"
+    assert "result" not in detail
+    status, runs = _api(live, "/api/runs")
+    (summary,) = runs["runs"]
+    assert {"run_id", "title", "ask", "urgent", "due", "bot", "bot_display", "identity", "unread", "seq"} <= set(summary)
+    assert (summary["ask"], summary["urgent"], summary["due"]) == ("approve", True, "2026-10-23")
+    assert "template" not in summary and "task" not in summary
+
+
+def test_submit_over_http_checks_the_answer_against_the_report(live):
+    _, pushed = live.push(show_fixture("approve-decide"))
+    headers = {
+        "Host": f"127.0.0.1:{live.port}", "Origin": f"http://127.0.0.1:{live.port}",
+        "X-RS-CSRF": live.csrf, "Content-Type": "application/json",
+    }
+    half = {"decision": "submit", "blocks": {"invoices": {"items": [{"id": "hosting", "choice": "approve"}]}}}
+    status, body = request(live.port, "POST", "/submit",
+                           json.dumps({"run_id": pushed["run_id"], "data": half}).encode(), headers)
+    assert status == 400
+    assert json.loads(body)["pointer"] == "/data/blocks/invoices/items"
+    full = {"decision": "submit", "note": "Toner: ask for a cheaper vendor first.",
+            "refs": [{"block": "invoices", "item": "toner", "label": "Toner, 132.90 EUR"}],
+            "blocks": {"invoices": {"items": [
+                {"id": "hosting", "choice": "approve"}, {"id": "toner", "choice": "later"},
+                {"id": "parking", "choice": "reject"}]}}}
+    status, _ = request(live.port, "POST", "/submit",
+                        json.dumps({"run_id": pushed["run_id"], "data": full}).encode(), headers)
+    assert status == 200
+    status, detail = _api(live, f"/api/run/{pushed['run_id']}")
+    assert detail["state"] == "submitted" and detail["result"]["refs"] == full["refs"]
+
+
+def test_a_payload_1_record_is_skipped_with_a_log_line_and_keeps_its_run_id(tmp_path):
+    data_dir = ensure_layout(tmp_path / "data")
+    old_id = "20261011-090000-old-abcd"
+    (data_dir / "runs" / f"{old_id}.json").write_text(json.dumps({
+        "payload": {"schema": "report-shell/payload@1", "template": "decide-list", "version": 1,
+                    "run_id": old_id, "bot": "old-bot", "title": "Old", "created": "2026-10-11T09:00:00+02:00",
+                    "data": {}},
+        "state": "open", "expires": "2026-10-11T13:00:00+02:00",
+    }), encoding="utf-8")
+    server = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, load_config(data_dir))
+    try:
+        assert not server.runs.has(old_id) and server.runs.open_count() == 0
+        events = [json.loads(line) for path in (data_dir / "log").glob("*.jsonl")
+                  for line in path.read_text(encoding="utf-8").splitlines()]
+        assert any(event["run_id"] == old_id and event["detail"] == {"what": "run_skipped", "reason": "payload@1"}
+                   for event in events)
+        # the old run's id stays taken: its record is not overwritten
+        with pytest.raises(ValueError, match="already used"):
+            server.runs.register(validate_payload(dict(valid_payload(), run_id=old_id)))
+    finally:
+        server.server_close()

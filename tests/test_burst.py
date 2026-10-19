@@ -12,7 +12,7 @@ import pytest
 
 import core.cli as cli_module
 import core.launch_coordination as coordination
-from conftest import ROOT
+from conftest import show_fixture
 from core.platform_types import LaunchResult, WindowLaunchStatus
 
 URL = "http://127.0.0.1:18921/?launch=x&run=x"
@@ -87,11 +87,11 @@ from test_arrivals import live  # noqa: E402,F401  (the in-process server fixtur
 from test_safety import valid_payload  # noqa: E402
 import core.server as server_module  # noqa: E402
 
-STARTER_DATA = ROOT / "templates" / "builtin" / "_starter" / "fixtures" / "golden.json"
-
-
-def _show_args(focus):
-    return SimpleNamespace(template="_starter", data=str(STARTER_DATA), no_window=False, focus=focus)
+def _show_args(focus, folder):
+    # no dedupe_key: six shows are six reports
+    report = Path(folder) / "read-report.json"
+    report.write_text(json.dumps(show_fixture("read")), encoding="utf-8")
+    return SimpleNamespace(template=None, data=str(report), no_window=False, focus=focus)
 
 
 def test_the_push_answer_says_whether_this_push_brings_the_window_forward(live):
@@ -127,5 +127,5 @@ def test_show_focus_does_not_defeat_the_burst_throttle(live, tmp_path, monkeypat
             patch.object(live.hub, "probe_window", return_value=True), \
             redirect_stdout(io.StringIO()):
         for _ in range(6):
-            assert cli_module.command_show(_show_args(True), base, live.port) == 0
+            assert cli_module.command_show(_show_args(True, tmp_path), base, live.port) == 0
     assert len(focused) == 1

@@ -11,7 +11,6 @@ import core.server as server_module
 import core.timeutil as timeutil
 from core.actionlog import ActionLog
 from core.paths import ensure_layout, load_config
-from core.registry import scan_registry
 from core.runs import RunStore
 
 
@@ -147,22 +146,19 @@ def test_run_expiry_and_duration_use_elapsed_utc_across_dst(
     data_dir = ensure_layout(tmp_path / "data")
     store = RunStore(
         data_dir,
-        scan_registry(ROOT / "templates"),
         load_config(data_dir),
         ActionLog(data_dir),
     )
     run_id = "20261025-023000-test-abcd"
     store.register(
         {
-            "schema": "report-shell/payload@1",
-            "template": "_starter",
-            "version": 1,
+            "schema": "grokbot-desk/payload@2", "ask": "read",
             "run_id": run_id,
             "bot": "example-dev-bot",
             "title": "DST",
             "created": created,
             "expires_minutes": 60,
-            "data": {"message": "Hello"},
+            "blocks": [{"type": "text", "id": "b1", "md": "Hello"}],
         }
     )
     assert store.detail(run_id)["expires"] == expected_expires
@@ -178,30 +174,26 @@ def test_submitted_run_detail_exposes_immutable_result_for_read_only_reopen(tmp_
     data_dir = ensure_layout(tmp_path / "data")
     store = RunStore(
         data_dir,
-        scan_registry(ROOT / "templates"),
         load_config(data_dir),
         ActionLog(data_dir),
     )
     run_id = "20261008-120000-reopen-abcd"
     store.register(
         {
-            "schema": "report-shell/payload@1",
-            "template": "_starter",
-            "version": 1,
+            "schema": "grokbot-desk/payload@2", "ask": "read",
             "run_id": run_id,
             "bot": "example-dev-bot",
             "title": "Reopen",
             "created": "2026-10-08T12:00:00+02:00",
             "expires_minutes": 60,
-            "data": {"message": "Hello"},
+            "blocks": [{"type": "text", "id": "b1", "md": "Hello"}],
         }
     )
-    submitted = {"choice": "spaeter", "note": "Gesendete Notiz"}
-    store.decide(run_id, "submitted", submitted)
+    store.decide(run_id, "submitted", {"decision": "read", "note": "Gesendete Notiz"})
 
     detail = store.detail(run_id)
     assert detail["state"] == "submitted"
-    assert detail["result"] == submitted
+    assert detail["result"] == {"decision": "read", "note": "Gesendete Notiz", "refs": []}
 
 
 @pytest.mark.parametrize(
@@ -217,22 +209,19 @@ def test_finding_7_run_summaries_sort_by_instant_across_offsets(
     data_dir = ensure_layout(tmp_path / "data")
     store = RunStore(
         data_dir,
-        scan_registry(ROOT / "templates"),
         load_config(data_dir),
         ActionLog(data_dir),
     )
     for label, created in (("older", older), ("newer", newer)):
         store.register(
             {
-                "schema": "report-shell/payload@1",
-                "template": "_starter",
-                "version": 1,
+                "schema": "grokbot-desk/payload@2", "ask": "read",
                 "run_id": f"20261008-120000-{label}-abcd",
                 "bot": "example-dev-bot",
                 "title": label,
                 "created": created,
                 "expires_minutes": 240,
-                "data": {"message": "Hello"},
+                "blocks": [{"type": "text", "id": "b1", "md": "Hello"}],
             }
         )
     assert [item["title"] for item in store.summaries({})] == [
@@ -248,48 +237,41 @@ def test_registration_seq_survives_reload_and_ignores_a_skewed_clock(tmp_path):
     def open_store():
         return RunStore(
             data_dir,
-            scan_registry(ROOT / "templates"),
             load_config(data_dir),
             ActionLog(data_dir),
         )
 
     store = open_store()
     store.register({
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2", "ask": "read",
         "run_id": "20261011-120000-inbox-aaaa",
         "bot": "example-inbox-bot",
         "title": "Inbox first",
         "created": "2026-10-11T12:00:00+02:00",
         "expires_minutes": 240,
-        "data": {"message": "Hello"},
+        "blocks": [{"type": "text", "id": "b1", "md": "Hello"}],
     })
     store.register({
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2", "ask": "read",
         "run_id": "20261011-120001-social-bbbb",
         "bot": "example-social-bot",
         "title": "Social skewed",
         "created": "2026-10-11T09:00:00+02:00",
         "expires_minutes": 240,
-        "data": {"message": "Hello"},
+        "blocks": [{"type": "text", "id": "b1", "md": "Hello"}],
     })
     listed = {item["title"]: item for item in store.summaries({})}
     assert listed["Inbox first"]["seq"] == 1
     assert listed["Social skewed"]["seq"] == 2
     reloaded = open_store()
     third = reloaded.register({
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2", "ask": "read",
         "run_id": "20261011-120002-inbox-cccc",
         "bot": "example-inbox-bot",
         "title": "Inbox later",
         "created": "2026-10-11T08:00:00+02:00",
         "expires_minutes": 240,
-        "data": {"message": "Hello"},
+        "blocks": [{"type": "text", "id": "b1", "md": "Hello"}],
     })
     assert third["run_id"]
     again = {item["title"]: item["seq"] for item in reloaded.summaries({})}
@@ -309,7 +291,6 @@ def test_legacy_records_keep_created_order_ahead_of_later_registrations(tmp_path
     def open_store():
         return RunStore(
             data_dir,
-            scan_registry(ROOT / "templates"),
             load_config(data_dir),
             ActionLog(data_dir),
         )
@@ -318,15 +299,13 @@ def test_legacy_records_keep_created_order_ahead_of_later_registrations(tmp_path
 
     def add(run_id, bot, title, created):
         store.register({
-            "schema": "report-shell/payload@1",
-            "template": "_starter",
-            "version": 1,
+            "schema": "grokbot-desk/payload@2", "ask": "read",
             "run_id": run_id,
             "bot": bot,
             "title": title,
             "created": created,
             "expires_minutes": 240,
-            "data": {"message": "Hello"},
+            "blocks": [{"type": "text", "id": "b1", "md": "Hello"}],
         })
 
     add("20261011-100000-inbox-aaaa", "example-inbox-bot", "Inbox older", "2026-10-11T10:00:00+02:00")
@@ -343,15 +322,13 @@ def test_legacy_records_keep_created_order_ahead_of_later_registrations(tmp_path
         (data_dir / "runs" / "20261011-100000-inbox-aaaa.json").read_text(encoding="utf-8")
     )["seq"] == order["Inbox older"]
     reloaded.register({
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2", "ask": "read",
         "run_id": "20261011-100003-inbox-dddd",
         "bot": "example-inbox-bot",
         "title": "Inbox after",
         "created": "2026-10-11T07:00:00+02:00",
         "expires_minutes": 240,
-        "data": {"message": "Hello"},
+        "blocks": [{"type": "text", "id": "b1", "md": "Hello"}],
     })
     again = {item["title"]: item["seq"] for item in reloaded.summaries({})}
     assert again["Inbox after"] > again["Social skewed"]
@@ -426,11 +403,10 @@ def test_idle_shutdown_starts_30_minutes_after_last_subscriber_leaves():
 
 def test_the_browser_gets_only_the_zone_python_uses(monkeypatch):
     from core.page import build_page
-    from core.registry import scan_registry
     from core.paths import ROOT
 
     def boot_tz():
-        page = build_page(scan_registry(ROOT / "templates", ROOT / "missing"), "c", 18920)
+        page = build_page("c", 18920)
         return json.loads(page.split('id="rs-boot"', 1)[1].split(">", 1)[1].split("</script>", 1)[0])["tz"]
 
     monkeypatch.setenv("RS_TZ", "UTC")

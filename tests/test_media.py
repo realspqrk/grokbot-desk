@@ -1,200 +1,112 @@
-"""Template-relative media token containment and persistence."""
+"""Block media: every x-rs-media field of blocks.schema.json, registered under
+the configured media roots, kept across a reload, never from a template."""
 import json
-import os
-import subprocess
 
 import pytest
 
-from conftest import ROOT
 from core.actionlog import ActionLog
 from core.envelope import validate_payload
-from core.media import (
-    TEMPLATE_TOKEN,
-    MediaError,
-    open_validated_media,
-    register_media,
-    replace_media,
-)
+from core.media import MediaError, open_validated_media, register_media, replace_block_media
 from core.paths import ensure_layout, load_config
-from core.registry import scan_registry
+from core.payload import BLOCK_SCHEMAS
 from core.runs import RunStore
 
 
-PREVIEW_TEMPLATE = ROOT / "templates" / "builtin" / "preview-post"
-PREVIEW_FIXTURE = PREVIEW_TEMPLATE / "fixtures" / "golden.json"
-
-
 @pytest.fixture
-def template_dir(tmp_path):
-    folder = tmp_path / "template"
-    (folder / "fixtures" / "media").mkdir(parents=True)
-    (folder / "fixtures" / "media" / "a.png").write_bytes(b"png")
-    (folder / "fixtures" / "media" / "notes.txt").write_text(
-        "x", encoding="utf-8"
-    )
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / "b.png").write_bytes(b"png")
-    return folder
+def media_root(tmp_path):
+    root = tmp_path / "media"
+    root.mkdir()
+    for name in ("a.png", "poster.jpg", "avatar.webp", "clip.mp4", "clip.webm"):
+        (root / name).write_bytes(b"\xff\xd8\xff media")
+    (root / "notes.txt").write_text("x", encoding="utf-8")
+    return root
 
 
-def test_token_expands_to_the_template_folder(template_dir):
-    for value in (
-        TEMPLATE_TOKEN + "\\fixtures\\media\\a.png",
-        TEMPLATE_TOKEN + "/fixtures/media/a.png",
-    ):
-        entry = register_media(value, [], template_root=template_dir)
-        assert entry.path == (
-            template_dir / "fixtures" / "media" / "a.png"
-        ).resolve()
-        assert entry.media_id.startswith("m_") and len(entry.media_id) == 34
-        assert entry.content_type == "image/png"
-
-
-def test_token_needs_a_template_and_the_exact_spelling(template_dir):
-    with pytest.raises(MediaError):
-        register_media(
-            TEMPLATE_TOKEN + "\\fixtures\\media\\a.png",
-            [template_dir],
-        )
-    for value in (
-        "%rs_template%\\fixtures\\media\\a.png",
-        "%RS_TEMPLATE\\fixtures\\media\\a.png",
-        "x" + TEMPLATE_TOKEN + "\\fixtures\\media\\a.png",
-    ):
-        with pytest.raises(MediaError):
-            register_media(value, [], template_root=template_dir)
-
-
-@pytest.mark.parametrize(
-    "rest",
-    [
-        "",
-        "\\",
-        "fixtures\\media\\a.png",
-        "\\..\\outside\\b.png",
-        "\\fixtures\\..\\..\\outside\\b.png",
-        "/../outside/b.png",
-        "\\C:\\Windows\\win.ini",
-        "\\C:fixtures\\media\\a.png",
-        "\\\\server\\share\\a.png",
-        "\\fixtures\\media\\notes.txt",
-        "\\fixtures\\media\\missing.png",
-    ],
-)
-def test_token_escape_attempts_are_rejected(template_dir, rest):
-    with pytest.raises(MediaError):
-        register_media(
-            TEMPLATE_TOKEN + rest,
-            [template_dir.parent],
-            template_root=template_dir,
-        )
-
-
-def test_token_root_is_only_for_token_paths(template_dir, tmp_path):
-    with pytest.raises(MediaError):
-        register_media(
-            str(template_dir / "fixtures" / "media" / "a.png"),
-            [],
-            template_root=template_dir,
-        )
-    with pytest.raises(MediaError):
-        register_media(
-            TEMPLATE_TOKEN + "\\..\\outside\\b.png",
-            [tmp_path / "outside"],
-            template_root=template_dir,
-        )
-
-
-def test_token_keeps_size_limit(template_dir):
-    huge = template_dir / "fixtures" / "media" / "huge.png"
-    with huge.open("wb") as handle:
-        handle.truncate(20 * 1024 * 1024 + 1)
-    with pytest.raises(MediaError):
-        register_media(
-            TEMPLATE_TOKEN + "\\fixtures\\media\\huge.png",
-            [],
-            template_root=template_dir,
-        )
-
-
-@pytest.mark.skipif(os.name != "nt", reason="junctions are Windows-specific")
-def test_token_rejects_junction_out_of_the_template(template_dir, tmp_path):
-    junction = template_dir / "fixtures" / "jump"
-    made = subprocess.run(
-        [
-            "cmd",
-            "/c",
-            "mklink",
-            "/J",
-            str(junction),
-            str(tmp_path / "outside"),
-        ],
-        capture_output=True,
-    )
-    if made.returncode:
-        pytest.skip("junction creation unavailable")
-    with pytest.raises(MediaError):
-        register_media(
-            TEMPLATE_TOKEN + "\\fixtures\\jump\\b.png",
-            [tmp_path],
-            template_root=template_dir,
-        )
-
-
-def test_replace_media_passes_the_template_root(template_dir):
-    schema = {
-        "type": "object",
-        "properties": {
-            "image": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "x-rs-media": True}
-                },
-            }
-        },
+def report(*blocks, ask="read"):
+    return {
+        "schema": "grokbot-desk/payload@2", "bot": "media-bot", "title": "Media",
+        "created": "2026-10-18T09:00:00+02:00", "ask": ask, "blocks": list(blocks),
     }
+
+
+def test_every_media_field_of_every_block_is_registered(media_root):
+    post = {
+        "type": "post", "author": {"name": "Shop", "handle": "shop", "avatar": str(media_root / "avatar.webp")},
+        "text": "Hello.", "hashtags": [], "platforms": ["x"],
+        "video": {"path": str(media_root / "clip.mp4"), "poster": str(media_root / "poster.jpg"),
+                  "alt": "A clip", "ratio": "16:9"},
+    }
+    blocks = [
+        {"type": "text", "md": "![A](a)", "images": [{"key": "a", "path": str(media_root / "a.png"), "alt": "A"}]},
+        {"type": "media", "path": str(media_root / "clip.webm"), "alt": "Clip", "poster": str(media_root / "poster.jpg")},
+        {"type": "media", "path": str(media_root / "a.png"), "alt": "Picture"},
+        post,
+    ]
+    payload = validate_payload(report(*blocks, ask="approve"))
     media = {}
-    out = replace_media(
-        {
-            "image": {
-                "path": TEMPLATE_TOKEN + "\\fixtures\\media\\a.png"
-            }
-        },
-        schema,
-        [],
-        media,
-        template_root=template_dir,
-    )
-    assert out["image"]["path"] in media
+    out = replace_block_media(payload["blocks"], BLOCK_SCHEMAS, [media_root], media)
+    ids = [
+        out[0]["images"][0]["path"], out[1]["path"], out[1]["poster"], out[2]["path"],
+        out[3]["author"]["avatar"], out[3]["video"]["path"], out[3]["video"]["poster"],
+    ]
+    assert all(value.startswith("m_") and value in media for value in ids)
+    assert len(set(ids)) == 7
+    assert media[out[1]["path"]].content_type == "video/webm"
+    # text is never touched: a path quoted in prose stays prose
+    assert out[0]["md"] == "![A](a)"
 
 
-def test_template_media_survives_run_store_reload(tmp_path):
+@pytest.mark.parametrize("block, message", [
+    ({"type": "media", "path": "notes.txt", "alt": "x"}, "absolute"),
+    ({"type": "media", "path": "{root}/notes.txt", "alt": "x"}, "extension"),
+    ({"type": "text", "md": "x", "images": [{"key": "a", "path": "{root}/clip.mp4", "alt": "x"}]}, "extension"),
+    ({"type": "media", "path": "%RS_TEMPLATE%/a.png", "alt": "x"}, "absolute"),
+    ({"type": "media", "path": "{root}/../outside.png", "alt": "x"}, "traversal"),
+    ({"type": "media", "path": "{root}/missing.png", "alt": "x"}, "does not exist"),
+])
+def test_block_media_follows_the_media_rules(media_root, block, message):
+    block = json.loads(json.dumps(block).replace("{root}", str(media_root).replace("\\", "\\\\")))
+    with pytest.raises(MediaError, match=message):
+        replace_block_media([block], BLOCK_SCHEMAS, [media_root], {})
+
+
+def test_media_outside_every_configured_root_is_refused(media_root, tmp_path):
+    other = tmp_path / "other"
+    other.mkdir()
+    with pytest.raises(MediaError, match="outside configured roots"):
+        register_media(str(media_root / "a.png"), [other])
+    with pytest.raises(MediaError, match="outside configured roots"):
+        register_media(str(media_root / "a.png"), [])
+
+
+def test_block_media_survives_a_reload_and_follows_the_roots_configured_now(media_root, tmp_path):
     data_dir = ensure_layout(tmp_path / "data")
-    registry = scan_registry(ROOT / "templates")
-    payload = validate_payload(
-        {
-            "schema": "report-shell/payload@1",
-            "template": "preview-post",
-            "version": 1,
-            "bot": "research-agent",
-            "title": "Preview",
-            "created": "2026-10-08T10:39:00+02:00",
-            "data": json.loads(
-                PREVIEW_FIXTURE.read_text(encoding="utf-8")
-            ),
-        },
-        registry,
-    )
-    config = load_config(data_dir)
-    store = RunStore(data_dir, registry, config, ActionLog(data_dir))
-    detail = store.register(payload)
-    media_id = detail["data"]["image"]["path"]
+    config = dict(load_config(data_dir), media_roots=[str(media_root)])
+    store = RunStore(data_dir, config, ActionLog(data_dir))
+    detail = store.register(validate_payload(report({"type": "media", "path": str(media_root / "a.png"), "alt": "A"})))
+    media_id = detail["blocks"][0]["path"]
+    assert store.payload(detail["run_id"])["blocks"][0]["path"] == media_id
 
-    reloaded = RunStore(data_dir, registry, config, ActionLog(data_dir))
-
+    reloaded = RunStore(data_dir, config, ActionLog(data_dir))
     assert media_id in reloaded.media
-    with open_validated_media(
-        reloaded.media[media_id], reloaded.media_roots(media_id)
-    ) as (handle, _):
+    with open_validated_media(reloaded.media[media_id], reloaded.media_roots(media_id)) as (handle, _):
         assert handle.read(3) == b"\xff\xd8\xff"
+    # the root was taken out of config.json: the saved run is no allowlist
+    revoked = RunStore(data_dir, dict(config, media_roots=[]), ActionLog(data_dir))
+    assert media_id not in revoked.media
+
+
+def test_a_pinned_template_media_record_is_not_served(media_root, tmp_path):
+    """Template media of an older desk carried pins; nothing can check them now."""
+    data_dir = ensure_layout(tmp_path / "data")
+    config = dict(load_config(data_dir), media_roots=[str(media_root)])
+    store = RunStore(data_dir, config, ActionLog(data_dir))
+    detail = store.register(validate_payload(report({"type": "media", "path": str(media_root / "a.png"), "alt": "A"})))
+    record_path = data_dir / "runs" / f"{detail['run_id']}.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    media_id = detail["blocks"][0]["path"]
+    record["media"][media_id]["file_identity"] = ["1", "2"]
+    record["media"][media_id]["root_identity"] = ["1", "3"]
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    reloaded = RunStore(data_dir, config, ActionLog(data_dir))
+    assert reloaded.has(detail["run_id"]) and media_id not in reloaded.media

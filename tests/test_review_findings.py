@@ -204,21 +204,11 @@ def test_finding_14_failed_or_empty_submit_measurement_cannot_pass(
 def test_round_4_finding_6_c10_requires_validation_inside_each_timed_case(
     monkeypatch, capsys
 ):
-    expected = json.loads(
-        (
-            measure_result.ROOT
-            / "templates"
-                / "builtin"
-            / "_starter"
-            / "fixtures"
-            / "expect"
-            / "golden.json"
-        ).read_text(encoding="utf-8")
-    )["result"]
+    expected = {"decision": "read", "note": "", "refs": []}
     cases = [
         {
             "run_id": f"r{index}",
-            "template": "_starter",
+            "template": "read",
             "ms": 1,
             "result": {"data": expected},
             "expected": expected,

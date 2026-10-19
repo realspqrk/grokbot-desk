@@ -11,7 +11,7 @@ import pytest
 
 from core import identity as ident
 from core.envelope import validate_payload
-from test_identity import PNG_1PX, data_url, get, payload, resolve, server, starter_data  # noqa: F401
+from test_identity import PNG_1PX, data_url, get, payload, resolve, server  # noqa: F401
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -245,9 +245,9 @@ def test_doctor_reports_identity_warnings(tmp_path):
 
 def test_server_serves_shape_identity(server):
     run = server.runs.register(validate_payload(payload(
-        bot="example-shape-bot", data=starter_data(),
+        bot="example-shape-bot",
         identity={"name": "Shape Agent", "avatar_shape": "teardrop", "avatar_color": "blue"},
-    ), server.registry))
+    )))
     detail = json.loads(get(server, f"/api/run/{run['run_id']}")[2])
     assert detail["identity"]["shape"] == "teardrop"
     assert detail["identity"]["color"] == "blue"

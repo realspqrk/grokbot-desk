@@ -95,13 +95,12 @@ def _serve(tmp_path):
     import threading
 
     from core.paths import ensure_layout, load_config
-    from core.registry import scan_registry
     from core.server import Handler, ReportHTTPServer
 
     data_dir = ensure_layout(tmp_path / "data")
     server = ReportHTTPServer(
         ("127.0.0.1", _free_port()), Handler, data_dir,
-        scan_registry(ROOT / "templates"), load_config(data_dir),
+        load_config(data_dir),
     )
     server.port = server.server_port
     threading.Thread(target=server.serve_forever, daemon=True).start()

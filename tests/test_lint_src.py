@@ -49,46 +49,38 @@ def test_lint_skips_a_local_virtualenv_and_node_modules(tmp_path):
     assert {item["rule"] for item in scan_repo(tmp_path)} == {"C15a"}
 
 
-def test_calm_lint_is_opt_in_and_rejects_raw_spacing_and_multiple_primaries(tmp_path):
+def test_calm_lint_is_opt_in_and_rejects_raw_spacing(tmp_path):
     core = tmp_path / "core" / "static"
-    template = tmp_path / "templates" / "global" / "sample"
     core.mkdir(parents=True)
-    template.mkdir(parents=True)
     (core / "shell.css").write_text(".bad { padding: 12px; }\n", encoding="utf-8")
-    (template / "template.css").write_text(".bad { gap: 8px 0; }\n", encoding="utf-8")
-    (template / "template.html").write_text(
-        '<button data-rs-primary>One</button><button data-rs-primary>Two</button>',
-        encoding="utf-8",
-    )
+    (core / "blocks.css").write_text(".bad { gap: 8px 0; }\n", encoding="utf-8")
+    # templates are gone: a leftover folder is not desk code
+    leftover = tmp_path / "templates" / "global" / "sample"
+    leftover.mkdir(parents=True)
+    (leftover / "template.css").write_text(".old { gap: 8px; }\n", encoding="utf-8")
 
     assert scan_repo(tmp_path) == []
     findings = scan_repo(tmp_path, calm=True)
 
     assert sum(item["rule"] == "C16-K7a" for item in findings) == 2
-    assert sum(item["rule"] == "C16-K1-primary-count" for item in findings) == 1
+    assert all("templates" not in item["path"] for item in findings)
 
 
 def test_calm_lint_allows_spacing_tokens_zero_and_hairlines(tmp_path):
     core = tmp_path / "core"
-    template = tmp_path / "templates" / "global" / "sample"
     core.mkdir()
-    template.mkdir(parents=True)
     (core / "tokens.css").write_text(
         ".ok { margin: 0 var(--space-4); padding: 1px; gap: var(--space-2); inset: 0; }\n",
-        encoding="utf-8",
-    )
-    (template / "template.html").write_text(
-        '<button data-rs-primary>Only</button>',
         encoding="utf-8",
     )
 
     assert scan_repo(tmp_path, calm=True) == []
 
 
-def test_review_finding_7_calm_lint_scans_inline_template_styles(tmp_path):
-    template = tmp_path / "templates" / "global" / "sample"
-    template.mkdir(parents=True)
-    (template / "template.html").write_text(
+def test_review_finding_7_calm_lint_scans_inline_page_styles(tmp_path):
+    static = tmp_path / "core" / "static"
+    static.mkdir(parents=True)
+    (static / "shell.html").write_text(
         '<style>.also-bad { margin: 19px; }</style>'
         '<section style="padding:37px;gap:11px"></section>',
         encoding="utf-8",
@@ -102,9 +94,9 @@ def test_review_finding_7_calm_lint_scans_inline_template_styles(tmp_path):
 def test_review_finding_7_calm_lint_does_not_parse_token_names_as_spacing_properties(
     tmp_path,
 ):
-    template = tmp_path / "templates" / "global" / "sample"
-    template.mkdir(parents=True)
-    (template / "template.css").write_text(
+    static = tmp_path / "core" / "static"
+    static.mkdir(parents=True)
+    (static / "blocks.css").write_text(
         ":root { --space-gap: 16px; } section { gap: var(--space-gap); }",
         encoding="utf-8",
     )
@@ -114,15 +106,13 @@ def test_review_finding_7_calm_lint_does_not_parse_token_names_as_spacing_proper
 
 def test_round_2_finding_7_calm_lint_scans_core_html_and_unquoted_styles(tmp_path):
     core = tmp_path / "core" / "static"
-    template = tmp_path / "templates" / "global" / "sample"
     core.mkdir(parents=True)
-    template.mkdir(parents=True)
     (core / "shell.html").write_text(
         '<style>.bad { margin:19px }</style>'
         '<section style="padding:37px;gap:11px"></section>',
         encoding="utf-8",
     )
-    (template / "template.html").write_text(
+    (core / "doorbell.html").write_text(
         "<section style=padding:23px></section>",
         encoding="utf-8",
     )
@@ -134,16 +124,14 @@ def test_round_2_finding_7_calm_lint_scans_core_html_and_unquoted_styles(tmp_pat
 
 def test_round_3_finding_9_calm_lint_scans_js_spacing_sources(tmp_path):
     core = tmp_path / "core" / "static"
-    template = tmp_path / "templates" / "global" / "sample"
     core.mkdir(parents=True)
-    template.mkdir(parents=True)
     (core / "rs.js").write_text(
         "node.style.padding = '37px';\n"
         'node.style.rowGap = "11px";\n'
         "node.style.margin = 'var(--space-2)';\n",
         encoding="utf-8",
     )
-    (template / "template.js").write_text(
+    (core / "blocks.js").write_text(
         "const rules = css`.card { gap: 19px; }`;\n"
         "node.style.setProperty('padding-inline', '23px');\n",
         encoding="utf-8",
@@ -155,9 +143,9 @@ def test_round_3_finding_9_calm_lint_scans_js_spacing_sources(tmp_path):
 
 
 def test_round_4_finding_6_calm_lint_scans_js_style_strings(tmp_path):
-    template = tmp_path / "templates" / "global" / "sample"
-    template.mkdir(parents=True)
-    (template / "template.js").write_text(
+    static = tmp_path / "core" / "static"
+    static.mkdir(parents=True)
+    (static / "blocks.js").write_text(
         "node.style.cssText = 'padding:37px;gap:11px';\n"
         "node.setAttribute('style', 'margin:19px;column-gap:13px');\n"
         "safe.style.cssText = 'padding:var(--space-2);gap:0';\n"

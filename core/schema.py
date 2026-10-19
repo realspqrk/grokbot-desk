@@ -1,4 +1,4 @@
-"""Small JSON Schema validator for the grokbot-desk template contract."""
+"""Small JSON Schema validator for the grokbot-desk block contract."""
 import math
 import re
 

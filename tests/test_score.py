@@ -207,11 +207,11 @@ def test_c16_is_a_hard_gate_with_the_required_table_label(capsys):
     assert "C16" in capsys.readouterr().out
 
 
-def test_c16_runs_calm_per_template_lint_and_requires_c12_c13_evidence(
+def test_c16_runs_calm_per_scene_lint_and_requires_c12_c13_evidence(
     tmp_path, monkeypatch
 ):
     commands = []
-    monkeypatch.setattr(score, "_registered_templates", lambda: ["_starter", "decide-list"])
+    monkeypatch.setattr(score, "_calm_scenes", lambda: ["read", "approve-decide"])
 
     def command_json(command, timeout=300):
         commands.append(command)
@@ -234,8 +234,8 @@ def test_c16_runs_calm_per_template_lint_and_requires_c12_c13_evidence(
     assert c16["status"] == "pass"
     assert set(c16["raw"]["items"]) == {f"K{index}" for index in range(1, 14)}
     assert [command[-1] for command in commands if "calm" in command] == [
-        "_starter",
-        "decide-list",
+        "read",
+        "approve-decide",
     ]
     assert any(command[-1:] == ["--calm"] for command in commands)
 
@@ -243,7 +243,7 @@ def test_c16_runs_calm_per_template_lint_and_requires_c12_c13_evidence(
 def test_review_finding_13_c16_rejects_failed_or_incomplete_calm_output(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(score, "_registered_templates", lambda: ["_starter"])
+    monkeypatch.setattr(score, "_calm_scenes", lambda: ["read"])
 
     def command_json(command, timeout=300):
         if any(str(part).endswith("lint_src.py") for part in command):

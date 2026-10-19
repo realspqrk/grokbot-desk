@@ -15,11 +15,10 @@ from unittest.mock import patch
 import pytest
 from core.cli import _load_show_payload
 from core.product import RUNNER_ID
-from core.registry import scan_registry
 
 import core.cli as cli_module
 import conftest as fixture_module
-from conftest import ROOT, free_port
+from conftest import ROOT, free_port, show_fixture
 
 E2E_RUNNER = ROOT / "tools" / "e2e.mjs"
 E2E_SKIP_REASON = "tools/e2e.mjs is unavailable"
@@ -280,7 +279,7 @@ def test_cli_outer_timeout_exceeds_bounded_inner_budgets(monkeypatch):
         "RS_TEST_CLI_TIMEOUT": "1",
     }
 
-    cli(env, 18920, "check", "_starter")
+    cli(env, 18920, "check", "payload.json")
 
     assert seen == [150]
 
@@ -300,7 +299,7 @@ def test_cli_timeout_reports_last_inner_stage(monkeypatch):
     monkeypatch.setattr(subprocess, "run", timeout)
 
     with pytest.raises(AssertionError, match="launching browser"):
-        cli({}, 18920, "check", "_starter")
+        cli({}, 18920, "check", "payload.json")
 
 
 def test_e2e_reports_server_browser_and_expectation_wait_stages():
@@ -384,31 +383,12 @@ def test_show_reports_bounded_browser_launch_error(tmp_path, monkeypatch, capsys
     from core import cli as cli_module
     from core.platform_types import BrowserLaunchError
 
-    template_path = tmp_path / "template"
-    template_path.mkdir()
-    (template_path / "schema.json").write_text("{}", encoding="utf-8")
-    template = type(
-        "Template",
-        (),
-        {
-            "id": "sample",
-            "path": template_path,
-            "root_identity": None,
-            "file_path": lambda self, name: self.path / name,
-                "read_text": lambda self, name: (
-                    self.path / name
-                ).read_text(encoding="utf-8"),
-        },
-    )()
-    payload = {"run_id": "run-1", "data": {}}
-    monkeypatch.setattr(
-        cli_module, "scan_registry", lambda root, user_root=None: {"sample": template}
-    )
+    payload = {"run_id": "run-1", "blocks": []}
     monkeypatch.setattr(
         cli_module, "_load_show_payload", lambda *args, **kwargs: payload
     )
     monkeypatch.setattr(cli_module, "load_config", lambda base: {})
-    monkeypatch.setattr(cli_module, "replace_media", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli_module, "replace_block_media", lambda *args, **kwargs: None)
     monkeypatch.setattr(cli_module, "_ensure_server", lambda base, port: {})
     monkeypatch.setattr(cli_module, "_state", lambda base: {"token": "secret"})
     response = io.BytesIO(
@@ -433,7 +413,7 @@ def test_show_reports_bounded_browser_launch_error(tmp_path, monkeypatch, capsys
         "Args",
         (),
         {
-            "template": "sample",
+            "template": None,
             "data": "unused",
             "no_window": False,
             "focus": False,
@@ -602,23 +582,7 @@ def test_concurrent_show_rechecks_page_readiness_after_open_launch(
 
     base = tmp_path / "data"
     base.mkdir()
-    template_path = tmp_path / "template"
-    template_path.mkdir()
-    (template_path / "schema.json").write_text("{}", encoding="utf-8")
-    template = type(
-        "Template",
-        (),
-        {
-            "id": "sample",
-            "path": template_path,
-            "root_identity": None,
-            "file_path": lambda self, name: self.path / name,
-                "read_text": lambda self, name: (
-                    self.path / name
-                ).read_text(encoding="utf-8"),
-        },
-    )()
-    payload = {"run_id": "run-1", "data": {}}
+    payload = {"run_id": "run-1", "blocks": []}
     response_body = json.dumps(
         {
             "run_id": "run-1",
@@ -633,14 +597,9 @@ def test_concurrent_show_rechecks_page_readiness_after_open_launch(
     real_launch_once = cli_module._launch_window_once
 
     monkeypatch.setattr(
-        cli_module,
-        "scan_registry",
-        lambda root, user_root=None: {"sample": template},
-    )
-    monkeypatch.setattr(
         cli_module, "_load_show_payload", lambda *args, **kwargs: payload
     )
-    monkeypatch.setattr(cli_module, "replace_media", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli_module, "replace_block_media", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         cli_module,
         "_ensure_server",
@@ -679,7 +638,7 @@ def test_concurrent_show_rechecks_page_readiness_after_open_launch(
         "Args",
         (),
         {
-            "template": "sample",
+            "template": None,
             "data": "unused",
             "no_window": False,
             "focus": False,
@@ -746,94 +705,32 @@ def test_open_reports_pending_and_launched_truthfully(
     assert len(calls) == 1
 
 
-def test_list_check_and_new_round_trip(tmp_path):
-    data_dir = tmp_path / "data"
-    env = dict(os.environ, RS_DATA_DIR=str(data_dir))
-    port = free_port()
-    listed = cli(env, port, "list")
-    assert listed.returncode == 0
-    assert any(item["id"] == "_starter" for item in json.loads(listed.stdout))
-
-    repo = tmp_path / "repo"
-    import shutil
-
-    shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    created = subprocess.run(
-        [sys.executable, str(repo / "report_shell.py"), "new", "acme/sample"],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert created.returncode == 0
-    assert (data_dir / "templates" / "sample" / "template.json").exists()
-    assert not (repo / "templates" / "acme" / "sample").exists()
+def test_template_commands_are_gone(capsys):
+    for argv in (["list"], ["templates"], ["new", "acme/sample"], ["check", "--all"]):
+        with pytest.raises(SystemExit) as stopped:
+            cli_module.main(argv)
+        assert stopped.value.code == 2
+    capsys.readouterr()
 
 
-@pytest.mark.skipif(not E2E_RUNNER.is_file(), reason=E2E_SKIP_REASON)
-def test_starter_check_succeeds_with_expectation_backend(
-    tmp_path, server_guard
-):
-    port = free_port()
-    env = server_guard(
-        dict(os.environ, RS_DATA_DIR=str(tmp_path / "data")),
-        port,
-    )
-    checked = cli(env, port, "check", "_starter")
-    assert checked.returncode == 0, checked.stderr
+def test_show_rejects_template_argument(tmp_path, capsys):
+    source = tmp_path / "payload.json"
+    source.write_text(json.dumps(show_fixture("read")), encoding="utf-8")
+    args = SimpleNamespace(template="decide-list", data=str(source), no_window=True, focus=False)
+    assert cli_module.command_show(args, tmp_path, free_port()) == 2
+    assert "show takes no template since payload@2" in capsys.readouterr().err
+    # also through the parser, before any desk starts
+    env = dict(os.environ, RS_DATA_DIR=str(tmp_path / "data"))
+    shown = cli(env, free_port(), "show", "decide-list", "--data", str(source), "--no-window")
+    assert shown.returncode == 2 and "show takes no template since payload@2" in shown.stderr
+    assert "Traceback" not in shown.stderr
 
 
-def test_starter_and_new_template_carry_canonical_expectation(tmp_path):
-    canonical = (
-        ROOT
-        / "templates"
-        / "builtin"
-        / "_starter"
-        / "fixtures"
-        / "expect"
-        / "golden.json"
-    )
-    assert canonical.is_file()
-    expected = json.loads(canonical.read_text(encoding="utf-8"))
-    assert expected["copies"]["starter-copy"]
-
-    repo = tmp_path / "repo"
-    import shutil
-
-    shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    created = subprocess.run(
-        [sys.executable, str(repo / "report_shell.py"), "new", "example/sample"],
-        cwd=repo,
-        env=dict(os.environ, RS_DATA_DIR=str(tmp_path / "data")),
-        capture_output=True,
-        text=True,
-    )
-    assert created.returncode == 0, created.stderr
-    copied = (
-        tmp_path
-        / "data"
-        / "templates"
-        / "sample"
-        / "fixtures"
-        / "expect"
-        / "golden.json"
-    )
-    assert json.loads(copied.read_text(encoding="utf-8")) == expected
-
-
-@pytest.mark.skipif(not E2E_RUNNER.is_file(), reason=E2E_SKIP_REASON)
-def test_read_only_template_commands_do_not_create_data_dir(
-    tmp_path, server_guard
-):
+def test_check_does_not_create_the_data_dir(tmp_path):
     data_dir = tmp_path / "must-not-exist"
-    port = free_port()
-    env = server_guard(
-        dict(os.environ, RS_DATA_DIR=str(data_dir)),
-        port,
-    )
-    assert cli(env, port, "list").returncode == 0
-    checked = cli(env, port, "check", "_starter")
-    assert checked.returncode == 0, checked.stderr
+    env = dict(os.environ, RS_DATA_DIR=str(data_dir))
+    checked = cli(env, free_port(), "check", str(ROOT / "tests" / "fixtures" / "payloads" / "read.json"))
+    assert (checked.returncode, checked.stdout) == (0, "ok\n"), checked.stderr
     assert not data_dir.exists()
 
 
@@ -857,7 +754,7 @@ def test_server_listens_only_after_its_slow_setup(tmp_path):
     with patch.object(ReportHTTPServer, "server_activate", activate):
         server = ReportHTTPServer(
             ("127.0.0.1", free_port()), Handler, data_dir,
-            scan_registry(ROOT / "templates"), load_config(data_dir),
+            load_config(data_dir),
         )
     try:
         assert seen == {"ready": True}
@@ -874,9 +771,10 @@ def test_show_submit_wait_result_cancel_status_and_stop(
         dict(os.environ, RS_DATA_DIR=str(data_dir)),
         port,
     )
-    fixture = ROOT / "templates" / "builtin" / "_starter" / "fixtures" / "golden.json"
+    fixture = tmp_path / "read.json"
+    fixture.write_text(json.dumps(show_fixture("read")), encoding="utf-8")
     try:
-        shown = cli(env, port, "show", "_starter", "--data", str(fixture), "--no-window")
+        shown = cli(env, port, "show", "--data", str(fixture), "--no-window")
         assert shown.returncode == 0, shown.stderr
         run = json.loads(shown.stdout)
         status = json.loads(cli(env, port, "status").stdout)
@@ -892,7 +790,7 @@ def test_show_submit_wait_result_cancel_status_and_stop(
 
         page = urllib.request.urlopen(f"http://127.0.0.1:{port}/").read().decode()
         boot = json.loads(re.search(r'<script id="rs-boot" type="application/json">(.*?)</script>', page, re.S).group(1))
-        body = json.dumps({"run_id": run["run_id"], "data": {"choice": "erledigt", "note": ""}}).encode()
+        body = json.dumps({"run_id": run["run_id"], "data": {"decision": "read", "note": "Thanks."}}).encode()
         request = urllib.request.Request(
             f"http://127.0.0.1:{port}/submit",
             data=body,
@@ -905,10 +803,13 @@ def test_show_submit_wait_result_cancel_status_and_stop(
         )
         assert json.loads(urllib.request.urlopen(request).read())["ok"]
         assert cli(env, port, "wait", run["run_id"], "--timeout", "2").returncode == 0
-        result = cli(env, port, "result", run["run_id"])
-        assert json.loads(result.stdout)["status"] == "submitted"
+        result = json.loads(cli(env, port, "result", run["run_id"]).stdout)
+        assert result["status"] == "submitted"
+        assert result["schema"] == "grokbot-desk/result@2" and "template" not in result
+        assert result["data"] == {"decision": "read", "note": "Thanks.", "refs": []}
+        assert {"run_id", "bot", "status", "created", "decided", "duration_s", "log"} <= set(result)
 
-        second = json.loads(cli(env, port, "show", "_starter", "--data", str(fixture), "--no-window").stdout)
+        second = json.loads(cli(env, port, "show", "--data", str(fixture), "--no-window").stdout)
         assert cli(env, port, "cancel", second["run_id"]).returncode == 0
         assert json.loads(cli(env, port, "result", second["run_id"]).stdout)["status"] == "cancelled"
     finally:
@@ -920,15 +821,14 @@ def test_cli_exit_codes(tmp_path):
     port = free_port()
     bad = tmp_path / "bad.json"
     bad.write_text('{"message": 3}', encoding="utf-8")
-    assert cli(env, port, "show", "_starter", "--data", str(bad), "--no-window").returncode == 2
+    assert cli(env, port, "show", "--data", str(bad), "--no-window").returncode == 2
     assert cli(env, port, "result", "missing").returncode == 6
     assert cli(env, port, "wait", "missing", "--timeout", ".1").returncode == 6
 
 
 def test_cli_preserves_omitted_run_id_for_server_side_generation(tmp_path):
     source = tmp_path / "payload.json"
-    source.write_text(json.dumps({"message": "Hello"}), encoding="utf-8")
-    registry = scan_registry(ROOT / "templates")
+    source.write_text(json.dumps(show_fixture("read")), encoding="utf-8")
     colliding_id = "20261008-120000-python-dev-abcd"
 
     with patch(
@@ -937,8 +837,6 @@ def test_cli_preserves_omitted_run_id_for_server_side_generation(tmp_path):
     ):
         payload = _load_show_payload(
             SimpleNamespace(data=str(source)),
-            registry["_starter"],
-            registry,
             used_ids={colliding_id},
         )
 
@@ -950,26 +848,24 @@ def test_show_twice_with_the_same_dedupe_key_does_not_open_a_second_report(tmp_p
     port = free_port()
     env = server_guard(dict(os.environ, RS_DATA_DIR=str(data_dir)), port)
     payload = {
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2", "ask": "read",
         "bot": "automation-agent",
         "title": "Weekly review",
         # A fixed stamp would expire the first report after a few hours and
         # turn the second show into a new report.
         "created": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
         "dedupe_key": "weekly-review",
-        "data": {"message": "Hello"},
+        "blocks": [{"type": "text", "md": "Hello"}],
     }
     source = tmp_path / "payload.json"
     source.write_text(json.dumps(payload), encoding="utf-8")
     try:
-        first = cli(env, port, "show", "_starter", "--data", str(source), "--no-window")
+        first = cli(env, port, "show", "--data", str(source), "--no-window")
         assert first.returncode == 0, first.stderr
         one = json.loads(first.stdout)
         payload["title"] = "Weekly review again"
         source.write_text(json.dumps(payload), encoding="utf-8")
-        second = cli(env, port, "show", "_starter", "--data", str(source), "--no-window")
+        second = cli(env, port, "show", "--data", str(source), "--no-window")
         assert second.returncode == 0, second.stderr
         two = json.loads(second.stdout)
         assert two["run_id"] == one["run_id"]
@@ -987,16 +883,14 @@ def test_show_clamps_a_created_stamp_far_ahead(tmp_path, server_guard):
     env = server_guard(dict(os.environ, RS_DATA_DIR=str(data_dir)), port)
     source = tmp_path / "payload.json"
     source.write_text(json.dumps({
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2", "ask": "read",
         "bot": "automation-agent",
         "title": "Clock",
         "created": "2099-01-01T00:00:00+00:00",
-        "data": {"message": "Hello"},
+        "blocks": [{"type": "text", "md": "Hello"}],
     }), encoding="utf-8")
     try:
-        shown = cli(env, port, "show", "_starter", "--data", str(source), "--no-window")
+        shown = cli(env, port, "show", "--data", str(source), "--no-window")
         assert shown.returncode == 0, shown.stderr
         answer = json.loads(shown.stdout)
         assert answer["warnings"] and "clamped" in answer["warnings"][0]
@@ -1015,21 +909,19 @@ def test_duplicate_run_id_is_invalid_payload(tmp_path, server_guard):
     payload.write_text(
         json.dumps(
             {
-                "schema": "report-shell/payload@1",
-                "template": "_starter",
-                "version": 1,
+                "schema": "grokbot-desk/payload@2", "ask": "read",
                 "run_id": "20261008-120000-test-abcd",
                 "bot": "automation-agent",
                 "title": "Duplicate test",
                 "created": "2026-10-08T12:00:00+02:00",
-                "data": {"message": "Hello"},
+                "blocks": [{"type": "text", "md": "Hello"}],
             }
         ),
         encoding="utf-8",
     )
     try:
-        assert cli(env, port, "show", "_starter", "--data", str(payload), "--no-window").returncode == 0
-        assert cli(env, port, "show", "_starter", "--data", str(payload), "--no-window").returncode == 2
+        assert cli(env, port, "show", "--data", str(payload), "--no-window").returncode == 0
+        assert cli(env, port, "show", "--data", str(payload), "--no-window").returncode == 2
     finally:
         cli(env, port, "stop")
 
@@ -1066,19 +958,17 @@ def test_show_malformed_envelope_fields_exit_2_without_traceback(
     env = dict(os.environ, RS_DATA_DIR=str(tmp_path / "data"))
     port = free_port()
     payload = {
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2", "ask": "read",
         "bot": "automation-agent",
         "title": "Malformed envelope",
         "created": "2026-10-08T12:00:00+02:00",
-        "data": {"message": "Hello"},
+        "blocks": [{"type": "text", "md": "Hello"}],
     }
     payload[field] = value
     source = tmp_path / "payload.json"
     source.write_text(json.dumps(payload), encoding="utf-8")
     try:
-        result = cli(env, port, "show", "_starter", "--data", str(source), "--no-window")
+        result = cli(env, port, "show", "--data", str(source), "--no-window")
         assert result.returncode == 2
         assert "Traceback" not in result.stderr
     finally:
@@ -1092,19 +982,18 @@ def test_finding_8_cli_rejects_non_json_numeric_constants(tmp_path):
     source.write_text(
         """
         {
-          "schema":"report-shell/payload@1",
-          "template":"_starter",
-          "version":1,
+          "schema":"grokbot-desk/payload@2",
+          "ask":"read",
           "bot":"automation-agent",
           "title":"Non-finite",
           "created":"2026-10-08T12:00:00+02:00",
           "expires_minutes":NaN,
-          "data":{"message":"Hello"}
+          "blocks":[{"type":"text","md":"Hello"}]
         }
         """,
         encoding="utf-8",
     )
-    result = cli(env, port, "show", "_starter", "--data", str(source), "--no-window")
+    result = cli(env, port, "show", "--data", str(source), "--no-window")
     assert result.returncode == 2
     assert "invalid JSON" in result.stderr
     assert "Traceback" not in result.stderr
@@ -1122,7 +1011,7 @@ def test_finding_5_cli_rejects_deep_payload_and_config_without_traceback(
         encoding="utf-8",
     )
     payload_result = cli(
-        env, port, "show", "_starter", "--data", str(source), "--no-window"
+        env, port, "show", "--data", str(source), "--no-window"
     )
     assert payload_result.returncode == 2
     assert "nesting" in payload_result.stderr
@@ -1137,57 +1026,6 @@ def test_finding_5_cli_rejects_deep_payload_and_config_without_traceback(
     assert config_result.returncode == 2
     assert "nesting" in config_result.stderr
     assert "Traceback" not in config_result.stderr
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        "../escaped-template",
-        "./sample",
-        "acme/..",
-        "bad namespace/sample",
-        "acme/bad name",
-        "C:/drive-template",
-    ],
-)
-def test_new_rejects_invalid_or_traversing_identifiers(tmp_path, name):
-    repo = tmp_path / "repo"
-    import shutil
-
-    shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    result = subprocess.run(
-        [sys.executable, str(repo / "report_shell.py"), "new", name],
-        cwd=repo,
-        env=dict(os.environ, RS_DATA_DIR=str(tmp_path / "data")),
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 7
-    assert not (repo / "escaped-template").exists()
-
-
-def test_new_rejects_existing_target(tmp_path):
-    repo = tmp_path / "repo"
-    import shutil
-
-    shutil.copytree(ROOT, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    env = dict(os.environ, RS_DATA_DIR=str(tmp_path / "data"))
-    first = subprocess.run(
-        [sys.executable, str(repo / "report_shell.py"), "new", "acme/sample"],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    second = subprocess.run(
-        [sys.executable, str(repo / "report_shell.py"), "new", "acme/sample"],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert first.returncode == 0
-    assert second.returncode == 7
 
 
 def test_cli_output_is_ascii_under_cp1252_and_preserves_unicode_json(tmp_path):
@@ -1226,7 +1064,6 @@ def test_cli_output_is_ascii_under_cp1252_and_preserves_unicode_json(tmp_path):
             sys.executable,
             str(ROOT / "report_shell.py"),
             "show",
-            "_starter",
             "--data",
             str(tmp_path / "missing-😀-漢字.json"),
             "--no-window",
@@ -1250,7 +1087,7 @@ def test_show_accepts_one_utf8_bom_from_file_and_stdin(
         dict(os.environ, RS_DATA_DIR=str(data_dir)),
         port,
     )
-    raw = b"\xef\xbb\xbf" + json.dumps({"message": "BOM payload"}).encode("utf-8")
+    raw = b"\xef\xbb\xbf" + json.dumps(show_fixture("read", title="BOM payload")).encode("utf-8")
     source = tmp_path / "powershell-utf8.json"
     source.write_bytes(raw)
     command = [
@@ -1259,7 +1096,6 @@ def test_show_accepts_one_utf8_bom_from_file_and_stdin(
         "--port",
         str(port),
         "show",
-        "_starter",
         "--data",
     ]
     try:
@@ -1429,28 +1265,13 @@ def test_an_older_desk_with_open_desks_keeps_running(tmp_path, monkeypatch):
 def test_text_output_keeps_umlauts_on_a_utf8_stream(tmp_path):
     env = dict(os.environ, RS_DATA_DIR=str(tmp_path / "data"), PYTHONIOENCODING="utf-8")
     result = subprocess.run(
-        [sys.executable, str(ROOT / "report_shell.py"), "templates"],
+        [sys.executable, str(ROOT / "report_shell.py"), "check", str(tmp_path / "Bericht-für-März.json")],
         cwd=ROOT, env=env, capture_output=True, timeout=30,
     )
-    assert result.returncode == 0, result.stderr
-    text = result.stdout.decode("utf-8")
+    assert result.returncode == 2
+    text = result.stderr.decode("utf-8")
     assert "\\x" not in text and "\\u" not in text
-    assert not text.isascii()  # the built-in titles are German
-
-
-def test_check_all_names_the_templates_it_checked(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("RS_DATA_DIR", str(tmp_path / "data"))
-    checked = []
-
-    def details(selected, root, data_dir_path=None, visual=False):
-        checked.append(selected)
-        return {"findings": [], "warnings": [], "templates": ["_starter", "approve-one"]}
-
-    monkeypatch.setattr(cli_module, "check_template_details", details)
-    assert cli_module.main(["check", "--all"]) == 0
-    value = json.loads(capsys.readouterr().out)
-    assert checked == ["--all"]
-    assert "template" not in value and value["templates"] == ["_starter", "approve-one"]
+    assert "Bericht-für-März.json" in text
 
 
 def _git(cwd, *args):

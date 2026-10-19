@@ -1,13 +1,11 @@
-"""Command-line interface for report-shell."""
+"""Command-line interface for grokbot-desk."""
 import argparse
 import codecs
 import json
 import math
 import os
 import re
-import shutil
 import socket
-import stat
 import subprocess
 import sys
 import time
@@ -18,8 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__, doorbell
-from .check import check_template_details
-from .envelope import EnvelopeError, MAX_PAYLOAD, validate_payload_bytes
+from .envelope import SCHEMA, EnvelopeError, MAX_PAYLOAD, validate_payload
 from .identity import registry_warnings
 from .jsonutil import JSONBoundaryError, dumps as json_dumps, loads as json_loads
 from .launch_coordination import (
@@ -29,7 +26,7 @@ from .launch_coordination import (
     release_launch_lock,
     try_acquire_launch_lock,
 )
-from .media import MediaError, replace_media
+from .media import MediaError, replace_block_media
 from .paths import (
     ROOT,
     data_dir,
@@ -50,10 +47,9 @@ from .platform import (
 )
 from .platform_types import LaunchResult, WindowLaunchStatus
 from .product import PRODUCT_NAME, RUNNER_ID
-from .registry import ID_RE, RegistryError, scan_registry
-from .runs import preview_post_summary
+from .payload import BLOCK_SCHEMAS, result_summary
 from .server import run_server
-from .timeutil import iso_now, to_local
+from .timeutil import to_local
 
 
 def output(value):
@@ -311,73 +307,50 @@ def _csrf(port):
     return json_loads(page[start:page.index("</script>", start)])["csrf"]
 
 
-def _load_show_payload(args, template, registry, used_ids=(), warnings=None):
-    if args.data == "-":
+def _read_payload(source):
+    """The payload JSON from a file, or from stdin for "-"; raises EnvelopeError."""
+    if source == "-":
         raw = sys.stdin.buffer.read(MAX_PAYLOAD + 1)
     else:
-        raw = Path(args.data).read_bytes()
+        raw = Path(source).read_bytes()
     if len(raw) > MAX_PAYLOAD:
         raise EnvelopeError("", "payload exceeds 2 MB")
     try:
-        value = json_loads(raw.decode("utf-8-sig"))
+        return json_loads(raw.decode("utf-8-sig"))
     except JSONBoundaryError as exc:
-        raise EnvelopeError(
-            exc.pointer, f"invalid JSON: {exc.message}"
-        ) from exc
+        raise EnvelopeError(exc.pointer, f"invalid JSON: {exc.message}") from exc
     except (UnicodeDecodeError, ValueError) as exc:
         raise EnvelopeError("", f"invalid JSON: {exc}") from exc
-    if isinstance(value, dict) and "schema" in value:
-        payload = value
-    else:
-        payload = {
-            "schema": "report-shell/payload@1",
-            "template": template.id,
-            "version": template.version,
-            "bot": template.namespace if template.namespace != "global" else "operations-agent",
-            "title": template.title_de,
-            "created": iso_now(),
-            "data": value,
-        }
-    explicit_run_id = "run_id" in payload
-    if payload.get("template") != template.id:
-        raise EnvelopeError("/template", f"must equal {template.id}")
-    validated = validate_payload_bytes(
-        json_dumps(payload, ensure_ascii=False).encode("utf-8"),
-        registry,
-        used_ids if explicit_run_id else (),
-        warnings,
-    )
+
+
+def _load_show_payload(args, used_ids=(), warnings=None):
+    payload = _read_payload(args.data)
+    explicit_run_id = isinstance(payload, dict) and "run_id" in payload
+    validated = validate_payload(payload, used_ids if explicit_run_id else (), warnings)
     if not explicit_run_id:
+        # the desk names the run; a run_id made here could already be taken there
         validated.pop("run_id")
     return validated
 
 
 def command_show(args, base, port):
-    try:
-        registry = scan_registry(
-            ROOT / "templates", Path(base) / "templates"
+    if args.template is not None:
+        return error(
+            "show takes no template since payload@2: show --data payload.json "
+            "(the payload says what it asks for; see SKILL.md)", 2
         )
-        template = registry.get(args.template)
-        if template is None:
-            return error(f"unknown template: {args.template}", 2)
+    try:
         used_ids = {
             path.stem
             for folder in ("runs", "results")
             for path in (Path(base) / folder).glob("*.json")
         }
         warnings = []
-        payload = _load_show_payload(args, template, registry, used_ids, warnings)
+        payload = _load_show_payload(args, used_ids, warnings)
         config = load_config(base)
-        schema = json_loads(template.read_text("schema.json"))
-        replace_media(
-            payload["data"],
-            schema,
-            config.get("media_roots", []),
-            {},
-            template.path,
-            template_identity=template.root_identity,
-        )
-    except (OSError, ValueError, EnvelopeError, RegistryError, MediaError) as exc:
+        # media errors before the desk starts: the same check the desk makes
+        replace_block_media(payload["blocks"], BLOCK_SCHEMAS, config.get("media_roots", []), {})
+    except (OSError, ValueError, EnvelopeError, MediaError) as exc:
         return error(str(exc), 2)
     try:
         _ensure_server(base, port)
@@ -534,72 +507,51 @@ def _decided_after(value, since):
         return False
 
 
-_LIST_CHOICES = ("approve", "reject", "defer", "done", "skipped", "later")
-
-
-def _run_title(base, run_id):
+def _run_payload(base, run_id):
+    """The stored payload@2 of a run, or None (unknown, unreadable, older)."""
     if not isinstance(run_id, str) or not run_id:
         return None
     try:
         record = json_loads((Path(base) / "runs" / f"{run_id}.json").read_text(encoding="utf-8"))
-        title = record["payload"]["title"]
+        payload = record["payload"]
     except (OSError, ValueError, KeyError, TypeError):
         return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _run_title(payload):
+    title = payload.get("title") if payload else None
     return title if isinstance(title, str) and title.strip() else None
 
 
-def _join_counts(counts, order):
-    parts = [f"{counts[name]} {name}" for name in order if counts.get(name)]
-    parts.extend(
-        f"{counts[name]} {name}" for name in sorted(counts) if name not in order and counts[name]
-    )
-    return ", ".join(parts)
-
-
-def _result_summary(value):
-    """A one-line reading of a submitted decision, only when it is unambiguous."""
-    if value.get("status") != "submitted" or not isinstance(value.get("data"), dict):
+def _result_summary(value, payload):
+    """A one-line reading of a submitted decision ("submit · 2 approve,
+    1 later", "choose thu"), only for a result that answers its payload@2.
+    It is a reading, never posting authority: act on data.blocks."""
+    if value.get("status") != "submitted" or not payload or payload.get("schema") != SCHEMA:
         return None
-    data = value["data"]
-    template = value.get("template")
-    if template == "decide-list" and isinstance(data.get("items"), list):
-        counts = {}
-        for item in data["items"]:
-            choice = item.get("choice") if isinstance(item, dict) else None
-            if isinstance(choice, str) and choice:
-                counts[choice] = counts.get(choice, 0) + 1
-        text = _join_counts(counts, _LIST_CHOICES)
-        return text or None
-    if template == "preview-post":
-        # Conservative: only the allowed mode/decision pairs, and only when
-        # platforms lists exactly the auto approvals. A manual platform is
-        # "posted by you" or "skipped", never "approved". Inconsistent and
-        # legacy results (no per_platform) produce no summary. The summary
-        # is not posting authority; read per_platform and post only auto+approved.
-        return preview_post_summary(data)
-    if template in ("approve-one", "review-doc") and isinstance(data.get("decision"), str):
-        return data["decision"]
-    if template == "pick-option" and isinstance(data.get("choice"), str) and data["choice"]:
-        return data["choice"]
-    return None
+    try:
+        return result_summary(payload, value.get("data"))
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _result_item(base, path, value):
     """What a one-line acknowledgement needs, plus a summary when it is cheap."""
+    payload = _run_payload(base, value.get("run_id"))
     title = value.get("title")
     if not isinstance(title, str) or not title.strip():
-        title = _run_title(base, value.get("run_id"))
+        title = _run_title(payload)
     item = {
         "run_id": value.get("run_id"),
         "bot": value.get("bot"),
-        "template": value.get("template"),
     }
     if isinstance(title, str) and title.strip():
         item["title"] = title
     item["status"] = value.get("status")
     item["decided"] = value.get("decided")
     item["result_path"] = str(path)
-    summary = _result_summary(value)
+    summary = _result_summary(value, payload)
     if summary:
         item["summary"] = summary
     return item
@@ -832,51 +784,9 @@ def command_doorbell(args, base, port):
     return 0
 
 
-def command_list():
-    try:
-        registry = scan_registry(
-            ROOT / "templates", data_dir() / "templates"
-        )
-    except RegistryError as exc:
-        return error(str(exc), 7)
-    output([item.summary() for item in registry.values()])
-    return 0
-
-
-def command_templates(args):
-    try:
-        registry = scan_registry(
-            ROOT / "templates", data_dir() / "templates"
-        )
-    except RegistryError as exc:
-        return error(str(exc), 7)
-    items = [
-        template.listing(include_path=args.paths)
-        for template in registry.values()
-    ]
-    if args.json or args.paths:
-        output(items)
-    else:
-        print("ID\tSOURCE\tEXTENDS\tTITLE")
-        for item in items:
-            print(
-                f"{item['id']}\t{item['source']}\t"
-                f"{item['extends'] or '-'}\t{item['title']}"
-            )
-    return 0
-
-
 def command_doctor():
-    try:
-        registry = scan_registry(
-            ROOT / "templates", data_dir() / "templates"
-        )
-    except RegistryError as exc:
-        return error(str(exc), 7)
     output({
         "ok": True,
-        "templates": len(registry),
-        "warnings": list(registry.warnings),
         "identity_warnings": registry_warnings(data_dir()),
         "doorbell": _doorbell_word(data_dir()),
         **({"data_dir_warning": advice} if (advice := migration_advice(data_dir())) else {}),
@@ -885,80 +795,20 @@ def command_doctor():
 
 
 def command_check(args):
-    selected = "--all" if args.all else args.template
-    details = check_template_details(
-        selected, ROOT, data_dir_path=data_dir(), visual=args.visual
-    )
-    if details["findings"]:
-        return error("; ".join(details["findings"]), 7)
-    output({
-        "ok": True,
-        **(
-            {"templates": details["templates"]} if args.all
-            else {"template": selected}
-        ),
-        "visual": args.visual,
-        "warnings": details["warnings"],
-    })
-    return 0
-
-
-def command_new(args):
-    if args.name.count("/") != 1 or "\\" in args.name:
-        return error("new requires <namespace>/<name>", 7)
-    namespace, name = args.name.split("/", 1)
-    if not ID_RE.fullmatch(namespace) or not ID_RE.fullmatch(name):
-        return error("invalid template name", 7)
-    declared_data_root = Path(data_dir())
-    target = None
+    """Validate a payload the way `show` does, without a desk: `ok`, or the
+    first problem as `pointer: message` (exit 2). Warnings go to stderr."""
+    warnings = []
     try:
-        data_root = declared_data_root.resolve(strict=declared_data_root.exists())
-        templates_path = declared_data_root / "templates"
-        if templates_path.exists():
-            templates_root = templates_path.resolve(strict=True)
-            try:
-                templates_root.relative_to(data_root)
-            except ValueError:
-                return error("templates root is outside data directory", 7)
-        else:
-            templates_root = data_root / "templates"
-        target = templates_root / name
-        if target.parent != templates_root:
-            return error("invalid template name", 7)
-        if os.path.lexists(target):
-            return error(f"template already exists: {args.name}", 7)
-        data_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        templates_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if (
-            templates_root.resolve(strict=True) != templates_root
-            or target.parent.resolve(strict=True) != templates_root
-        ):
-            return error("template destination is outside data directory", 7)
-        shutil.copytree(ROOT / "templates" / "builtin" / "_starter", target)
-        manifest_path = target / "template.json"
-        manifest = json_loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["id"] = name
-        manifest["namespace"] = namespace
-        manifest["title_de"] = name.replace("-", " ").title()
-        manifest_path.write_text(json_dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        output({"ok": True, "id": name, "path": str(target)})
-        return 0
-    except Exception as exc:
-        if target is not None:
-            try:
-                target_stat = target.lstat()
-                is_reparse = bool(
-                    getattr(target_stat, "st_file_attributes", 0)
-                    & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-                )
-                if (
-                    not is_reparse
-                    and target.resolve(strict=True).parent == templates_root
-                ):
-                    shutil.rmtree(target, ignore_errors=True)
-            except OSError:
-                pass
-        return error(str(exc), 7)
+        validate_payload(_read_payload(args.file), (), warnings)
+    except EnvelopeError as exc:
+        print(f"{exc.pointer or '/'}: {exc.message}")
+        return 2
+    except OSError as exc:
+        return error(f"cannot read {args.file}: {exc.strerror or exc}", 2)
+    print("ok")
+    for warning in warnings:
+        print(f"warning {warning}", file=sys.stderr)
+    return 0
 
 
 GIT_TIMEOUT_S = 120
@@ -1030,11 +880,12 @@ def command_stop(base, port):
 
 
 HELP_EPILOG = """typical flow:
-  show decide-list --data payload.json   open a report, prints run_id
+  check payload.json                     validate a payload (ok, or pointer: message)
+  show --data payload.json               open a report, prints run_id
   wait RUN_ID --timeout 60               wait for the decision
   result RUN_ID                          print the result JSON
 
-Output is JSON on stdout. Guide: docs/GUIDE.md. Bots: skills/grokbot-desk/SKILL.md.
+Output is JSON on stdout. Bots: skills/grokbot-desk/SKILL.md.
 """
 
 
@@ -1053,7 +904,8 @@ def build_parser():
         return commands.add_parser(name, help=text, description=text)
 
     show = command("show", "open a report on the desk from a payload")
-    show.add_argument("template", help="template id, e.g. decide-list")
+    # payload@1 took a template id here; kept only to explain the change
+    show.add_argument("template", nargs="?", help=argparse.SUPPRESS)
     show.add_argument("--data", required=True, help="payload JSON file, or - for stdin")
     show.add_argument("--focus", action="store_true", help="bring the window to the front (Windows)")
     show.add_argument("--no-window", action="store_true", help="register the report without opening a window")
@@ -1090,18 +942,9 @@ def build_parser():
     bell_test.add_argument("--to", metavar="NAME", help="the exact Grok Bot name the test ring is for")
     bell_actions.add_parser("off", help="switch the doorbell off (deletes its file)",
                             description="Switch the doorbell off (deletes its file).")
-    command("list", "list templates as JSON")
-    templates = command("templates", "list installed templates as a table")
-    templates.add_argument("--json", action="store_true", help="print JSON instead of a table")
-    templates.add_argument("--paths", action="store_true", help=argparse.SUPPRESS)
-    command("doctor", "check installed templates, bot identities and the data folder")
-    check = command("check", "check a template and its fixtures (development)")
-    group = check.add_mutually_exclusive_group(required=True)
-    group.add_argument("template", nargs="?", help="template id")
-    group.add_argument("--all", action="store_true", help="check every installed template")
-    check.add_argument("--visual", action="store_true", help="also compare golden screenshots")
-    new = command("new", "create a template from the starter in the data folder")
-    new.add_argument("name", help="<namespace>/<id>, e.g. example-bot/weekly")
+    command("doctor", "check bot identities and the data folder")
+    check = command("check", "validate a payload without opening it (ok, or pointer: message)")
+    check.add_argument("file", help="payload JSON file, or - for stdin")
     command("serve", "run the desk in this terminal (when a runtime ends child processes)")
     command("stop", "stop the desk server")
     command("migrate", "move the older Windows data folder to the new name (desk stopped)")
@@ -1125,16 +968,10 @@ def main(argv=None):
             argv = [item, *argv[:index], *argv[index + 1:]]
             break
     args = build_parser().parse_args(argv)
-    if args.command == "list":
-        return command_list()
-    if args.command == "templates":
-        return command_templates(args)
     if args.command == "doctor":
         return command_doctor()
     if args.command == "check":
         return command_check(args)
-    if args.command == "new":
-        return command_new(args)
     if args.command == "update":
         return command_update()
     if args.command == "migrate":
@@ -1170,12 +1007,10 @@ def main(argv=None):
         return command_stop(base, port)
     if args.command == "serve":
         try:
-            run_server(base, port, ROOT)
+            run_server(base, port)
             return 0
         except OSError as exc:
             return error(f"cannot bind port {port}: {exc}", 4)
-        except RegistryError as exc:
-            return error(str(exc), 7)
         except DataDirBusy as exc:
             return error(str(exc), 4)
     return error("unknown command", 2)

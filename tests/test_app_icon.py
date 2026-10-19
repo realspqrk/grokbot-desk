@@ -16,7 +16,6 @@ from conftest import free_port
 from core import VERSION, __version__
 from core.cli import build_parser
 from core.paths import ensure_layout, load_config
-from core.registry import scan_registry
 from core.server import Handler, ReportHTTPServer
 
 
@@ -30,7 +29,7 @@ def server(tmp_path_factory):
     data_dir = ensure_layout(tmp_path_factory.mktemp("icon") / "data")
     server = ReportHTTPServer(
         ("127.0.0.1", free_port()), Handler, data_dir,
-        scan_registry(ROOT / "templates"), load_config(data_dir),
+        load_config(data_dir),
     )
     server.port = server.server_port
     thread = threading.Thread(target=server.serve_forever, daemon=True)

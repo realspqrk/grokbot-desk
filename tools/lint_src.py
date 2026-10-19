@@ -208,7 +208,7 @@ class _CalmHTMLParser(HTMLParser):
             self.styles.append((self.getpos()[0], data))
 
 
-def _scan_calm_html(path, relative, *, check_primaries):
+def _scan_calm_html(path, relative):
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
@@ -225,25 +225,12 @@ def _scan_calm_html(path, relative, *, check_primaries):
             relative,
             line_offset=line - 1,
         ))
-    if check_primaries:
-        matches = list(re.finditer(r"\bdata-rs-primary\b", text))
-        if len(matches) > 1:
-            findings.append(_finding(
-                "C16-K1-primary-count",
-                relative,
-                text.count("\n", 0, matches[1].start()) + 1,
-                f"template declares {len(matches)} data-rs-primary markers; maximum is 1",
-            ))
     return findings
 
 
 def _scan_calm(root):
     findings = []
-    css_paths = [
-        *root.glob("core/**/*.css"),
-        *root.glob("templates/**/*.css"),
-    ]
-    for path in sorted(set(css_paths)):
+    for path in sorted(set(root.glob("core/**/*.css"))):
         relative = path.relative_to(root)
         try:
             text = path.read_text(encoding="utf-8")
@@ -251,22 +238,11 @@ def _scan_calm(root):
             findings.append(_finding("C16-K7a", relative, 0, str(error)))
             continue
         findings.extend(_spacing_findings(text, relative))
-    html_paths = [
-        *((path, False) for path in root.glob("core/static/*.html")),
-        *((path, True) for path in root.glob("templates/**/template.html")),
-    ]
-    for path, check_primaries in sorted(html_paths, key=lambda item: str(item[0])):
-        relative = path.relative_to(root)
-        findings.extend(_scan_calm_html(
-            path,
-            relative,
-            check_primaries=check_primaries,
-        ))
+    for path in sorted(root.glob("core/static/*.html")):
+        findings.extend(_scan_calm_html(path, path.relative_to(root)))
     js_paths = [
         *root.glob("core/**/*.js"),
         *root.glob("core/**/*.mjs"),
-        *root.glob("templates/**/template.js"),
-        *root.glob("templates/**/template.mjs"),
     ]
     for path in sorted(set(js_paths)):
         relative = path.relative_to(root)

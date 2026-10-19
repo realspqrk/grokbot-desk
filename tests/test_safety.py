@@ -19,14 +19,13 @@ import pytest
 
 import core.server as server_module
 from core import platform_darwin, platform_windows
-from conftest import free_port, install_minimal_template
+from conftest import free_port, minimal_payload
 from core.actionlog import ActionLog
 from core.cli import command_open
 from core.envelope import validate_payload
 from core.launch_coordination import launch_is_pending
 from core.media import MediaError, register_media, replace_media
 from core.paths import ensure_layout, load_config
-from core.registry import scan_registry
 from core.results import ResultExists, write_result
 from core.runs import RunStore
 from core.server import Handler, ReportHTTPServer
@@ -49,15 +48,27 @@ def request(port, method, path, body=b"", headers=None):
 
 
 def valid_payload():
-    return {
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
-        "bot": "automation-agent",
-        "title": "Safety test",
-        "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "data": {"message": "Hello"},
-    }
+    return minimal_payload(created=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+
+
+IMAGE_BYTES = b"\xff\xd8\xff\xe0 a small picture"
+
+
+def media_server(tmp_path):
+    """A desk whose media root holds one picture, and a report that shows it:
+    (server, data_dir, run_id, media_id, picture path)."""
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    picture = media_root / "loaves.jpg"
+    picture.write_bytes(IMAGE_BYTES)
+    data_dir = ensure_layout(tmp_path / "data")
+    config = dict(load_config(data_dir), media_roots=[str(media_root)])
+    server = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, config)
+    server.port = server.server_port
+    shown = dict(valid_payload(), blocks=[{"type": "media", "path": str(picture), "alt": "Loaves"}])
+    detail = server.runs.register(validate_payload(shown))
+    media_id = server.runs.payload(detail["run_id"])["blocks"][0]["path"]
+    return server, data_dir, detail["run_id"], media_id, picture
 
 
 @pytest.mark.parametrize(
@@ -79,7 +90,6 @@ def test_server_reuses_addresses_only_on_posix(
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     try:
@@ -150,7 +160,6 @@ def test_concurrent_pushes_retry_generated_run_id_collision(tmp_path):
         ("127.0.0.1", free_port()),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
@@ -259,7 +268,6 @@ def test_bye_immediately_removes_subscriber_from_window_status(tmp_path):
         ("127.0.0.1", free_port()),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
@@ -315,7 +323,6 @@ def test_delayed_old_bye_does_not_cancel_new_pending_launch(
         ("127.0.0.1", port),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
@@ -516,7 +523,6 @@ def test_page_connect_and_bye_clear_pending_so_close_reopens(
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
@@ -594,7 +600,6 @@ def test_push_ping_probe_drops_dead_non_test_subscriber(tmp_path):
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
@@ -640,7 +645,6 @@ def test_finding_1_first_push_drops_sse_peer_closed_without_bye(tmp_path):
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
@@ -688,11 +692,10 @@ def test_finding_2_open_probes_dead_live_and_test_sse_peers(tmp_path):
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
-    server.runs.register(validate_payload(valid_payload(), server.registry))
+    server.runs.register(validate_payload(valid_payload()))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -894,7 +897,6 @@ def test_stale_browser_pid_notification_uses_title_reported_by_page(tmp_path):
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
@@ -1040,11 +1042,10 @@ def test_finding_2_media_is_revalidated_for_get_reveal_and_reload(tmp_path):
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         config,
     )
     server.port = server.server_port
-    payload = validate_payload(valid_payload(), server.registry)
+    payload = validate_payload(valid_payload())
     detail = server.runs.register(payload)
     run_id = detail["run_id"]
     entry = register_media(str(inside / "image.png"), [allowed])
@@ -1097,7 +1098,6 @@ def test_finding_2_media_is_revalidated_for_get_reveal_and_reload(tmp_path):
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         config,
     )
     try:
@@ -1192,37 +1192,11 @@ def test_finding_8_result_writer_rejects_non_json_numbers(tmp_path):
 def test_finding_8_http_rejects_non_finite_numbers_and_emits_strict_json(
     tmp_path
 ):
-    target = install_minimal_template(tmp_path)
-    number_schema = {
-        "type": "object",
-        "properties": {
-            "value": {"type": "number", "minimum": 0, "maximum": 10}
-        },
-        "required": ["value"],
-        "additionalProperties": False,
-    }
-    for name in ("schema.json", "result.schema.json"):
-        (target / name).write_text(json.dumps(number_schema), encoding="utf-8")
-    values = {
-        "golden.json": {"value": 0},
-        "edge-max.json": {"value": 10},
-        "edge-unicode.json": {"value": 5},
-        "invalid-empty.json": {"value": -1},
-        "invalid-type.json": {"value": 11},
-    }
-    for old in (target / "fixtures").glob("*.json"):
-        old.unlink()
-    for name, value in values.items():
-        (target / "fixtures" / name).write_text(
-            json.dumps(value), encoding="utf-8"
-        )
-
     data_dir = ensure_layout(tmp_path / "data")
     server = ReportHTTPServer(
         ("127.0.0.1", 0),
         Handler,
         data_dir,
-        scan_registry(tmp_path / "templates"),
         load_config(data_dir),
     )
     server.port = server.server_port
@@ -1249,7 +1223,8 @@ def test_finding_8_http_rejects_non_finite_numbers_and_emits_strict_json(
         "Content-Type": "application/json",
     }
     payload = valid_payload()
-    payload["data"] = {"value": float("nan")}
+    table = {"type": "table", "columns": [{"key": "value", "label": "Value", "type": "number"}]}
+    payload["blocks"] = [dict(table, rows=[{"value": float("nan")}])]
     try:
         for numeric_source in ("NaN", "1e999"):
             raw = json.dumps(payload).replace("NaN", numeric_source).encode()
@@ -1257,7 +1232,7 @@ def test_finding_8_http_rejects_non_finite_numbers_and_emits_strict_json(
             assert status == 400
             assert strict_loads(body)["error"] == "invalid_json"
 
-        payload["data"] = {"value": 10}
+        payload["blocks"] = [dict(table, rows=[{"value": 10}])]
         status, body = request(
             server.port,
             "POST",
@@ -1278,12 +1253,12 @@ def test_finding_8_http_rejects_non_finite_numbers_and_emits_strict_json(
             },
         )
         assert status == 200
-        assert strict_loads(body)["data"]["value"] == 10
+        assert strict_loads(body)["blocks"][0]["rows"][0]["value"] == 10
         status, body = request(
             server.port,
             "POST",
             "/submit",
-            json.dumps({"run_id": run_id, "data": {"value": 0}}).encode(),
+            json.dumps({"run_id": run_id, "data": {"decision": "read"}}).encode(),
             {
                 "Host": f"127.0.0.1:{server.port}",
                 "Origin": f"http://127.0.0.1:{server.port}",
@@ -1308,10 +1283,9 @@ def test_finding_1_killed_writer_recovers_orphan_and_maintenance_continues(
 ):
     root = Path(__file__).resolve().parents[1]
     data_dir = ensure_layout(tmp_path / "data")
-    registry = scan_registry(root / "templates")
     config = load_config(data_dir)
     run_id = "20261008-120000-recovery-abcd"
-    store = RunStore(data_dir, registry, config, ActionLog(data_dir))
+    store = RunStore(data_dir, config, ActionLog(data_dir))
     first = valid_payload()
     first.update(
         {
@@ -1320,7 +1294,7 @@ def test_finding_1_killed_writer_recovers_orphan_and_maintenance_continues(
             "expires_minutes": 5,
         }
     )
-    store.register(validate_payload(first, registry))
+    store.register(validate_payload(first))
 
     ready = tmp_path / "writer-ready"
     child = tmp_path / "writer.py"
@@ -1356,7 +1330,7 @@ def test_finding_1_killed_writer_recovers_orphan_and_maintenance_continues(
     assert (data_dir / "results" / f"{run_id}.json.tmp").is_file()
 
     server = ReportHTTPServer(
-        ("127.0.0.1", 0), Handler, data_dir, registry, config
+        ("127.0.0.1", 0), Handler, data_dir, config
     )
     maintenance = threading.Thread(
         target=server_module._maintenance, args=(server,), daemon=True
@@ -1382,7 +1356,7 @@ def test_finding_1_killed_writer_recovers_orphan_and_maintenance_continues(
                 "expires_minutes": 5,
             }
         )
-        server.runs.register(validate_payload(later, registry))
+        server.runs.register(validate_payload(later))
         later_result = data_dir / "results" / "20261008-120100-later-abcd.json"
         deadline = time.monotonic() + 3
         while not later_result.exists() and time.monotonic() < deadline:
@@ -1397,11 +1371,9 @@ def test_finding_1_killed_writer_recovers_orphan_and_maintenance_continues(
 def test_finding_1_expiry_failure_is_sanitized_and_does_not_skip_later_run(
     tmp_path
 ):
-    root = Path(__file__).resolve().parents[1]
     data_dir = ensure_layout(tmp_path / "data")
-    registry = scan_registry(root / "templates")
     action_log = ActionLog(data_dir)
-    store = RunStore(data_dir, registry, load_config(data_dir), action_log)
+    store = RunStore(data_dir, load_config(data_dir), action_log)
     failed_id = "20261008-120000-failed-abcd"
     later_id = "20261008-120001-later-abcd"
     for run_id in (failed_id, later_id):
@@ -1413,7 +1385,7 @@ def test_finding_1_expiry_failure_is_sanitized_and_does_not_skip_later_run(
                 "expires_minutes": 5,
             }
         )
-        store.register(validate_payload(payload, registry))
+        store.register(validate_payload(payload))
     original_decide = store.decide
 
     def fail_one(run_id, status, data=None):
@@ -1534,14 +1506,8 @@ def test_finding_2_surrogate_routes_reject_before_state_change_and_server_surviv
     assert hello["open_runs"] == 1
 
     command_env = dict(os.environ, RS_DATA_DIR=env["RS_DATA_DIR"])
-    fixture = (
-        Path(__file__).resolve().parents[1]
-        / "templates"
-            / "builtin"
-        / "_starter"
-        / "fixtures"
-        / "golden.json"
-    )
+    fixture = Path(env["RS_DATA_DIR"]).parent / "surrogate-follow-up.json"
+    fixture.write_text(json.dumps(valid_payload()), encoding="utf-8")
     shown = subprocess.run(
         [
             sys.executable,
@@ -1549,7 +1515,6 @@ def test_finding_2_surrogate_routes_reject_before_state_change_and_server_surviv
             "--port",
             str(port),
             "show",
-            "_starter",
             "--data",
             str(fixture),
             "--no-window",
@@ -1613,27 +1578,19 @@ def test_finding_5_deep_http_bodies_return_400_with_pointer_and_keep_running(
     assert json.loads(body)["open_runs"] == 0
 
 
-def test_finding_3_max_depth_run_reloads_for_detail_submit_and_expiry(
+def test_finding_3_pushed_runs_reload_for_detail_submit_and_expiry(
     tmp_path
 ):
-    target = install_minimal_template(tmp_path)
-    schema_path = target / "schema.json"
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    schema["additionalProperties"] = True
-    schema_path.write_text(json.dumps(schema), encoding="utf-8")
-
     data_dir = ensure_layout(tmp_path / "data")
-    registry = scan_registry(tmp_path / "templates")
     config = load_config(data_dir)
     server = ReportHTTPServer(
-        ("127.0.0.1", 0), Handler, data_dir, registry, config
+        ("127.0.0.1", 0), Handler, data_dir, config
     )
     server.port = server.server_port
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    nested = 0
-    for _ in range(62):
-        nested = [nested]
+    # the deepest a payload@2 gets: a table cell inside a row inside a block
+    table = {"type": "table", "columns": [{"key": "v", "label": "V"}], "rows": [{"v": "deep"}]}
     run_ids = (
         "20261008-120000-depth-submit-abcd",
         "20261008-120001-depth-expire-abcd",
@@ -1646,7 +1603,7 @@ def test_finding_3_max_depth_run_reloads_for_detail_submit_and_expiry(
                     "run_id": run_id,
                     "created": "2026-10-08T00:00:00+02:00",
                     "expires_minutes": 5,
-                    "data": {"message": "Hello", "nested": nested},
+                    "blocks": [table],
                 }
             )
             status, _ = request(
@@ -1667,10 +1624,10 @@ def test_finding_3_max_depth_run_reloads_for_detail_submit_and_expiry(
         server.server_close()
         thread.join(timeout=2)
 
-    reloaded = RunStore(data_dir, registry, config, ActionLog(data_dir))
-    assert reloaded.detail(run_ids[0])["data"]["nested"] == nested
+    reloaded = RunStore(data_dir, config, ActionLog(data_dir))
+    assert reloaded.detail(run_ids[0])["blocks"][0]["rows"] == [{"v": "deep"}]
     submitted = reloaded.decide(
-        run_ids[0], "submitted", {"acknowledged": True}
+        run_ids[0], "submitted", {"decision": "read"}
     )
     assert json.loads(submitted.read_text(encoding="utf-8"))["status"] == "submitted"
     with patch(
@@ -1692,7 +1649,6 @@ def test_finding_3_unloadable_run_record_logs_error(tmp_path, content):
     )
     RunStore(
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
         ActionLog(data_dir),
     )
@@ -1725,7 +1681,6 @@ def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
         ("127.0.0.1", free_port()),
         Handler,
         data_dir,
-        scan_registry(root / "templates"),
         load_config(data_dir),
     )
     try:
@@ -1738,21 +1693,7 @@ def test_server_construction_does_not_resolve_bind_host(tmp_path, monkeypatch):
 
 def test_empty_byte_range_is_the_whole_file(tmp_path):
     """bytes=- has no bound, so the response is 200 and the full body."""
-    root = Path(__file__).resolve().parents[1]
-    data_dir = ensure_layout(tmp_path / "data")
-    server = ReportHTTPServer(
-        ("127.0.0.1", 0), Handler, data_dir,
-        scan_registry(root / "templates"), load_config(data_dir),
-    )
-    server.port = server.server_port
-    golden = json.loads(
-        (root / "templates" / "builtin" / "preview-post" / "fixtures" / "golden.json")
-        .read_text(encoding="utf-8")
-    )
-    detail = server.runs.register(validate_payload(
-        dict(valid_payload(), template="preview-post", data=golden), server.registry
-    ))
-    media_id = server.runs._runs[detail["run_id"]]["payload"]["data"]["image"]["path"]
+    server, _, _, media_id, _ = media_server(tmp_path)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -1782,22 +1723,9 @@ def test_empty_byte_range_is_the_whole_file(tmp_path):
 
 
 def test_reveal_rejects_another_runs_media(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    data_dir = ensure_layout(tmp_path / "data")
-    server = ReportHTTPServer(
-        ("127.0.0.1", 0), Handler, data_dir,
-        scan_registry(root / "templates"), load_config(data_dir),
-    )
-    server.port = server.server_port
-    golden = json.loads(
-        (root / "templates" / "builtin" / "preview-post" / "fixtures" / "golden.json")
-        .read_text(encoding="utf-8")
-    )
-    detail = server.runs.register(validate_payload(
-        dict(valid_payload(), template="preview-post", data=golden), server.registry
-    ))
-    other = server.runs.register(validate_payload(valid_payload(), server.registry))
-    media_id = server.runs._runs[detail["run_id"]]["payload"]["data"]["image"]["path"]
+    server, _, run_id, media_id, _ = media_server(tmp_path)
+    detail = {"run_id": run_id}
+    other = server.runs.register(validate_payload(valid_payload()))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     headers = {
@@ -1834,22 +1762,8 @@ def test_copy_image_copies_only_a_media_of_that_run(tmp_path):
     """/copy-image puts one image of the run on the clipboard as a picture:
     by media id, revalidated like /reveal, never for another run's media,
     and the page never learns the path."""
-    root = Path(__file__).resolve().parents[1]
-    data_dir = ensure_layout(tmp_path / "data")
-    server = ReportHTTPServer(
-        ("127.0.0.1", 0), Handler, data_dir,
-        scan_registry(root / "templates"), load_config(data_dir),
-    )
-    server.port = server.server_port
-    golden = json.loads(
-        (root / "templates" / "builtin" / "preview-post" / "fixtures" / "golden.json")
-        .read_text(encoding="utf-8")
-    )
-    post = dict(valid_payload(), template="preview-post", data=golden)
-    detail = server.runs.register(validate_payload(post, server.registry))
-    other = server.runs.register(validate_payload(valid_payload(), server.registry))
-    run_id = detail["run_id"]
-    media_id = server.runs._runs[run_id]["payload"]["data"]["image"]["path"]
+    server, data_dir, run_id, media_id, picture = media_server(tmp_path)
+    other = server.runs.register(validate_payload(valid_payload()))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     headers = {
@@ -1868,9 +1782,7 @@ def test_copy_image_copies_only_a_media_of_that_run(tmp_path):
         def capture(path):
             seen["path"], seen["bytes"] = Path(path), Path(path).read_bytes()
 
-        original = (
-            root / "templates" / "builtin" / "preview-post" / "fixtures" / "media" / "loaves.jpg"
-        ).read_bytes()
+        original = picture.read_bytes()
         with patch("core.server.write_clipboard_image", side_effect=capture) as write:
             status, body = copy_image({"run_id": run_id, "media_id": media_id})
             assert (status, json.loads(body)) == (200, {"ok": True})

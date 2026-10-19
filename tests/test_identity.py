@@ -13,7 +13,6 @@ import pytest
 from core import identity as ident
 from core.envelope import validate_payload
 from core.paths import ensure_layout, load_config
-from core.registry import scan_registry
 from core.server import Handler, ReportHTTPServer
 
 
@@ -213,7 +212,7 @@ def test_avatar_size_cap_is_256_kb(tmp_path):
 
 
 def test_avatar_path_trust_rules(tmp_path):
-    base = tmp_path / "template"
+    base = tmp_path / "registry"
     data_dir = tmp_path / "data"
     (base / "media").mkdir(parents=True)
     data_dir.mkdir()
@@ -225,12 +224,12 @@ def test_avatar_path_trust_rules(tmp_path):
     (data_dir / "inside.png").write_bytes(PNG_1PX)
 
     assert ident.load_avatar("media/a.png", base, data_dir)["type"] == "image/png"
-    assert ident.load_avatar("%RS_TEMPLATE%/media/a.png", base, data_dir)["type"] == "image/png"
     assert ident.load_avatar(str(data_dir / "inside.png"), base, data_dir)["type"] == "image/png"
     for bad in (
         "../outside.png", "media/../../outside.png", str(tmp_path / "outside.png"),
         "\\\\server\\share\\a.png", "//server/share/a.png", "media/missing.png",
         "media/icon.svg", "media/fake.png", "media/wrong.gif", "media", "C:relative.png",
+        "%RS_TEMPLATE%/media/a.png",  # templates are gone; the token is no path
     ):
         with pytest.raises(ident.IdentityIssue):
             ident.load_avatar(bad, base, data_dir)
@@ -247,7 +246,7 @@ def test_avatar_path_value_errors_are_normalized_to_identity_issues(monkeypatch)
 
 @pytest.mark.skipif(sys.platform != "win32", reason="junctions are Windows-specific")
 def test_avatar_junction_escape_is_rejected(tmp_path):
-    base = tmp_path / "template"
+    base = tmp_path / "registry"
     outside = tmp_path / "outside"
     base.mkdir()
     outside.mkdir()
@@ -266,6 +265,18 @@ def test_broken_avatar_warns_and_falls_back_to_initials():
     assert result["avatar"] is None
     assert result["initials"] == "CA"
     assert result["warnings"][0]["field"] == "avatar"
+
+
+def test_a_payload_avatar_is_a_data_url_or_a_file_in_the_data_dir(tmp_path):
+    """Without templates a payload path has no folder of its own: a relative
+    one warns, an absolute one must lie inside the data dir."""
+    (tmp_path / "avatars").mkdir()
+    (tmp_path / "avatars" / "a.png").write_bytes(PNG_1PX)
+    relative = resolve("x-bot", {"avatar": "avatars/a.png"}, data_dir=tmp_path)
+    assert relative["avatar"] is None
+    assert relative["warnings"][0]["reason"] == "relative avatar path has no base directory"
+    inside = resolve("x-bot", {"avatar": str(tmp_path / "avatars" / "a.png")}, data_dir=tmp_path)
+    assert inside["avatar"]["type"] == "image/png"
 
 
 # ------------------------------------------------------------ contrast --
@@ -356,13 +367,12 @@ def test_public_identity_never_exposes_paths_or_foreign_accents():
 
 def payload(**extra):
     value = {
-        "schema": "report-shell/payload@1",
-        "template": "_starter",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2",
         "bot": "inbox-agent",
         "title": "Identity test",
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "data": {"message": "Hello", "copy": {"label": "x", "text": "y"}},
+        "ask": "read",
+        "blocks": [{"type": "text", "md": "Hello"}, {"type": "copy", "items": [{"label": "x", "text": "y"}]}],
     }
     value.update(extra)
     return value
@@ -372,7 +382,7 @@ def payload(**extra):
 def server(tmp_path):
     data_dir = ensure_layout(tmp_path / "data")
     instance = ReportHTTPServer(
-        ("127.0.0.1", 0), Handler, data_dir, scan_registry(ROOT / "templates"), load_config(data_dir)
+        ("127.0.0.1", 0), Handler, data_dir, load_config(data_dir)
     )
     instance.port = instance.server_port
     thread = threading.Thread(target=instance.serve_forever, daemon=True)
@@ -384,10 +394,6 @@ def server(tmp_path):
         instance.shutdown()
         instance.server_close()
         thread.join(timeout=2)
-
-
-def starter_data():
-    return json.loads((ROOT / "templates/builtin/_starter/fixtures/golden.json").read_text(encoding="utf-8"))
 
 
 def get(server, path):
@@ -423,22 +429,20 @@ def log_events(data_dir):
 
 
 def test_envelope_accepts_any_identity_value_without_rejecting():
-    registry = scan_registry(ROOT / "templates")
     for value in ({"name": "A"}, "not an object", 42, None, {"accent": "red"}):
-        validated = validate_payload(payload(identity=value, data=starter_data()), registry)
+        validated = validate_payload(payload(identity=value))
         assert validated["identity"] == value
 
 
 def test_server_resolves_identity_serves_avatar_and_logs_warnings(server):
-    registry = server.registry
     good = validate_payload(payload(
-        bot="example-bot", data=starter_data(),
+        bot="example-bot",
         identity={"name": "Research Agent", "accent": "#a855f7", "avatar": data_url(PNG_1PX)},
-    ), registry)
+    ))
     bad = validate_payload(payload(
-        bot="other-bot", data=starter_data(),
+        bot="other-bot",
         identity={"name": "Calendar Agent", "accent": "#f6c945", "avatar": "data:image/svg+xml;base64,PHN2Zy8+"},
-    ), registry)
+    ))
     first = server.runs.register(good)
     second = server.runs.register(bad)
 
@@ -486,7 +490,6 @@ def test_push_nul_avatar_warns_and_uses_lower_priority_avatar_sources(server):
 
     status, first = push(server, payload(
         bot="example-user-bot",
-        data=starter_data(),
         identity={"name": "Safe Name", "accent": "#0891b2", "avatar": "bad\u0000.png"},
     ))
     assert status == 200
@@ -499,7 +502,6 @@ def test_push_nul_avatar_warns_and_uses_lower_priority_avatar_sources(server):
 
     status, second = push(server, payload(
         bot="inbox-agent",
-        data=starter_data(),
     ))
     assert status == 200
     detail = json.loads(get(server, f"/api/run/{second['run_id']}")[2])
@@ -536,15 +538,13 @@ def test_unknown_avatar_hash_is_404(server):
 
 def test_identity_survives_a_server_restart(tmp_path):
     data_dir = ensure_layout(tmp_path / "data")
-    registry = scan_registry(ROOT / "templates")
-    first = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, registry, load_config(data_dir))
+    first = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, load_config(data_dir))
     try:
-        run = first.runs.register(validate_payload(payload(
-            data=starter_data(), identity={"avatar": data_url(PNG_1PX), "accent": "#0891b2"},
-        ), registry))
+        run = first.runs.register(validate_payload(payload( identity={"avatar": data_url(PNG_1PX), "accent": "#0891b2"},
+        )))
     finally:
         first.server_close()
-    second = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, registry, load_config(data_dir))
+    second = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, load_config(data_dir))
     try:
         detail = second.runs.detail(run["run_id"], second.bots)
         sha = detail["identity"]["avatar"].rsplit("/", 1)[-1]

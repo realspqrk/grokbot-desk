@@ -552,3 +552,240 @@ def anchors(payload):
         elif kind == "text" and isinstance(block.get("md"), str):
             found.update((name, f"section:{n}") for n in range(sections(block["md"])))
     return found
+
+
+# --- result@2 ----------------------------------------------------------------------
+
+
+class ResultError(ValueError):
+    """A result that does not answer its stored payload; pointer is inside data."""
+
+    def __init__(self, pointer, message):
+        self.pointer = pointer
+        self.message = message
+        super().__init__(f"{pointer or '/'}: {message}")
+
+
+RESULT_FIELDS = ("decision", "note", "refs", "blocks")
+REF_FIELDS = ("block", "item", "label")
+MAX_NOTE = 4000
+MAX_REFS = 20
+MAX_REF_LABEL = 120
+# the decisions of an ask without an input block; with one, see decisions()
+PLAIN_DECISIONS = {
+    "read": ("read",),
+    "review": ("accept", "revise"),
+    "approve": ("approve", "reject", "revise"),
+    "do": ("done", "skipped", "revise"),
+}
+POST_CHOICES = ("posted", "skipped")
+# the decision that sends the input block's answer, per (input type, ask)
+ANSWERING = {
+    ("decide", "approve"): "submit", ("decide", "do"): "submit",
+    ("post", "approve"): "approve", ("post", "do"): "submit",
+    ("pick", "choose"): "choose",
+}
+SUMMARY_ORDER = {"approve": ("approve", "reject", "later"), "do": ("done", "skipped", "later")}
+
+
+def _input(payload):
+    """(block id, block) of the input block, or (None, None)."""
+    for index, block in enumerate(payload.get("blocks") or []):
+        if isinstance(block, dict) and block.get("type") in INPUT_TYPES:
+            return block_id(block, index), block
+    return None, None
+
+
+def decisions(payload):
+    """The report-level decisions the payload's ask row allows."""
+    _, block = _input(payload)
+    if block is None:
+        return PLAIN_DECISIONS[payload["ask"]]
+    answering = ANSWERING[(block["type"], payload["ask"])]
+    if answering == "approve":
+        return ("approve", "reject", "revise")
+    if block["type"] == "pick" and block.get("allow_none") is False:
+        # revise is "None of these"; without it a pick must be chosen
+        return ("choose",)
+    return (answering, "revise")
+
+
+def _object(value, where, fields, required=()):
+    if not isinstance(value, dict):
+        raise ResultError(where, "must be an object")
+    for key in value:
+        if key not in fields:
+            raise ResultError(_pointer(where, key), "unknown field")
+    for key in required:
+        if key not in value:
+            raise ResultError(_pointer(where, key), "required field is missing")
+
+
+def _list(value, where):
+    if not isinstance(value, list):
+        raise ResultError(where, "must be an array")
+    return value
+
+
+def _one_of(value, where, legal):
+    if not isinstance(value, str) or value not in legal:
+        raise ResultError(where, "must be one of " + ", ".join(legal))
+    return value
+
+
+def _answers(value, where, wanted, key, check):
+    """Every wanted id answered once; the answers in payload order."""
+    what = "row" if key == "id" else "platform"
+    found = {}
+    for index, answer in enumerate(_list(value, where)):
+        here = _pointer(where, index)
+        check(answer, here)
+        name = answer[key]
+        if not isinstance(name, str) or name not in wanted:
+            raise ResultError(_pointer(here, key), f"is not a {what} of this block")
+        if name in found:
+            raise ResultError(_pointer(here, key), f"{what} {name!r} answered twice")
+        found[name] = (index, answer)
+    missing = [name for name in wanted if name not in found]
+    if missing:
+        raise ResultError(where, f"needs an answer for every {what} (missing: {', '.join(missing)})")
+    return [found[name] for name in wanted]
+
+
+def _decide_answer(block, ask, value, where):
+    _object(value, where, ("items",), ("items",))
+    at = _pointer(where, "items")
+    items = {item["id"]: item for item in block["items"]}
+
+    def check(answer, here):
+        _object(answer, here, ("id", "choice"), ("id", "choice"))
+
+    rows = _answers(value["items"], at, list(items), "id", check)
+    for index, answer in sorted(rows, key=lambda row: row[0]):
+        own = items[answer["id"]].get("choices")
+        legal = [choice for choice in CHOICES[ask] if own is None or choice in own]
+        _one_of(answer["choice"], _pointer(_pointer(at, index), "choice"), legal)
+    return {"items": [{"id": answer["id"], "choice": answer["choice"]} for _, answer in rows]}
+
+
+def _pick_answer(block, value, where):
+    _object(value, where, ("choice",), ("choice",))
+    _one_of(value["choice"], _pointer(where, "choice"), [option["id"] for option in block["options"]])
+    return {"choice": value["choice"]}
+
+
+def _post_answer(block, ask, value, where):
+    from .postcount import problems
+
+    _object(value, where, ("platforms",), ("platforms",))
+    at = _pointer(where, "platforms")
+    field = "included" if ask == "approve" else "choice"
+
+    def check(answer, here):
+        _object(answer, here, ("platform", field), ("platform", field))
+        if field == "included" and not isinstance(answer["included"], bool):
+            raise ResultError(_pointer(here, "included"), "must be true or false")
+        if field == "choice":
+            _one_of(answer["choice"], _pointer(here, "choice"), POST_CHOICES)
+
+    names = [entry["platform"] if isinstance(entry, dict) else entry for entry in block["platforms"]]
+    rows = _answers(value["platforms"], at, names, "platform", check)
+    if field == "included":
+        if not any(answer["included"] for _, answer in rows):
+            raise ResultError(at, "needs at least one platform included (or decision reject)")
+        for index, answer in sorted(rows, key=lambda row: row[0]):
+            found = problems(block, answer["platform"]) if answer["included"] else []
+            if found:
+                raise ResultError(
+                    _pointer(_pointer(at, index), "included"),
+                    f"{answer['platform']} cannot be published ({'; '.join(found)})",
+                )
+    return {"platforms": [{"platform": answer["platform"], field: answer[field]} for _, answer in rows]}
+
+
+def _refs(payload, value, where):
+    refs = _list(value, where)
+    if len(refs) > MAX_REFS:
+        raise ResultError(where, f"must hold at most {MAX_REFS} refs")
+    targets = anchors(payload)
+    seen = set()
+    for index, ref in enumerate(refs):
+        here = _pointer(where, index)
+        _object(ref, here, REF_FIELDS, REF_FIELDS)
+        for key in ("block", "item"):
+            if not isinstance(ref[key], str):
+                raise ResultError(_pointer(here, key), "must be a string")
+        label = ref["label"]
+        if not isinstance(label, str) or not 1 <= len(label) <= MAX_REF_LABEL:
+            raise ResultError(_pointer(here, "label"), f"must be 1-{MAX_REF_LABEL} characters")
+        target = (ref["block"], ref["item"])
+        if target not in targets:
+            raise ResultError(here, "is not a reply target of this report")
+        if target in seen:
+            raise ResultError(here, "repeats an earlier ref")
+        seen.add(target)
+    return [{key: ref[key] for key in REF_FIELDS} for ref in refs]
+
+
+def validate_result(payload, data):
+    """The result data, normalized to {decision, note, refs, blocks?}.
+
+    Checked against the stored payload (block ids filled): the decision is
+    legal for the ask row; revise has a note; only the decision that answers
+    the input block carries `blocks`, and then a complete, legal answer for
+    exactly that block; refs point at the payload's reply targets. Raises
+    ResultError(pointer inside data, message)."""
+    _object(data, "", RESULT_FIELDS, ("decision",))
+    decision = _one_of(data["decision"], "/decision", decisions(payload))
+    note = data.get("note", "")
+    if not isinstance(note, str):
+        raise ResultError("/note", "must be a string")
+    if len(note) > MAX_NOTE:
+        raise ResultError("/note", f"must be at most {MAX_NOTE} characters")
+    if decision == "revise" and not note.strip():
+        raise ResultError("/note", "revise needs a note (what should change)")
+    result = {"decision": decision, "note": note, "refs": _refs(payload, data.get("refs", []), "/refs")}
+    name, block = _input(payload)
+    if block is None or decision != ANSWERING[(block["type"], payload["ask"])]:
+        if "blocks" in data:
+            raise ResultError("/blocks", f"decision {decision} carries no blocks")
+        return result
+    if "blocks" not in data:
+        raise ResultError("/blocks", f"required with decision {decision}")
+    value = data["blocks"]
+    if not isinstance(value, dict) or list(value) != [name]:
+        raise ResultError("/blocks", f"must hold exactly the input block {name}")
+    where = _pointer("/blocks", name)
+    if block["type"] == "decide":
+        answer = _decide_answer(block, payload["ask"], value[name], where)
+    elif block["type"] == "pick":
+        answer = _pick_answer(block, value[name], where)
+    else:
+        answer = _post_answer(block, payload["ask"], value[name], where)
+    result["blocks"] = {name: answer}
+    return result
+
+
+def result_summary(payload, data):
+    """One line for `results`: the decision, plus what the input block's
+    answer holds ("submit · 2 approve, 1 later", "choose thu",
+    "approve · x, linkedin"). None when data does not answer the payload."""
+    try:
+        data = validate_result(payload, data)
+    except (ResultError, KeyError, TypeError):
+        return None
+    decision = data["decision"]
+    if "blocks" not in data:
+        return decision
+    (answer,) = data["blocks"].values()
+    if "choice" in answer:
+        return f"{decision} {answer['choice']}"
+    if "items" in answer:
+        counts = {}
+        for row in answer["items"]:
+            counts[row["choice"]] = counts.get(row["choice"], 0) + 1
+        order = SUMMARY_ORDER[payload["ask"]]
+        return f"{decision} · " + ", ".join(f"{counts[c]} {c}" for c in order if counts.get(c))
+    if payload["ask"] == "approve":
+        return f"{decision} · " + ", ".join(p["platform"] for p in answer["platforms"] if p["included"])
+    return f"{decision} · " + ", ".join(f"{p['platform']} {p['choice']}" for p in answer["platforms"])

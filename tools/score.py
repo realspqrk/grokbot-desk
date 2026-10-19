@@ -16,8 +16,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.paths import data_dir
-from core.registry import scan_registry
 
 LIVE_WINDOW_CRITERIA = frozenset({"C1", "C2", "C3", "C4"})
 LIVE_WINDOW_UNAVAILABLE = (
@@ -34,7 +32,7 @@ TARGETS = {
     "C6": "100% of >=30 counter cases",
     "C7": "<=1% pixels, light and dark",
     "C8": "schema pytest 100%",
-    "C9": "check --all --visual",
+    "C9": "check every payload fixture",
     "C10": "20 results; max <=500 ms",
     "C11": "safety pytest 100%",
     "C12": "keyboard 100%",
@@ -605,12 +603,12 @@ def _valid_calm_result(result):
     return True
 
 
-def _registered_templates():
-    return sorted(
-        scan_registry(
-            ROOT / "templates", data_dir() / "templates"
-        )
-    )
+PAYLOAD_FIXTURES = ROOT / "tests" / "fixtures" / "payloads"
+
+
+def _calm_scenes():
+    """The payload fixtures the calm checker renders (one scene set each)."""
+    return sorted(path.stem for path in PAYLOAD_FIXTURES.glob("*.json"))
 
 
 def _selected_port(args=None):
@@ -833,12 +831,13 @@ def _run_score(args, netlog_dir, selected_port):
             raw = _pytest("tests/test_schema.py")
             criteria[criterion] = _entry("pass" if raw["ok"] else "fail", "pytest pass" if raw["ok"] else raw["output"], raw, criterion)
         elif criterion == "C9":
-            result = browser_run(
-                ["py", "-3", str(ROOT / "report_shell.py"), "check", "--all", "--visual"],
-                timeout=300,
-            )
-            raw = {"ok": result["returncode"] == 0, **result}
-            criteria[criterion] = _entry("pass" if raw["ok"] else "fail", "all templates pass" if raw["ok"] else (raw["stderr"] or raw["stdout"]), raw, criterion)
+            results = [
+                browser_run(["py", "-3", str(ROOT / "report_shell.py"), "check", str(path)], timeout=60)
+                for path in sorted(PAYLOAD_FIXTURES.glob("*.json"))
+            ]
+            failed = [result for result in results if result["returncode"] != 0]
+            raw = {"ok": bool(results) and not failed, "checked": len(results), "failed": failed}
+            criteria[criterion] = _entry("pass" if raw["ok"] else "fail", "all payload fixtures pass" if raw["ok"] else "; ".join((item["stderr"] or item["stdout"]) for item in failed) or "no fixtures", raw, criterion)
         elif criterion == "C10":
             raw = browser_json(
                 ["py", "-3", str(ROOT / "tools" / "measure_result.py")], timeout=300
@@ -943,7 +942,7 @@ def _run_score(args, netlog_dir, selected_port):
             )
         elif criterion == "C16":
             calm = {}
-            for template_id in _registered_templates():
+            for template_id in _calm_scenes():
                 calm[template_id] = browser_json(
                     [
                         "node",

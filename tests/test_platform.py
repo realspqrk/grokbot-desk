@@ -6,7 +6,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from pathlib import PurePosixPath
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -405,13 +404,12 @@ def test_report_server_stops_and_restarts_on_same_port(tmp_path):
     import urllib.request
 
     from core.paths import ensure_layout, load_config
-    from core.registry import scan_registry
     from core.server import Handler, ReportHTTPServer
 
     data = ensure_layout(tmp_path / "data")
     registry = scan_registry(ROOT / "templates")
     first = ReportHTTPServer(
-        ("127.0.0.1", 0), Handler, data, registry, load_config(data)
+        ("127.0.0.1", 0), Handler, data, load_config(data)
     )
     port = first.server_port
     first.port = port
@@ -428,7 +426,7 @@ def test_report_server_stops_and_restarts_on_same_port(tmp_path):
         thread.join(2)
 
     restarted = ReportHTTPServer(
-        ("127.0.0.1", port), Handler, data, registry, load_config(data)
+        ("127.0.0.1", port), Handler, data, load_config(data)
     )
     restarted.server_close()
 
@@ -901,15 +899,6 @@ def test_server_state_preserves_full_browser_identity(tmp_path):
     state = __import__("json").loads((data / "state.json").read_text())
     assert LaunchResult.from_state(state["browser"]) == launched
     assert state["pid"] == 900
-
-
-def test_template_token_join_uses_path_parts_on_posix(monkeypatch):
-    import core.media as media
-
-    monkeypatch.setattr(media, "Path", PurePosixPath)
-    assert media._expand_template_token(
-        "%RS_TEMPLATE%\\fixtures/media/a.png", PurePosixPath("/template")
-    ) == "/template/fixtures/media/a.png"
 
 
 @pytest.mark.parametrize(

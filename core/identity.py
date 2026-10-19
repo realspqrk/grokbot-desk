@@ -35,13 +35,8 @@ import unicodedata
 from pathlib import Path, PureWindowsPath
 
 from .jsonutil import loads
-from .media import TEMPLATE_TOKEN, MediaError, _is_relative_to, _template_relative_parts
-from .platform import (
-    PathIdentityError,
-    ReparseEscape,
-    final_path_for_handle,
-    open_contained,
-)
+from .media import _is_relative_to
+from .platform import final_path_for_handle
 
 
 CORE = Path(__file__).resolve().parent
@@ -311,7 +306,7 @@ def _avatar_extensions():
 
 
 def _avatar_path(value, base_dir, data_dir):
-    """Resolve an avatar path that is not a template token."""
+    """The candidate file and its allowed roots for an avatar path."""
     if "\0" in value:
         raise IdentityIssue("avatar path is invalid")
     windows = PureWindowsPath(value)
@@ -350,81 +345,6 @@ def _validated_avatar_body(handle, final_path):
     return body, sniffed
 
 
-def _template_avatar_value(value, base_dir, template_root):
-    """%RS_TEMPLATE% form for an avatar read from the payload template.
-
-    Bare payload paths are relative to that directory (GUIDE: a path relative
-    to the template folder). User and shipped registry avatars keep their own
-    bases and return None so they stay on the ordinary reader. Absolute paths
-    and UNC paths also return None.
-    """
-    if value.startswith(TEMPLATE_TOKEN):
-        return value
-    if template_root is None or base_dir is None:
-        return None
-    if Path(base_dir) != Path(template_root):
-        return None
-    if "\0" in value:
-        return None
-    windows = PureWindowsPath(value)
-    if (
-        value.startswith(("\\\\", "//"))
-        or windows.anchor.startswith("\\\\")
-        or bool(windows.anchor)
-        or Path(value).is_absolute()
-    ):
-        return None
-    parts = [part for part in re.split(r"[\\/]", value) if part not in {"", "."}]
-    if not parts or any(part == ".." for part in parts):
-        return None
-    return TEMPLATE_TOKEN + "/" + "/".join(parts)
-
-
-def _read_template_avatar(value, template_root, template_identity):
-    """Open a template-relative avatar from the registry-pinned directory.
-
-    The same no-follow relative open used for template media. The directory
-    identity captured at scan time is checked again, so a directory put in
-    place of the template after the scan cannot authorize an outside image.
-    ``value`` is a %RS_TEMPLATE% path. Bare payload paths are rewritten to
-    that form by ``_template_avatar_value``.
-    """
-    if "\0" in value:
-        raise IdentityIssue("avatar path is invalid")
-    try:
-        parts = _template_relative_parts(value, template_root)
-    except MediaError as error:
-        raise IdentityIssue(str(error)) from error
-    if Path(parts[-1]).suffix.lower() not in _avatar_extensions():
-        raise IdentityIssue("avatar must be a .png, .jpg, .jpeg, .webp or .gif file")
-    try:
-        handle, root_final, root_identity, _file_identity = open_contained(
-            Path(template_root), parts, template_identity
-        )
-    except (ReparseEscape, PathIdentityError) as error:
-        raise IdentityIssue("avatar path is outside its allowed directory") from error
-    except OSError as error:
-        raise IdentityIssue("avatar file is unavailable") from error
-    try:
-        try:
-            final_path = final_path_for_handle(handle)
-        except OSError as error:
-            raise IdentityIssue("avatar file could not be read") from error
-        if not _is_relative_to(final_path, root_final):
-            raise IdentityIssue("avatar path is outside its allowed directory")
-        if (
-            template_identity is not None
-            and tuple(root_identity) != tuple(template_identity)
-        ):
-            raise IdentityIssue("avatar path is outside its allowed directory")
-        try:
-            return _validated_avatar_body(handle, final_path)
-        except OSError as error:
-            raise IdentityIssue("avatar file could not be read") from error
-    finally:
-        handle.close()
-
-
 def _read_avatar_file(candidate, roots):
     if candidate.suffix.lower() not in _avatar_extensions():
         raise IdentityIssue("avatar must be a .png, .jpg, .jpeg, .webp or .gif file")
@@ -450,23 +370,13 @@ def _read_avatar_file(candidate, roots):
             raise IdentityIssue("avatar file could not be read") from error
 
 
-def load_avatar(value, base_dir=None, data_dir=None, *, template_root=None, template_identity=None):
+def load_avatar(value, base_dir=None, data_dir=None):
     """Validate an avatar value; returns {"sha256", "type", "data"} (data = base64)."""
     if not isinstance(value, str) or not value.strip():
         raise IdentityIssue("must be a non-empty string")
     value = value.strip()
-    kind = value[:5].lower()
-    token = None if kind == "data:" else _template_avatar_value(value, base_dir, template_root)
-    if kind == "data:":
+    if value[:5].lower() == "data:":
         body, content_type = _decode_data_url(value)
-    elif token is not None:
-        root = template_root if template_root is not None else base_dir
-        try:
-            body, content_type = _read_template_avatar(token, root, template_identity)
-        except IdentityIssue:
-            raise
-        except ValueError as error:
-            raise IdentityIssue("avatar path is invalid") from error
     else:
         try:
             candidate, roots = _avatar_path(value, base_dir, data_dir)
@@ -539,9 +449,8 @@ def display_names(registry):
     return names
 
 
-def resolve_identity(bot, payload_identity=None, *, template_root=None, data_dir=None,
-                     user_registry=None, shipped_registry=None, has_payload_identity=None,
-                     template_identity=None):
+def resolve_identity(bot, payload_identity=None, *, data_dir=None,
+                     user_registry=None, shipped_registry=None, has_payload_identity=None):
     """Resolve the identity of one run.
 
     Returns {"name", "initials", "avatar", "shape", "color", "accent",
@@ -569,7 +478,8 @@ def resolve_identity(bot, payload_identity=None, *, template_root=None, data_dir
         else:
             entry = {}
             warnings.append({"source": "payload", "field": None, "reason": "identity must be an object"})
-        sources.append(("payload", entry, template_root))
+        # a payload avatar is a data: URL or a path inside the data dir
+        sources.append(("payload", entry, None))
     for source, registry, base in (
         ("user", user_registry, data_dir),
         ("shipped", shipped_registry, SHIPPED_REGISTRY.parent),
@@ -587,9 +497,7 @@ def resolve_identity(bot, payload_identity=None, *, template_root=None, data_dir
             if field not in entry:
                 continue
             try:
-                chosen[field] = _validate_field(field, entry[field], base, data_dir,
-                                                template_root=template_root,
-                                                template_identity=template_identity)
+                chosen[field] = _validate_field(field, entry[field], base, data_dir)
             except Omitted:
                 continue
             except IdentityIssue as issue:
@@ -602,9 +510,7 @@ def resolve_identity(bot, payload_identity=None, *, template_root=None, data_dir
             if field not in entry:
                 continue
             try:
-                values[field] = _validate_field(field, entry[field], base, data_dir,
-                                                template_root=template_root,
-                                                template_identity=template_identity)
+                values[field] = _validate_field(field, entry[field], base, data_dir)
             except Omitted:
                 stated = True
                 continue
@@ -654,7 +560,7 @@ def resolve_identity(bot, payload_identity=None, *, template_root=None, data_dir
     }
 
 
-def _validate_field(field, value, base, data_dir, *, template_root=None, template_identity=None):
+def _validate_field(field, value, base, data_dir):
     if field == "name":
         return validate_name(value)
     if field == "accent":
@@ -663,8 +569,7 @@ def _validate_field(field, value, base, data_dir, *, template_root=None, templat
         return validate_enum(field, value)
     if isinstance(value, str) and not value.strip():
         raise Omitted()
-    return load_avatar(value, base, data_dir, template_root=template_root,
-                       template_identity=template_identity)
+    return load_avatar(value, base, data_dir)
 
 
 def registry_warnings(data_dir=None):

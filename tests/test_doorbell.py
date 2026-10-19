@@ -23,9 +23,8 @@ import pytest
 from conftest import free_port
 from core import cli, doorbell
 from core.actionlog import ActionLog
-from core.envelope import validate_payload
+from core.envelope import EnvelopeError, validate_payload
 from core.paths import ensure_layout, load_config
-from core.registry import scan_registry
 from core.server import Handler, ReportHTTPServer, _write_state as write_state
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,15 +75,13 @@ class FakeBell:
 
 def payload(**extra):
     value = {
-        "schema": "report-shell/payload@1",
-        "template": "approve-one",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2",
         "bot": "night-owl",
         "title": "Ship the release",
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "data": json.loads(
-            (ROOT / "templates/builtin/approve-one/fixtures/golden.json").read_text(encoding="utf-8")
-        ),
+        "ask": "approve",
+        "action": "ship",
+        "blocks": [{"type": "checks", "items": [{"label": "Tests", "state": "ok"}]}],
     }
     value.update(extra)
     return value
@@ -111,7 +108,7 @@ def desk(tmp_path):
     port = free_port()
     server = ReportHTTPServer(
         ("127.0.0.1", port), Handler, data_dir,
-        scan_registry(ROOT / "templates"), load_config(data_dir),
+        load_config(data_dir),
     )
     bell = FakeBell()
     sleeps = []
@@ -167,7 +164,7 @@ def test_rings_after_the_person_submits_with_who_and_what(desk):
     )
     run = desk.push(payload(identity={"name": "Night Owl"}))
     status, _, _ = desk.call("POST", "/submit", {
-        "run_id": run["run_id"], "data": {"decision": "approve", "comment": ""},
+        "run_id": run["run_id"], "data": {"decision": "approve", "note": ""},
     })
     assert status == 200
     desk.runs.doorbell.join()
@@ -434,10 +431,10 @@ def test_desk_lifecycles_leave_no_doorbell_worker(tmp_path):
     for _ in range(3):
         server = ReportHTTPServer(
             ("127.0.0.1", free_port()), Handler, data_dir,
-            scan_registry(ROOT / "templates"), load_config(data_dir),
+            load_config(data_dir),
         )
         server.runs.doorbell = doorbell.Doorbell(data_dir, server.action_log, opener=FakeBell([(503, "")] * 9))
-        detail = server.runs.register(validate_payload(payload(), server.registry))
+        detail = server.runs.register(validate_payload(payload()))
         server.runs.decide(detail["run_id"], "cancelled")
         workers.append(server.runs.doorbell._worker)
         server.server_close()
@@ -467,7 +464,7 @@ def test_saves_at_the_same_time_never_collide(tmp_path):
 def test_results_since_a_fractional_cursor_keeps_its_own_second(tmp_path):
     base = ensure_layout(tmp_path / "data")
     (base / "results" / "r1.json").write_text(json.dumps({
-        "run_id": "r1", "bot": "b", "template": "approve-one", "status": "cancelled",
+        "run_id": "r1", "bot": "b", "status": "cancelled",
         "decided": "2026-10-14T16:00:05+02:00",
     }), encoding="utf-8")
     args = Namespace(since="2026-10-14T16:00:05.750+02:00", wait=0, bot=None, seen=[])
@@ -476,10 +473,12 @@ def test_results_since_a_fractional_cursor_keeps_its_own_second(tmp_path):
     assert [item["run_id"] for item in json.loads(printed.getvalue())["results"]] == ["r1"]
 
 
-def test_notify_is_accepted_ignored_and_named_in_a_warning(desk):
+def test_notify_is_gone_since_payload_2_and_the_doorbell_is_the_one_wake(desk):
     switch_on(desk.data)
-    answer = desk.push(payload(notify={"webhook_url": "https://elsewhere.example.test/hook"}))
-    assert any("notify" in warning and "doorbell" in warning for warning in answer["warnings"])
+    with pytest.raises(EnvelopeError) as error:
+        validate_payload(payload(notify={"webhook_url": "https://elsewhere.example.test/hook"}))
+    assert (error.value.pointer, error.value.message) == ("/notify", "unknown field")
+    answer = desk.push(payload())
     assert desk.call("POST", "/cancel", {"run_id": answer["run_id"]})[0] == 200
     desk.runs.doorbell.join()
     assert [request.full_url for request in desk.bell.requests] == [URL]

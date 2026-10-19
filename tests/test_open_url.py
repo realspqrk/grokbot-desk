@@ -11,7 +11,6 @@ from core.envelope import validate_payload
 from core.paths import ensure_layout, load_config
 from core.platform_darwin import open_url as darwin_open_url
 from core.platform_windows import open_url as windows_open_url
-from core.registry import scan_registry
 from core.server import Handler, ReportHTTPServer
 from core.urls import MAX_URL_LENGTH, openable, url_allowed, urls_in
 
@@ -141,7 +140,7 @@ def _server(tmp_path):
     data_dir = ensure_layout(tmp_path / "data")
     server = ReportHTTPServer(
         ("127.0.0.1", 0), Handler, data_dir,
-        scan_registry(ROOT / "templates"), load_config(data_dir),
+        load_config(data_dir),
     )
     server.port = server.server_port
     return server
@@ -165,17 +164,17 @@ def _request(server, body):
 def test_open_url_route_allowlists_and_logs(tmp_path):
     server = _server(tmp_path)
     payload = {
-        "schema": "report-shell/payload@1",
-        "template": "review-doc",
-        "version": 1,
+        "schema": "grokbot-desk/payload@2",
         "bot": "listing-bot",
         "title": "Open a documented link",
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "data": {
-            "doc": f"See the [listing]({EXAMPLE}) before you approve. Ignore https://[oops nearby.",
-        },
+        "ask": "review",
+        "blocks": [{
+            "type": "text",
+            "md": f"See the [listing]({EXAMPLE}) before you approve. Ignore https://[oops nearby.",
+        }],
     }
-    detail = server.runs.register(validate_payload(payload, server.registry))
+    detail = server.runs.register(validate_payload(payload))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
