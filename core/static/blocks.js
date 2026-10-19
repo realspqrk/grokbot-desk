@@ -26,6 +26,8 @@
   var STATE_KEYS = { ok: 'blk_state_ok', warn: 'blk_state_warn', fail: 'blk_state_fail', open: 'blk_state_open' };
   var NUMERIC = { number: true, money: true, percent: true, delta: true };
   var MINUS = '−';
+  /* a number column shows the value as written (0.001 stays 0,001) */
+  var SOURCE_DIGITS = { maximumFractionDigits: 10 };
 
   function make(tag, cls, text) {
     var n = document.createElement(tag);
@@ -147,10 +149,41 @@
         if (hasSpark) row.appendChild(window.RSCharts.spark(item.spark, ctx));
         tile.appendChild(row);
       }
+      if (hasSpark) tile.appendChild(sparkTable(item, ctx));
       if (item.note) tile.appendChild(make('p', 'rs-stat__note', item.note));
       grid.appendChild(tile);
     });
     return grid;
+  }
+
+  /* the full series of a sparkline, for assistive technology only (the
+     tile shows the current value; the line is its shape) */
+  function sparkTable(item, ctx) {
+    var box = make('div', 'rs-vh');
+    var t = make('table');
+    t.appendChild(make('caption', null, item.label));
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    [ctx.t('blk_chart_label'), ctx.t('blk_spark_value')].forEach(function (text) {
+      var th = make('th', null, text);
+      th.scope = 'col';
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    t.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    var fmt = window.RSCharts.format(ctx, item.spark);
+    item.spark.forEach(function (v, i) {
+      var tr = document.createElement('tr');
+      var th = make('th', null, ctx.t('blk_spark_point', { n: i + 1 }));
+      th.scope = 'row';
+      tr.appendChild(th);
+      tr.appendChild(make('td', null, fmt(v).replace(/-/g, MINUS)));
+      tbody.appendChild(tr);
+    });
+    t.appendChild(tbody);
+    box.appendChild(t);
+    return box;
   }
 
   function cell(ctx, column, value, tag) {
@@ -160,17 +193,16 @@
     var align = column.align || (NUMERIC[type] ? 'right' : '');
     if (align) td.setAttribute('data-align', align);
     if (value === null || value === undefined || value === '') return td;
-    if (type === 'number') td.textContent = typeof value === 'number' ? numberText(ctx, value) : String(value);
+    if (type === 'number') td.textContent = typeof value === 'number' ? numberText(ctx, value, SOURCE_DIGITS) : String(value);
     else if (type === 'money') {
       td.textContent = typeof value === 'number'
         ? numberText(ctx, value, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(value);
     } else if (type === 'percent') {
       td.textContent = typeof value === 'number'
-        ? numberText(ctx, value / 100, { style: 'percent', maximumFractionDigits: 2 }) : String(value);
+        ? numberText(ctx, value / 100, { style: 'percent', maximumFractionDigits: 10 }) : String(value);
     } else if (type === 'delta') {
-      /* a column does not say which direction is good: the glyph and the
-         sign carry the change, the colour stays neutral */
-      td.appendChild(delta(ctx, value, null, 'rs-delta'));
+      /* coloured by the column's good; without it the colour stays neutral */
+      td.appendChild(delta(ctx, value, column.good === 'up' || column.good === 'down' ? column.good : null, 'rs-delta'));
     }
     else if (type === 'status') td.appendChild(status(ctx, value, 'rs-status'));
     else if (type === 'date') td.textContent = dateText(ctx, value);

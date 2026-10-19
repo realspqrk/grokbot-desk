@@ -11,8 +11,9 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { browserChannel, startServer, loadChromium, ROOT, PYTHON } from '../tools/dev/rs-server.mjs';
 
-const PORT = Number(process.env.RS_E2E_PORT || 18900);
-if (PORT === 18742) throw new Error('refusing the product port');
+// tests use 18920-18939 only (AGENTS.md); never the product port
+const PORT = Number(process.env.RS_E2E_PORT || 18921);
+if (!Number.isInteger(PORT) || PORT < 18920 || PORT > 18939) throw new Error(`RS_E2E_PORT ${PORT} is outside 18920-18939`);
 const de = JSON.parse(readFileSync(path.join(ROOT, 'core/i18n/de.json'), 'utf8'));
 const AXE = path.join(ROOT, 'vendor/axe.min.js');
 const FIXTURES = path.join(ROOT, 'tests/fixtures/payloads');
@@ -279,5 +280,89 @@ describe('content blocks (served, headless browser)', { skip }, () => {
       });
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
+  });
+  test('table deltas are coloured by the column good, neutral without it', async () => {
+    const run = show({
+      schema: 'grokbot-desk/payload@2', bot: 'ops-bot', title: 'Changes', ask: 'read',
+      blocks: [{
+        type: 'table', id: 'changes', columns: [
+          { key: 'name', label: 'Line' }, { key: 'up', label: 'Revenue', type: 'delta', good: 'up' },
+          { key: 'down', label: 'Costs', type: 'delta', good: 'down' }, { key: 'plain', label: 'Plain', type: 'delta' },
+        ], rows: [{ name: 'Rise', up: 2, down: 2, plain: 2 }, { name: 'Fall', up: -2, down: -2, plain: -2 }],
+      }],
+    });
+    const { ctx, page, log } = await open(run);
+    try {
+      const tones = await page.$$eval('[data-rs-block="changes"] tbody tr', (rows) => rows.map((tr) => (
+        [...tr.querySelectorAll('.rs-delta')].map((d) => [d.getAttribute('data-tone'), getComputedStyle(d).color])
+      )));
+      assert.deepEqual(tones.map((row) => row.map((c) => c[0])), [['good', 'bad', 'neutral'], ['bad', 'good', 'neutral']]);
+      const [good, bad, neutral] = tones[0].map((c) => c[1]);
+      assert.notEqual(good, bad);
+      assert.notEqual(good, neutral);
+      assert.equal(tones[1][1][1], good);
+      /* the meaning is in words too, never colour alone */
+      assert.match(await page.locator('[data-rs-block="changes"] tbody tr').first().locator('.rs-delta').first().textContent(), new RegExp(de.blk_delta_better));
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('sparklines carry their values in a table for assistive technology', async () => {
+    const run = show(withMedia(load('report-long')));
+    const { ctx, page, log } = await open(run);
+    try {
+      const spark = await page.$eval('.rs-stat', (tile) => {
+        const table = tile.querySelector('table');
+        return {
+          name: tile.querySelector('svg.rs-spark').getAttribute('aria-label'),
+          hidden: table && getComputedStyle(table.closest('.rs-vh') || table).clipPath,
+          caption: table && table.querySelector('caption').textContent,
+          values: table ? [...table.querySelectorAll('tbody td')].map((td) => td.textContent) : [],
+        };
+      });
+      assert.ok(spark.name);
+      assert.equal(spark.caption, 'Revenue');
+      assert.deepEqual(spark.values, ['41.000', '43.500', '45.400', '48.200']);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('chart axes take their precision from the step; data keeps the source precision', async () => {
+    const run = show({
+      schema: 'grokbot-desk/payload@2', bot: 'ops-bot', title: 'Small numbers', ask: 'read',
+      blocks: [
+        { type: 'chart', id: 'units', kind: 'line', labels: ['a', 'b'], series: [{ name: 'Units', values: [1, 2] }] },
+        { type: 'chart', id: 'rate', kind: 'line', labels: ['a', 'b'], series: [{ name: 'Rate', values: [0.001, 0.002] }] },
+      ],
+    });
+    const { ctx, page, log } = await open(run);
+    try {
+      for (const id of ['units', 'rate']) {
+        const axis = await page.$$eval(`[data-rs-block="${id}"] svg .rs-chart__text--muted`, (els) => els.map((e) => e.textContent));
+        const ticks = axis.filter((x) => /^[0-9.,]+$/.test(x));
+        assert.ok(ticks.length >= 3, `${id}: ${axis}`);
+        assert.equal(new Set(ticks).size, ticks.length, `${id}: ${ticks}`);
+      }
+      const data = await page.$$eval('[data-rs-block="rate"] details tbody td', (tds) => tds.map((td) => td.textContent));
+      assert.deepEqual(data, ['0,001', '0,002']);
+      assert.match(await page.getAttribute('[data-rs-block="rate"] svg[role="img"]', 'aria-label'), /0,001.*0,002/);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('bar value labels never cross the target line', async () => {
+    const run = show(withMedia(load('report-long')));
+    for (const width of [1200, 390]) {
+      const { ctx, page } = await open(run, { width });
+      try {
+        const hits = await page.$eval('[data-rs-block-type="chart"] svg', (svg) => {
+          const line = svg.querySelector('.rs-chart__target-line').getBBox();
+          return [...svg.querySelectorAll('.rs-chart__value')].map((t) => t.getBBox())
+            .filter((b) => line.y >= b.y && line.y <= b.y + b.height && b.x < line.x + line.width && b.x + b.width > line.x)
+            .length;
+        });
+        assert.equal(hits, 0, `width ${width}`);
+      } finally { await ctx.close(); }
+    }
   });
 });

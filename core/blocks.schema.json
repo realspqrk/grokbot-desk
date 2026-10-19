@@ -219,6 +219,13 @@
                 "right",
                 "center"
               ]
+            },
+            "good": {
+              "enum": [
+                "up",
+                "down"
+              ],
+              "description": "Delta columns only: which direction of the change is good; the change is then coloured."
             }
           }
         }

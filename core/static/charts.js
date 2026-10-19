@@ -16,7 +16,11 @@
  * lines beyond the baseline and a quiet grid when values are not labelled.
  * Colours come from blocks.css classes, never literals here.
  */
-(function () {
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module && module.exports) module.exports = api;
+  else root.RSCharts = api;
+})(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
   var NS = 'http://www.w3.org/2000/svg';
@@ -39,34 +43,69 @@
   }
 
   function locale(ctx) { return ctx && ctx.lang === 'en' ? 'en-US' : 'de-DE'; }
-  function formatter(ctx, values) {
-    /* as many decimals as the data uses (max 2) */
-    var digits = 0;
-    values.forEach(function (v) {
-      var s = String(Math.abs(v));
-      var dot = s.indexOf('.');
-      if (dot >= 0 && s.indexOf('e') < 0) digits = Math.max(digits, Math.min(2, s.length - dot - 1));
-    });
+  var MAX_DIGITS = 10;
+  /* decimals a value is written with (0.001 -> 3, 1e-7 -> 7, 48200 -> 0) */
+  function decimals(v) {
+    if (typeof v !== 'number' || !isFinite(v) || v === 0) return 0;
+    var s = String(Number(Math.abs(v).toPrecision(12)));
+    var e = /e([+-])(\d+)$/.exec(s);
+    var mantissa = e ? s.slice(0, e.index) : s;
+    var dot = mantissa.indexOf('.');
+    var digits = dot < 0 ? 0 : mantissa.length - dot - 1;
+    if (e) digits = e[1] === '-' ? digits + Number(e[2]) : Math.max(0, digits - Number(e[2]));
+    return Math.min(MAX_DIGITS, digits);
+  }
+  function numberFormat(ctx, digits) {
     var f = new Intl.NumberFormat(locale(ctx), { maximumFractionDigits: digits, minimumFractionDigits: digits });
     return function (v) { return f.format(v); };
+  }
+  /* values (labels, summaries, data tables): as many decimals as the data uses */
+  function formatter(ctx, values) {
+    var digits = 0;
+    (values || []).forEach(function (v) { digits = Math.max(digits, decimals(v)); });
+    return numberFormat(ctx, digits);
+  }
+  /* axis labels: the decimals of the tick step, more only if two labels
+     would still read the same */
+  function tickFormat(ctx, tickValues) {
+    var digits = tickValues.length > 1 ? decimals(Math.abs(tickValues[1] - tickValues[0])) : decimals(tickValues[0]);
+    for (; digits <= MAX_DIGITS; digits++) {
+      var fmt = numberFormat(ctx, digits);
+      var seen = {};
+      var clash = tickValues.some(function (v) { var k = fmt(v); if (seen[k]) return true; seen[k] = true; return false; });
+      if (!clash) return fmt;
+    }
+    return numberFormat(ctx, MAX_DIGITS);
   }
   function withUnit(text, unit) { return unit ? text + ' ' + unit : text; }
 
   /* 1, 2, 2.5, 5 x 10^n steps for about `count` grid lines */
   function niceStep(span, count) {
-    if (!(span > 0)) return 1;
+    if (!(span > 0) || !isFinite(span)) return 1;
     var raw = span / count;
     var pow = Math.pow(10, Math.floor(Math.log10(raw)));
     var steps = [1, 2, 2.5, 5, 10];
     for (var i = 0; i < steps.length; i++) if (steps[i] * pow >= raw) return steps[i] * pow;
     return 10 * pow;
   }
+  var MAX_TICKS = 12;
+  /* grid values covering lo..hi, computed from integer indices (no float
+     accumulation); a range the step cannot resolve gets just its ends */
   function ticks(lo, hi, count) {
-    var step = niceStep(hi - lo, count);
-    var start = Math.floor(lo / step) * step;
-    var end = Math.ceil(hi / step) * step;
+    if (!isFinite(lo) || !isFinite(hi)) return [0];
+    if (hi < lo) { var swap = lo; lo = hi; hi = swap; }
+    if (hi === lo) return [lo];
+    var ends = [lo, hi];
+    var span = hi - lo;
+    if (!isFinite(span)) return lo < 0 && hi > 0 ? [lo, 0, hi] : ends;
+    var step = niceStep(span, count);
+    var first = Math.floor(lo / step);
+    var last = Math.ceil(hi / step);
+    var n = last - first;
+    if (!isFinite(n) || n < 1 || n > MAX_TICKS || first + 1 === first || last - 1 === last) return ends;
     var out = [];
-    for (var v = start; v <= end + step / 2; v += step) out.push(Math.round(v / step) * step);
+    for (var i = 0; i <= n; i++) out.push((first + i) * step);
+    for (var k = 1; k < out.length; k++) if (!(out[k] > out[k - 1])) return ends;
     return out;
   }
 
@@ -212,8 +251,16 @@
           if (d) svgH.appendChild(el('path', { d: d, class: s.cls + ' rs-chart__fill' }));
           if (direct) {
             var end = sx(v);
+            var lx = v >= 0 ? end + 6 : end - 6;
+            /* a value label never sits on the target line: it moves past it */
+            if (hasTarget) {
+              var tx = sx(spec.target);
+              var w = textWidth(fmt(v));
+              var from = v >= 0 ? lx : lx - w;
+              if (tx >= from - 3 && tx <= from + w + 3) lx = v >= 0 ? tx + 6 : tx - 6;
+            }
             svgH.appendChild(el('text', {
-              x: v >= 0 ? end + 6 : end - 6, y: by + barH / 2 + 4, 'text-anchor': v >= 0 ? 'start' : 'end',
+              x: lx, y: by + barH / 2 + 4, 'text-anchor': v >= 0 ? 'start' : 'end',
               class: 'rs-chart__text rs-chart__value'
             }, fmt(v)));
           }
@@ -231,7 +278,8 @@
     var heightV = topV + plotH + bottomH;
     var tickVals = direct ? [] : ticks(lo, hi, 4);
     if (tickVals.length) { lo = Math.min(lo, tickVals[0]); hi = Math.max(hi, tickVals[tickVals.length - 1]); }
-    var left = tickVals.length ? Math.max.apply(null, tickVals.map(function (v) { return textWidth(fmt(v)); })) + 10 : 0;
+    var tickFmt = tickFormat(ctx, tickVals);
+    var left = tickVals.length ? Math.max.apply(null, tickVals.map(function (v) { return textWidth(tickFmt(v)); })) + 10 : 0;
     var right = hasTarget ? textWidth(targetText) + 12 : 0;
     var plotR = W - right;
     var svg = svgRoot(W, heightV, label, 'rs-chart--bar');
@@ -239,7 +287,7 @@
     var sy = function (v) { return topV + (hi - v) / (hi - lo) * plotH; };
     tickVals.forEach(function (v) {
       svg.appendChild(el('line', { x1: left, x2: plotR, y1: sy(v), y2: sy(v), class: 'rs-chart__grid' }));
-      svg.appendChild(el('text', { x: left - 8, y: sy(v) + 4, 'text-anchor': 'end', class: 'rs-chart__text rs-chart__text--muted' }, fmt(v)));
+      svg.appendChild(el('text', { x: left - 8, y: sy(v) + 4, 'text-anchor': 'end', class: 'rs-chart__text rs-chart__text--muted' }, tickFmt(v)));
     });
     var band = (plotR - left) / labels.length;
     var group = Math.min(band * 0.7, 56 * series.length);
@@ -256,8 +304,15 @@
         var d = barPath(x, sy(v), bw, base - sy(v), false);
         if (d) svg.appendChild(el('path', { d: d, class: s.cls + ' rs-chart__fill' }));
         if (direct) {
+          var ly = v >= 0 ? sy(v) - 6 : sy(v) + 14;
+          /* a value label never sits on the target line: it moves past it,
+             away from its bar (the text box is about 14px high) */
+          if (hasTarget) {
+            var ty = sy(spec.target);
+            if (ty >= ly - 14 && ty <= ly + 5) ly = v >= 0 ? ty - 6 : ty + 16;
+          }
           svg.appendChild(el('text', {
-            x: x + bw / 2, y: v >= 0 ? sy(v) - 6 : sy(v) + 14, 'text-anchor': 'middle', class: 'rs-chart__text rs-chart__value'
+            x: x + bw / 2, y: ly, 'text-anchor': 'middle', class: 'rs-chart__text rs-chart__value'
           }, fmt(v)));
         }
       });
@@ -282,14 +337,15 @@
     var hi = Math.max.apply(null, all);
     if (hi === lo) { hi += 1; lo -= 1; }
     var tickVals = ticks(lo, hi, 4);
-    lo = tickVals[0];
-    hi = tickVals[tickVals.length - 1];
+    lo = Math.min(lo, tickVals[0]);
+    hi = Math.max(hi, tickVals[tickVals.length - 1]);
+    var tickFmt = tickFormat(ctx, tickVals);
     var hasTarget = typeof spec.target === 'number' && isFinite(spec.target);
     var legendH = series.length > 1 ? 24 : 0;
     var top = legendH + 10;
     var plotH = 160;
     var height = top + plotH + 26;
-    var left = Math.max.apply(null, tickVals.map(function (v) { return textWidth(fmt(v)); })) + 10;
+    var left = Math.max.apply(null, tickVals.map(function (v) { return textWidth(tickFmt(v)); })) + 10;
     /* line ends are named: the last value, and the series name with 2+ */
     var endText = series.map(function (s) {
       var last = fmt(s.values[s.values.length - 1]);
@@ -305,7 +361,7 @@
     var sx = function (i) { return n > 1 ? left + i * (x1 - left) / (n - 1) : (left + x1) / 2; };
     tickVals.forEach(function (v) {
       svg.appendChild(el('line', { x1: left, x2: x1, y1: sy(v), y2: sy(v), class: 'rs-chart__grid' }));
-      svg.appendChild(el('text', { x: left - 8, y: sy(v) + 4, 'text-anchor': 'end', class: 'rs-chart__text rs-chart__text--muted' }, fmt(v)));
+      svg.appendChild(el('text', { x: left - 8, y: sy(v) + 4, 'text-anchor': 'end', class: 'rs-chart__text rs-chart__text--muted' }, tickFmt(v)));
     });
     /* every k-th label, always the last one; never two labels closer than 48px */
     var every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((x1 - left) / 64))));
@@ -374,5 +430,5 @@
     return svg;
   }
 
-  window.RSCharts = { bar: bar, line: line, spark: spark, format: formatter };
-})();
+  return { bar: bar, line: line, spark: spark, format: formatter, ticks: ticks, tickFormat: tickFormat };
+});

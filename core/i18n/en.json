@@ -375,5 +375,7 @@
   "blk_reply_to": "Reply to “{what}”",
   "blk_ref_remove": "Remove reference “{what}”",
   "blk_refs_label": "Reply references",
-  "blk_error": "Part of this report cannot be shown."
+  "blk_error": "Part of this report cannot be shown.",
+  "blk_spark_value": "Value",
+  "blk_spark_point": "Point {n}"
 }

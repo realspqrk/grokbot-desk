@@ -244,6 +244,11 @@ def _check_cell(value, kind, where):
 
 
 def _check_table(block, here):
+    for index, column in enumerate(block["columns"]):
+        if "good" in column and column.get("type", "text") != "delta":
+            raise EnvelopeError(
+                _pointer(_pointer(_pointer(here, "columns"), index), "good"), "only applies to a delta column"
+            )
     kinds = {column["key"]: column.get("type", "text") for column in block["columns"]}
     rows = [(_pointer(_pointer(here, "rows"), index), row) for index, row in enumerate(block["rows"])]
     if "total" in block:

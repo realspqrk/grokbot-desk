@@ -375,5 +375,7 @@
   "blk_reply_to": "Auf „{what}“ antworten",
   "blk_ref_remove": "Bezug „{what}“ entfernen",
   "blk_refs_label": "Bezüge der Antwort",
-  "blk_error": "Ein Teil des Berichts kann nicht angezeigt werden."
+  "blk_error": "Ein Teil des Berichts kann nicht angezeigt werden.",
+  "blk_spark_value": "Wert",
+  "blk_spark_point": "Punkt {n}"
 }

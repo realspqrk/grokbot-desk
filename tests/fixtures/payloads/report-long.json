@@ -21,7 +21,7 @@
       {"key": "name", "label": "Supplier"},
       {"key": "amount", "label": "Amount (EUR)", "type": "money"},
       {"key": "share", "label": "Share", "type": "percent"},
-      {"key": "change", "label": "Change", "type": "delta"},
+      {"key": "change", "label": "Change", "type": "delta", "good": "down"},
       {"key": "status", "label": "Invoice", "type": "status"},
       {"key": "due", "label": "Due", "type": "date"}
     ], "rows": [

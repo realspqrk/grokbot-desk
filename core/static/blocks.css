@@ -155,8 +155,8 @@
 .rs-stat__deltaline, .rs-stat__note { font-size: var(--rs-fs-sm); }
 .rs-stat__note { color: var(--rs-muted); }
 .rs-stat__delta, .rs-delta { font-variant-numeric: tabular-nums; white-space: nowrap; }
-[data-tone="good"].rs-stat__delta { color: var(--rs-status-ok-text); }
-[data-tone="bad"].rs-stat__delta { color: var(--rs-status-danger-text); }
+[data-tone="good"]:is(.rs-stat__delta, .rs-delta) { color: var(--rs-status-ok-text); }
+[data-tone="bad"]:is(.rs-stat__delta, .rs-delta) { color: var(--rs-status-danger-text); }
 [data-tone="neutral"].rs-stat__delta { color: var(--rs-muted); }
 .rs-spark { flex: none; display: block; overflow: visible; }
 .rs-spark__line { fill: none; stroke: var(--rs-cat-1); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }

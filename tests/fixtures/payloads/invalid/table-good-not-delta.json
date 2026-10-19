@@ -1,0 +1,30 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "office-bot",
+  "title": "Seats per team",
+  "created": "2026-10-18T09:30:00+02:00",
+  "ask": "read",
+  "blocks": [
+    {
+      "type": "table",
+      "columns": [
+        {
+          "key": "team",
+          "label": "Team"
+        },
+        {
+          "key": "seats",
+          "label": "Seats",
+          "type": "number",
+          "good": "up"
+        }
+      ],
+      "rows": [
+        {
+          "team": "Support",
+          "seats": 9
+        }
+      ]
+    }
+  ]
+}
