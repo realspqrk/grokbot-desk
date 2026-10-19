@@ -110,3 +110,19 @@ def test_a_pinned_template_media_record_is_not_served(media_root, tmp_path):
     record_path.write_text(json.dumps(record), encoding="utf-8")
     reloaded = RunStore(data_dir, config, ActionLog(data_dir))
     assert reloaded.has(detail["run_id"]) and media_id not in reloaded.media
+
+
+def test_run_detail_says_which_media_is_a_video(media_root, tmp_path):
+    """The page draws a media block as <img> or <video> from the detail's
+    media_types (the id alone does not say)."""
+    data_dir = ensure_layout(tmp_path / "data")
+    config = dict(load_config(data_dir), media_roots=[str(media_root)])
+    store = RunStore(data_dir, config, ActionLog(data_dir))
+    detail = store.register(validate_payload(report(
+        {"type": "media", "path": str(media_root / "clip.webm"), "alt": "Clip", "poster": str(media_root / "poster.jpg")},
+        {"type": "media", "path": str(media_root / "a.png"), "alt": "Picture"},
+    )))
+    video, picture = detail["blocks"]
+    assert store.detail(detail["run_id"])["media_types"] == {
+        video["path"]: "video/webm", video["poster"]: "image/jpeg", picture["path"]: "image/png",
+    }

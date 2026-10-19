@@ -1,19 +1,18 @@
 /* grokbot-desk page core.
  *
- * Load order (shell.html <head>): count.js, rs.js, components.js; then the
- * inline template blocks call RS._define(id, fn). Everything that touches
- * the DOM starts on DOMContentLoaded.
+ * Load order (shell.html <head>): count.js, md.js, charts.js, blocks.js,
+ * tasks.js, rs.js, components.js. Everything that touches the DOM starts on
+ * DOMContentLoaded.
  *
- * window.RS is the page-wide API (components use RS.t / copy / toast /
- * count). Each template gets its own scoped API object as its `RS`
- * parameter; calls from a template that is no longer active are ignored.
+ * A report is a list of blocks; mountRun renders each through RSBlocks with
+ * a ctx bound to that report (blocks.js). window.RS is the page-wide API
+ * (components use RS.t / copy / toast / count).
  */
 (function () {
   'use strict';
 
   var boot = JSON.parse(document.getElementById('rs-boot').textContent);
   var strings = boot.strings || {};
-  var definitions = {};
   var query = new URLSearchParams(location.search);
   // Window-close liveness uses an SSE subscriber id and POST /bye on pagehide.
   var sid = (function () {
@@ -177,7 +176,7 @@
     reading: {},       // run id -> true while POST /read is in flight
     hydrated: null,    // key of the decided run the template shows (hydrationKey)
     requestGen: 0,     // activation request order; stale responses are ignored
-    templateGen: 0,    // rendered-template lifetime; stale template calls are ignored
+    refs: [],          // reply references {block, item, label} of the shown report
     taskLive: null,    // { runId, parties, changes }: a mixed report's banner as the template last set it
     gone: {},          // run id -> true once this page decided it (before SSE says so)
     done: null,        // null, 'closing' or 'kept': the calm done state after the last decision
@@ -708,9 +707,14 @@
   var localDay = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
   var localClock = new Intl.DateTimeFormat(LOCALE, { timeZone: ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
+  /* the banner's task from the report's ask (tasks.js kinds until the
+     ask-driven footer replaces them) */
+  var ASK_KINDS = { read: 'fyi', review: 'review', approve: 'approve_bot_acts', 'do': 'post_yourself', choose: 'pick' };
   function taskOf(run) {
-    var task = run && run.task;
-    return task && typeof task === 'object' && typeof task.kind === 'string' ? task : { kind: 'review', base: 'review' };
+    var kind = run && Object.prototype.hasOwnProperty.call(ASK_KINDS, run.ask) ? ASK_KINDS[run.ask] : 'review';
+    var task = { kind: kind, base: kind, why: run && run.why, due: run && run.due };
+    if (run && run.urgent) task.kind = 'blocking';
+    return task;
   }
 
   /* "due today 15:00", "due Oct 15 15:00", "overdue since 09:00"; urgent
@@ -1113,7 +1117,7 @@
   }
 
   function decisionRoot() {
-    return el.mount.querySelector('.rs-tpl');
+    return el.mount.querySelector('.rs-report');
   }
 
   function decisionControlKey(control) {
@@ -1460,7 +1464,7 @@
   }
 
   function lockTemplate() {
-    var root = el.mount.querySelector('.rs-tpl');
+    var root = el.mount.querySelector('.rs-report');
     if (!root || root.hasAttribute('data-rs-locked')) return;
     root.setAttribute('data-rs-locked', '');
     applyLock(root);
@@ -1511,158 +1515,79 @@
     else delete document.documentElement.dataset.rsReady;
   }
 
-  function scopedApi(run, templateGen) {
-    function live() { return templateGen === state.templateGen; }
-    var task = taskOf(run);
-    var base = TASKS.baseOf(task);
-    return {
-      data: run.data,
-      /* the task kind and, when the banner shows a template field as the
-         why, which one (the template then leaves it out) */
-      task: {
-        kind: task.kind, base: base, verb: task.verb || 'continue',
-        why_from: task.why_from || null, mark: task.mark || null,
-        parties: task.parties || null, steps_for: task.steps_for || null
-      },
-      /* the label of a decision value for this kind (tasks.js CTA table).
-         opts.item with opts.actor and opts.content for one decide-list item;
-         opts.mark overrides posted / sent / done. */
-      cta: function (value, opts) {
-        opts = opts || {};
-        var key = TASKS.labelKey(base, value, {
-          item: !!opts.item,
-          verb: opts.verb || task.verb,
-          mark: opts.mark || task.mark,
-          actor: opts.actor,
-          content: opts.content
-        });
-        return key ? t(key) : '';
-      },
-      setTaskLive: function (patch) { if (live()) applyTaskLive(patch); },
-      run: {
-        run_id: run.run_id, template: run.template, title: run.title, bot: run.bot,
-        bot_display: run.bot_display, created: run.created, created_display: run.created_display,
-        expires: run.expires, state: run.state,
-        /* the immutable result of a submitted report (read-only view) */
-        result: run.result === undefined ? null : run.result
-      },
-      t: t,
-      time: time,
-      date: date,
-      number: number,
-      count: count,
-      copy: function (text) {
-        return live() ? copyFor(run.run_id, text) : Promise.resolve({ ok: false, stale: true });
-      },
-      copyImage: function (mediaId) {
-        return live() ? copyMediaFor(run.run_id, mediaId, 'image') : Promise.resolve({ ok: false, stale: true });
-      },
-      copyPath: function (mediaId) {
-        return live() ? copyMediaFor(run.run_id, mediaId, 'path') : Promise.resolve({ ok: false, stale: true });
-      },
-      toast: function (text, tone) { if (live()) toast(text, tone); },
-      media: media,
-      reveal: function (mediaId) {
-        return live() ? revealFor(run.run_id, mediaId) : Promise.resolve({ ok: false, stale: true });
-      },
-      openUrl: function (url) {
-        return live() ? openUrlFor(run.run_id, url) : Promise.resolve({ ok: false, stale: true });
-      },
-      fillText: fillText,
-      appendLinks: appendLinks,
-      externalLink: externalLink,
-      setResult: function (value) {
-        if (!live()) return;
-        state.result = value === undefined ? null : value;
-        renderBar();
-      },
-      onChange: function (fn) {
-        if (!live() || typeof fn !== 'function') return function () {};
-        state.listeners.push(fn);
-        return function () { state.listeners = state.listeners.filter(function (x) { return x !== fn; }); };
-      },
-      draft: {
-        get: function () { return draftGet(run.run_id); },
-        set: function (value) { if (live()) draftSet(run.run_id, value); },
-        clear: function () { if (live()) draftSet(run.run_id, null); }
-      },
-      setStatus: function (text, tone, label) {
-        if (!live()) return;
-        state.status = text ? {
-          text: String(text),
-          tone: tone || null,
-          label: label ? String(label) : null
-        } : null;
-        renderBar();
-      },
-      setSubmitLabel: function (text) {
-        if (!live()) return;
-        state.submitLabel = text ? String(text) : null;
-        renderBar();
-      },
-      /* Up to two quiet alternatives before the primary, in the given
-         order: [{label, run}]. An empty list (or null) removes them. */
-      setAlternatives: function (list) {
-        if (!live()) return;
-        state.alternatives = (Array.isArray(list) ? list : []).filter(function (item) {
-          return item && item.label;
-        }).slice(0, 2).map(function (item) {
-          return { label: String(item.label), run: item.run };
-        });
-        renderBar();
-      },
-      /* One quiet alternative (e.g. "Request changes"); null removes it. */
-      setAlternative: function (label, onClick) {
-        if (!live()) return;
-        state.alternatives = label ? [{ label: String(label), run: onClick }] : [];
-        renderBar();
-      },
-      /* Move focus to a footer alternative (e.g. after leaving a sub-mode):
-         the first one, or the one at an index or with a label. */
-      focusAlternative: function (which) {
-        if (!live()) return false;
-        var i = 0;
-        if (typeof which === 'number') i = which;
-        else if (typeof which === 'string') {
-          i = state.alternatives.map(function (a) { return a.label; }).indexOf(which);
-        }
-        var button = el.alts[i];
-        if (i < 0 || !button || !button.isConnected || button.hidden) return false;
-        button.focus();
-        return true;
-      },
-      /* A quiet metadata line in the header overflow panel (not an action). */
-      addMenuMeta: function (text) {
-        if (!live() || !text) return;
-        var line = document.createElement('span');
-        line.textContent = String(text);
-        el.meta.appendChild(line);
-      },
-      /* An extra entry in the header overflow panel (e.g. "Show in folder"). */
-      addMenuItem: function (label, onClick) {
-        if (!live()) return;
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'rs-more__item';
-        b.textContent = String(label);
-        b.addEventListener('click', function () { closeMore(); onClick(); });
-        el.moreExtra.appendChild(b);
-      },
-      icon: function (name) { return window.RS.icon ? window.RS.icon(name) : document.createElement('span'); },
-      submit: function () { return live() ? submit(run.run_id) : Promise.resolve(false); }
-    };
-  }
-
   /* A decided run detail is immutable: the same key means the same view. */
   function hydrationKey(run) {
     return JSON.stringify([run.run_id, run.state, run.result === undefined ? null : run.result]);
   }
 
-  /** Renders a fetched run detail: template, banner/lock, bar, strip, title. */
+  /* The report's blocks see the page through this ctx (blocks.js). Calls
+     for a report that is no longer shown do nothing. */
+  function blockCtx(run) {
+    function live() { return state.active === run; }
+    var types = run.media_types && typeof run.media_types === 'object' ? run.media_types : {};
+    function stale() { return Promise.resolve({ ok: false, stale: true }); }
+    return {
+      t: t,
+      lang: boot.lang === 'en' ? 'en' : 'de',
+      locked: run.state !== 'open',
+      media: media,
+      mediaKind: function (id) {
+        var type = Object.prototype.hasOwnProperty.call(types, id) ? String(types[id]) : '';
+        return type.indexOf('video/') === 0 ? 'video' : 'image';
+      },
+      link: function (url) { return externalLink(url, ''); },
+      openUrl: function (url) { return live() ? openUrlFor(run.run_id, url) : stale(); },
+      copy: function (text) { return live() ? copyFor(run.run_id, text) : stale(); },
+      copyImage: function (id) { return live() ? copyMediaFor(run.run_id, id, 'image') : stale(); },
+      copyPath: function (id) { return live() ? copyMediaFor(run.run_id, id, 'path') : stale(); },
+      reveal: function (id) { return live() ? revealFor(run.run_id, id) : stale(); },
+      addRef: function (ref) { if (live()) addRef(ref); }
+    };
+  }
+
+  // ------------------------------------------------------------ refs --
+  /* Reply references: a removable chip per target, de-duplicated; they go
+     with the decision as `refs`. (The footer composer replaces this.) */
+  function addRef(ref) {
+    if (!state.active || state.active.state !== 'open' || !ref) return;
+    var exists = state.refs.some(function (r) { return r.block === ref.block && r.item === ref.item; });
+    if (!exists) state.refs.push({ block: String(ref.block), item: String(ref.item), label: String(ref.label) });
+    renderRefs();
+    var chip = el.refs.querySelector('[data-rs-ref="' + CSS.escape(ref.block + '/' + ref.item) + '"] button');
+    if (chip) chip.focus();
+  }
+  function removeRef(index) {
+    state.refs.splice(index, 1);
+    renderRefs();
+    if (state.refs.length) el.refs.querySelector('[data-rs-ref] button').focus();
+    else el.submit.focus();
+  }
+  function renderRefs() {
+    el.refs.textContent = '';
+    state.refs.forEach(function (ref, i) {
+      var chip = textNode('span', 'rs-ref', '');
+      chip.setAttribute('data-rs-ref', ref.block + '/' + ref.item);
+      var mark = textNode('span', 'rs-ref__mark', '↩');
+      mark.setAttribute('aria-hidden', 'true');
+      chip.appendChild(mark);
+      chip.appendChild(textNode('span', 'rs-ref__label', ref.label));
+      var remove = textNode('button', 'rs-ref__remove', '×');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', t('blk_ref_remove', { what: ref.label }));
+      remove.addEventListener('click', function () { removeRef(i); });
+      chip.appendChild(remove);
+      el.refs.appendChild(chip);
+    });
+    el.refs.hidden = !state.refs.length;
+  }
+
+  /* read: Got it; review: Looks good. The other asks get their footer
+     with the input blocks. */
+  var ASK_PRIMARY = { read: { decision: 'read', label: 'got_it' }, review: { decision: 'accept', label: 'looks_good' } };
+
+  /** Renders a fetched run detail: blocks, banner/lock, bar, strip, title. */
   function mountRun(run, opts) {
     clearDone();
-    state.templateGen += 1;
-    var templateGen = state.templateGen;
     state.hydrated = run.state === 'open' ? null : hydrationKey(run);
     state.active = run;
     state.activeId = run.run_id;
@@ -1671,6 +1596,7 @@
     state.status = null;
     state.submitLabel = null;
     state.taskLive = null;
+    state.refs = [];
     state.touched = draftGet(run.run_id) !== null;
     var nextUrl = new URL(location.href);
     nextUrl.searchParams.set('run', run.run_id);
@@ -1697,16 +1623,21 @@
     el.mount.textContent = '';
     el.mount.scrollTop = 0;
     var root = document.createElement('div');
-    root.className = 'rs-tpl';
-    root.setAttribute('data-rs-template', run.template);
-    var tpl = document.getElementById('rs-tpl-' + run.template);
-    if (tpl) root.appendChild(tpl.content.cloneNode(true));
-    fillStrings(root);
+    root.className = 'rs-report';
+    var ctx = blockCtx(run);
+    var failed = false;
+    (Array.isArray(run.blocks) ? run.blocks : []).forEach(function (block) {
+      if (!window.RSBlocks || window.RSBlocks.types.indexOf(block && block.type) < 0) return;
+      try { root.appendChild(window.RSBlocks.render(block, ctx)); } catch (e) { console.error(e); failed = true; }
+    });
+    if (failed) toast(t('blk_error'));
     el.mount.appendChild(root);
-    var def = definitions[run.template];
-    if (def) {
-      try { def(scopedApi(run, templateGen), root); } catch (e) { console.error(e); toast(t('template_error')); }
+    var primary = Object.prototype.hasOwnProperty.call(ASK_PRIMARY, run.ask) ? ASK_PRIMARY[run.ask] : null;
+    if (primary && run.state === 'open') {
+      state.result = { decision: primary.decision };
+      state.submitLabel = t(primary.label);
     }
+    renderRefs();
     if (run.state === 'open') renderPendingOperation(run.run_id, root);
     if (run.state === 'open') restoreReloadFocus(run.run_id, root);
     if (run.state !== 'open') { setBanner(run.state); lockTemplate(); }
@@ -1767,7 +1698,6 @@
   function showEmpty() {
     clearDone();
     state.requestGen += 1;
-    state.templateGen += 1;
     state.hydrated = null;
     state.pending = null;
     state.active = null;
@@ -1775,6 +1705,8 @@
     state.result = null;
     state.touched = false;
     state.listeners = [];
+    state.refs = [];
+    renderRefs();
     el.title.textContent = doorbellPage ? t('doorbell_title') : '';
     renderBot(null);
     renderTask(null);
@@ -2169,7 +2101,8 @@
     var id = a.run_id;
     if (state.operations[id]) return Promise.resolve(false);
     if (state.result === null) { toast(t('submit_not_ready')); return Promise.resolve(false); }
-    var data = state.result;
+    /* the decision with the reply references (the note comes with the composer) */
+    var data = { decision: state.result.decision, note: '', refs: state.refs.slice() };
     var successors = successorsOf(id);
     var token = beginOperation(id, 'submit');
     return post('/submit', { run_id: id, data: data }).then(function (r) {
@@ -2357,6 +2290,7 @@
       status: document.getElementById('rs-status'),
       submit: document.getElementById('rs-submit'),
       submitLabel: document.getElementById('rs-submit-label'),
+      refs: document.getElementById('rs-refs'),
       discard: document.getElementById('rs-discard'),
       toasts: document.getElementById('rs-toasts'),
       discardDialog: document.getElementById('rs-discard-dialog')
@@ -2457,7 +2391,6 @@
   }
 
   window.RS = {
-    _define: function (id, fn) { definitions[id] = fn; },
     t: t,
     time: time,
     date: date,
@@ -2474,7 +2407,6 @@
     appendLinks: appendLinks,
     externalLink: externalLink,
     submit: function () { return submit(); },
-    get data() { return state.active ? state.active.data : null; },
     get activeRun() { return state.activeId; },
     get touched() { return state.touched; }
   };

@@ -1,0 +1,96 @@
+{
+ "about": "Reply anchors: section:<n> is the n-th ## or ### heading of a text block. core/payload.py and core/static/md.js must agree on every vector.",
+ "vectors": [
+  {
+   "name": "atx levels",
+   "md": "# Title\n\n## One\n\ntext\n\n### Two\n\n#### Three\n\n## Four ##",
+   "sections": [
+    "One",
+    "Two",
+    "Four"
+   ]
+  },
+  {
+   "name": "setext h2 counts, setext h1 does not",
+   "md": "Title\n=====\n\nFirst part\n----------\n\nbody\n\n---\n\nafter rule",
+   "sections": [
+    "First part"
+   ]
+  },
+  {
+   "name": "fenced code hides headings",
+   "md": "## Before\n\n```text\n## not a heading\n```\n\n~~~~\n### also code\n~~~~\n\n## After",
+   "sections": [
+    "Before",
+    "After"
+   ]
+  },
+  {
+   "name": "quotes and callouts hide headings",
+   "md": "> ## quoted\n\n> [!NOTE]\n> ## inside a callout\n\n## Outside",
+   "sections": [
+    "Outside"
+   ]
+  },
+  {
+   "name": "list items and lazy lines hide headings",
+   "md": "- item\n  ## indented continuation\n- next\n\n## Real",
+   "sections": [
+    "Real"
+   ]
+  },
+  {
+   "name": "table rows hide nothing after the table",
+   "md": "| a | b |\n|---|---|\n| 1 | 2 |\n\n### Below the table",
+   "sections": [
+    "Below the table"
+   ]
+  },
+  {
+   "name": "hashtag is no heading",
+   "md": "#hashtag\n\n##also not\n\n##  Spaced  ",
+   "sections": [
+    "Spaced"
+   ]
+  },
+  {
+   "name": "empty heading and closing hashes",
+   "md": "##\n\n### Closed ###\n\n## Trailing # inside # text",
+   "sections": [
+    "",
+    "Closed",
+    "Trailing # inside # text"
+   ]
+  },
+  {
+   "name": "crlf line ends",
+   "md": "## One\r\n\r\nText\r\n\r\n## Two\r\n",
+   "sections": [
+    "One",
+    "Two"
+   ]
+  },
+  {
+   "name": "setext after paragraph lines",
+   "md": "Line one\nline two\n---\n\n## Next",
+   "sections": [
+    "Line one\nline two",
+    "Next"
+   ]
+  },
+  {
+   "name": "indented up to three spaces",
+   "md": "   ## Three spaces\n\n    ## Four spaces is text",
+   "sections": [
+    "Three spaces"
+   ]
+  },
+  {
+   "name": "unclosed fence swallows the rest",
+   "md": "## Open\n\n```\n## never\n",
+   "sections": [
+    "Open"
+   ]
+  }
+ ]
+}

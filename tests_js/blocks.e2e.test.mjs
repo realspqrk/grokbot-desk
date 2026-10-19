@@ -1,0 +1,283 @@
+// Content blocks on the served page: every block type of a report, markdown,
+// tables and charts, and the read and review footers end to end.
+// Isolated server on RS_E2E_PORT with a temp RS_DATA_DIR and a temp media
+// root; headless Edge (or Chrome) via playwright-core.
+import { test, describe, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import zlib from 'node:zlib';
+import { browserChannel, startServer, loadChromium, ROOT, PYTHON } from '../tools/dev/rs-server.mjs';
+
+const PORT = Number(process.env.RS_E2E_PORT || 18900);
+if (PORT === 18742) throw new Error('refusing the product port');
+const de = JSON.parse(readFileSync(path.join(ROOT, 'core/i18n/de.json'), 'utf8'));
+const AXE = path.join(ROOT, 'vendor/axe.min.js');
+const FIXTURES = path.join(ROOT, 'tests/fixtures/payloads');
+const load = (name) => JSON.parse(readFileSync(path.join(FIXTURES, name + '.json'), 'utf8'));
+const fill = (key, vars) => de[key].replace(/\{([a-z_]+)\}/g, (m, k) => String(vars[k]));
+
+/* a small real PNG (a soft gradient), so images load without errors */
+function png(width, height) {
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(body) >>> 0);
+    return Buffer.concat([len, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4);
+  header[8] = 8; header[9] = 2;
+  const rows = [];
+  for (let y = 0; y < height; y++) {
+    const row = Buffer.alloc(1 + width * 3);
+    for (let x = 0; x < width; x++) {
+      row[1 + x * 3] = 120 + Math.round(60 * x / width);
+      row[2 + x * 3] = 140 + Math.round(50 * y / height);
+      row[3 + x * 3] = 170;
+    }
+    rows.push(row);
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+const chromium = await loadChromium();
+const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
+
+describe('content blocks (served, headless browser)', { skip }, () => {
+  let server;
+  let browser;
+  let media;
+  let seq = 0;
+
+  before(async () => {
+    media = mkdtempSync(path.join(tmpdir(), 'rs-blocks-media-'));
+    for (const name of ['floor-plan.png', 'shop-floor.jpg', 'walkthrough.png']) {
+      writeFileSync(path.join(media, name), png(480, 270));
+    }
+    /* not a playable video: the page must still render the block calmly */
+    writeFileSync(path.join(media, 'walkthrough.webm'), Buffer.from('1a45dfa3', 'hex'));
+    server = await startServer({ port: PORT, mediaRoots: [media] });
+    browser = await chromium.launch({ channel: browserChannel(), headless: true });
+  });
+
+  after(async () => {
+    try { if (browser) await browser.close(); } finally {
+      if (server) await server.stop();
+      if (media) rmSync(media, { recursive: true, force: true });
+    }
+  });
+
+  /* fixture media paths (/srv/media/...) point into the temp media root */
+  function withMedia(value) {
+    return JSON.parse(JSON.stringify(value), (key, v) => (
+      typeof v === 'string' && v.startsWith('/srv/media/') ? path.join(media, path.basename(v)) : v
+    ));
+  }
+
+  function show(payload) {
+    seq += 1;
+    const file = path.join(server.dataDir, `blocks-${process.pid}-${seq}.json`);
+    const created = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    writeFileSync(file, JSON.stringify({ ...payload, created, dedupe_key: undefined }), 'utf8');
+    const out = spawnSync(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(PORT), 'show', '--data', file, '--no-window'], {
+      cwd: ROOT, env: server.env, encoding: 'utf8', windowsHide: true, shell: false, timeout: 30000,
+    });
+    if (out.status !== 0) throw new Error(`show failed (${out.status}): ${out.stderr}`);
+    return JSON.parse(out.stdout.trim().split('\n').pop());
+  }
+
+  async function open(run, { colorScheme = 'light', width = 1200, height = 900 } = {}) {
+    const ctx = await browser.newContext({
+      viewport: { width, height }, deviceScaleFactor: 1, colorScheme, reducedMotion: 'reduce',
+    });
+    const page = await ctx.newPage();
+    const log = { errors: [] };
+    page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.errors.push(m.type() + ': ' + m.text()); });
+    page.on('pageerror', (e) => log.errors.push('pageerror: ' + e.message));
+    await page.goto(server.url('?client=test&run=' + encodeURIComponent(run.run_id)));
+    await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+    return { ctx, page, log };
+  }
+
+  async function seriousViolations(page) {
+    await page.addScriptTag({ path: AXE });
+    return page.evaluate(async () => (await window.axe.run(document)).violations
+      .filter((x) => x.impact === 'serious' || x.impact === 'critical')
+      .map((x) => ({ id: x.id, nodes: x.nodes.map((n) => n.target.join(' ')) })));
+  }
+
+  /* the result file (the page may move on to another open report) */
+  async function submitted(run) {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const result = server.result(run.run_id);
+      if (result) return result.data;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error('no result for ' + run.run_id);
+  }
+
+  test('read fixture renders every content block, axe clean, both themes', async () => {
+    const run = show(withMedia(load('report-long')));
+    for (const colorScheme of ['light', 'dark']) {
+      const { ctx, page, log } = await open(run, { colorScheme });
+      try {
+        const types = await page.$$eval('#rs-mount [data-rs-block-type]', (els) => [...new Set(els.map((e) => e.dataset.rsBlockType))].sort());
+        assert.deepEqual(types, ['chart', 'checks', 'copy', 'facts', 'media', 'stats', 'table', 'text']);
+        assert.equal(await page.locator('[data-rs-block="suppliers"]').count(), 1);
+        /* stats: label, value, a signed delta with its direction glyph */
+        const tile = page.locator('.rs-stat').first();
+        assert.equal(await tile.locator('.rs-stat__label').textContent(), 'Revenue');
+        assert.equal(await tile.locator('.rs-stat__value').textContent(), '48,200 EUR');
+        assert.match(await tile.locator('.rs-stat__delta').textContent(), /^▲\s?\+6\.1 %/);
+        /* checks: glyph and word, never a box */
+        const states = await page.$$eval('.rs-check-item', (els) => els.map((e) => e.getAttribute('data-state')));
+        assert.deepEqual(states.slice(0, 2), ['ok', 'fail']);
+        assert.match(await page.locator('.rs-check-item[data-state="fail"]').first().textContent(), new RegExp('✕.*' + de.blk_state_fail));
+        /* the image and the video, by media id */
+        assert.match(await page.getAttribute('[data-rs-block-type="media"] img', 'src'), /^\/media\/m_[0-9a-f]{32}$/);
+        assert.equal(await page.locator('[data-rs-block-type="media"] video').count(), 1);
+        /* read: one primary, Got it */
+        assert.equal(await page.textContent('#rs-submit-label'), de.got_it);
+        assert.equal(await page.isDisabled('#rs-submit'), false);
+        assert.deepEqual(await seriousViolations(page), [], colorScheme);
+        assert.deepEqual(log.errors, [], colorScheme);
+      } finally { await ctx.close(); }
+    }
+  });
+
+  test('task list in markdown shows status glyphs, no checkbox role or box', async () => {
+    const run = show({
+      schema: 'grokbot-desk/payload@2', bot: 'ops-bot', title: 'Launch list', ask: 'read',
+      blocks: [{ type: 'text', md: '## Launch\n\n- [x] Shipped the build\n- [ ] Waiting for review\n- plain point' }],
+    });
+    const { ctx, page, log } = await open(run);
+    try {
+      assert.equal(await page.locator('#rs-mount [role="checkbox"], #rs-mount input').count(), 0);
+      const glyphs = await page.$$eval('#rs-mount .rs-md__task', (items) => items.map((li) => {
+        const mark = li.querySelector('.rs-md__mark');
+        const style = getComputedStyle(mark);
+        return {
+          state: li.getAttribute('data-state'),
+          glyph: mark.textContent,
+          hidden: mark.getAttribute('aria-hidden'),
+          border: style.borderTopWidth,
+          background: style.backgroundColor,
+          text: li.textContent,
+        };
+      }));
+      assert.deepEqual(glyphs.map((g) => [g.state, g.glyph, g.hidden, g.border, g.background]), [
+        ['done', '✓', 'true', '0px', 'rgba(0, 0, 0, 0)'],
+        ['open', '○', 'true', '0px', 'rgba(0, 0, 0, 0)'],
+      ]);
+      assert.ok(glyphs[0].text.includes(de.blk_task_done), glyphs[0].text);
+      assert.ok(glyphs[1].text.includes(de.blk_task_open), glyphs[1].text);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('table numbers right-aligned with tabular-nums; long table folds at 10', async () => {
+    const states = ['ok', 'warn', 'fail', 'open'];
+    const rows = Array.from({ length: 23 }, (_, i) => ({
+      name: 'Item ' + (i + 1), qty: (i + 1) * 3, amount: (i + 1) * 10.5, change: i % 2 ? -0.5 : 1.5, status: states[i % 4],
+    }));
+    const run = show({
+      schema: 'grokbot-desk/payload@2', bot: 'ops-bot', title: 'Stock', ask: 'read',
+      blocks: [{
+        type: 'table', id: 'stock', columns: [
+          { key: 'name', label: 'Item' }, { key: 'qty', label: 'Units', type: 'number' },
+          { key: 'amount', label: 'Value (EUR)', type: 'money' }, { key: 'change', label: 'Change', type: 'delta' },
+          { key: 'status', label: 'State', type: 'status' },
+        ], rows,
+      }],
+    });
+    const { ctx, page, log } = await open(run);
+    try {
+      const cells = await page.$$eval('[data-rs-block="stock"] tbody tr:first-child td, [data-rs-block="stock"] thead th', (els) => els.map((e) => {
+        const s = getComputedStyle(e);
+        return { text: e.textContent, align: s.textAlign, nums: s.fontVariantNumeric, col: e.getAttribute('data-type') };
+      }));
+      for (const c of cells.filter((x) => ['number', 'money', 'delta'].includes(x.col))) {
+        assert.equal(c.align, 'right', JSON.stringify(c));
+        assert.match(c.nums, /tabular-nums/, JSON.stringify(c));
+      }
+      const body = cells.slice(5);
+      assert.deepEqual(body.map((c) => c.text), ['Item 1', '3', '10,50', '▲ +1,5', '✓ ' + de.blk_state_ok]);
+      const visible = () => page.locator('[data-rs-block="stock"] tbody tr:visible').count();
+      assert.equal(await visible(), 10);
+      const more = page.locator('[data-rs-block="stock"] [data-rs-show-rows]');
+      assert.equal(await more.textContent(), fill('blk_show_rows', { n: 23 }));
+      await more.click();
+      assert.equal(await visible(), 23);
+      assert.equal(await page.$eval('[data-rs-block="stock"] thead th', (th) => getComputedStyle(th).position), 'sticky');
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('chart has accessible name and a data table', async () => {
+    const run = show(withMedia(load('report-long')));
+    const { ctx, page, log } = await open(run);
+    try {
+      const charts = await page.$$eval('[data-rs-block-type="chart"]', (blocks) => blocks.map((b) => {
+        const svg = b.querySelector('svg[role="img"]');
+        const details = b.querySelector('details');
+        return {
+          label: svg && svg.getAttribute('aria-label'),
+          open: details && details.open,
+          summary: details && details.querySelector('summary').textContent,
+          head: details ? [...details.querySelectorAll('thead th')].map((th) => th.textContent) : [],
+          rows: details ? [...details.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((c) => c.textContent)) : [],
+        };
+      }));
+      assert.equal(charts.length, 2);
+      for (const c of charts) {
+        assert.ok(c.label && c.label.length > 20, c.label);
+        assert.equal(c.open, false);
+        assert.equal(c.summary, de.blk_show_data);
+        assert.equal(c.rows.length, 4);
+      }
+      assert.match(charts[0].label, /Revenue by month/);
+      assert.match(charts[0].label, /48\.200/);
+      assert.deepEqual(charts[0].rows[3], ['Sep', '48.200']);
+      assert.deepEqual(charts[1].head.slice(1), ['Revenue', 'Costs']);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('review: Looks good sends {decision: accept, note: "", refs: []}', async () => {
+    const run = show(withMedia(load('review')));
+    const { ctx, page, log } = await open(run);
+    try {
+      assert.equal(await page.textContent('#rs-submit-label'), de.looks_good);
+      await page.click('#rs-submit');
+      assert.deepEqual(await submitted(run), { decision: 'accept', note: '', refs: [] });
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('section reply chip lands in refs as section:0', async () => {
+    const run = show(withMedia(load('review')));
+    const { ctx, page, log } = await open(run);
+    try {
+      const heading = page.locator('[data-rs-block="guide"] [data-rs-section="0"]');
+      assert.equal((await heading.textContent()).trim(), 'First day');
+      await page.locator('[data-rs-block="guide"] [data-rs-reply-section="0"]').click();
+      /* twice: chips de-duplicate */
+      await page.locator('[data-rs-block="guide"] [data-rs-reply-section="0"]').click();
+      const chips = page.locator('[data-rs-ref]');
+      assert.equal(await chips.count(), 1);
+      assert.match(await chips.first().textContent(), /First day/);
+      await page.click('#rs-submit');
+      assert.deepEqual(await submitted(run), {
+        decision: 'accept', note: '', refs: [{ block: 'guide', item: 'section:0', label: 'First day' }],
+      });
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+});

@@ -559,3 +559,14 @@ def test_a_media_block_registers_an_image_or_a_video(tmp_path):
     text.write_text("x", encoding="utf-8")
     with pytest.raises(MediaError):
         replace_media({"type": "media", "path": str(text), "alt": "A"}, schema, [str(tmp_path)], {})
+
+
+SECTION_VECTORS = json.loads(
+    (Path(__file__).resolve().parent / "fixtures" / "section_vectors.json").read_text(encoding="utf-8")
+)["vectors"]
+
+
+@pytest.mark.parametrize("vector", SECTION_VECTORS, ids=[v["name"] for v in SECTION_VECTORS])
+def test_section_vectors_shared_with_the_page(vector):
+    # tests_js/md.test.mjs checks core/static/md.js against the same file
+    assert payload_module.section_headings(vector["md"]) == vector["sections"]

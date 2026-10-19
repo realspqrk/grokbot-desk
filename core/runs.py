@@ -333,6 +333,11 @@ class RunStore:
                 "identity": public_identity(record["identity"], with_accent=True),
                 "state": record["state"],
                 "expires": record["expires"],
+                # the page draws a media id as an image or a video
+                "media_types": {
+                    media_id: item.get("content_type", "")
+                    for media_id, item in record.get("media", {}).items()
+                },
             })
             result = self._submitted_data(run_id, record)
             if result is not None:
