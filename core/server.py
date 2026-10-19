@@ -18,7 +18,7 @@ from . import __version__, doorbell
 from .actionlog import ActionLog
 from .browse import open_url
 from .urls import url_allowed
-from .envelope import EnvelopeError, MAX_PAYLOAD, validate_payload_bytes
+from .envelope import EnvelopeError, MAX_PAYLOAD, SCHEMA as PAYLOAD_SCHEMA, validate_payload_bytes
 from .identity import SHIPPED_REGISTRY, display_names, load_registry
 from .jsonutil import JSONBoundaryError, dumps as json_dumps, loads as json_loads
 from .launch_coordination import (
@@ -74,6 +74,15 @@ AVATAR_RE = re.compile(r"^[0-9a-f]{64}$")
 GENERATED_RUN_ID_ATTEMPTS = 8
 
 
+def _awaits_upgrade(path):
+    """An open payload@1 run: the desk expires it at start, so cleanup keeps it."""
+    try:
+        record = json_loads(path.read_bytes())
+        return record["state"] == "open" and record["payload"]["schema"] != PAYLOAD_SCHEMA
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
 def retain_recent(data_dir, days=30):
     cutoff = time.time() - days * 86400
     for folder_name in ("runs", "results", "log"):
@@ -81,6 +90,8 @@ def retain_recent(data_dir, days=30):
         for path in folder.glob("*"):
             try:
                 if path.is_file() and path.stat().st_mtime < cutoff:
+                    if folder_name == "runs" and _awaits_upgrade(path):
+                        continue
                     path.unlink()
             except OSError:
                 pass

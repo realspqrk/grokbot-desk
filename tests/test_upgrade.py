@@ -1,6 +1,8 @@
 """The upgrade to payload@2: open reports from before it expire once at desk
 start (reason "upgrade") so their bots ask again; decided ones stay readable."""
 import json
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -84,9 +86,10 @@ def test_the_desk_start_runs_the_upgrade(data_dir, monkeypatch):
     assert result_of(data_dir)["status"] == "expired"
 
 
-def test_submitted_v1_result_still_readable_by_result_and_results(data_dir):
-    old_run(data_dir, state="submitted")
-    legacy = {"schema": "report-shell/result@1", "run_id": OLD, "bot": "old-bot", "status": "submitted",
+@pytest.mark.parametrize("status", ["submitted", "cancelled"])
+def test_decided_v1_result_still_readable_by_result_and_results(data_dir, status):
+    old_run(data_dir, state=status)
+    legacy = {"schema": "report-shell/result@1", "run_id": OLD, "bot": "old-bot", "status": status,
               "decided": STAMP, "data": {"decision": "approve"}}
     (data_dir / "results" / f"{OLD}.json").write_text(json.dumps(legacy), encoding="utf-8")
     server = start(data_dir)
@@ -96,7 +99,7 @@ def test_submitted_v1_result_still_readable_by_result_and_results(data_dir):
         server.server_close()
     assert result_of(data_dir) == legacy
     code, out = _run(cli.command_result, data_dir, run_id=OLD)
-    assert code == 0 and out["status"] == "submitted" and out["data"] == {"decision": "approve"}
+    assert code == 0 and out["status"] == status and out["data"] == {"decision": "approve"}
     code, out = _run(cli.command_results, data_dir, since="2026-10-11T00:00:00+02:00", bot=None, wait=0)
     assert [item["run_id"] for item in out["results"]] == [OLD]
 
@@ -148,3 +151,27 @@ def test_interrupted_upgrade_resumes(data_dir, monkeypatch):
         assert third.bell.bodies() == []
     finally:
         third.server_close()
+
+
+def test_wait_answers_an_upgrade_expired_run_like_any_expiry(data_dir):
+    old_run(data_dir)
+    server = start(data_dir)
+    try:
+        server.runs.expire_legacy()
+    finally:
+        server.server_close()
+    code, out = _run(cli.command_wait, data_dir, run_id=OLD, timeout=1, until_expiry=False)
+    assert code == 0 and out["status"] == "expired"
+    assert Path(out["result_path"]) == data_dir / "results" / f"{OLD}.json"
+
+
+def test_retention_does_not_delete_an_old_open_v1_run_before_the_upgrade(data_dir, monkeypatch):
+    old_run(data_dir)
+    old_run(data_dir, run_id="20260101-090000-gone-abcd", state="expired")
+    long_ago = time.time() - 40 * 86400
+    for name in (OLD, "20260101-090000-gone-abcd"):
+        os.utime(data_dir / "runs" / f"{name}.json", (long_ago, long_ago))
+    monkeypatch.setattr(ReportHTTPServer, "serve_forever", lambda self, poll_interval=.5: None)
+    server_module._serve(data_dir, free_port())
+    assert result_of(data_dir)["status"] == "expired"
+    assert not (data_dir / "runs" / "20260101-090000-gone-abcd.json").exists()
