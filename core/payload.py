@@ -46,8 +46,14 @@ NUMBER_COLUMNS = ("number", "money", "percent", "delta")
 MAX_CELL = 500
 DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 VIDEO_SUFFIXES = (".mp4", ".webm")
+# the review-doc renderer's line patterns (anchors() counts its headings)
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-SECTION_RE = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]|$)")
+HEADING_RE = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*\Z")
+SETEXT_RE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*\Z")
+RULE_RE = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*\Z")
+QUOTE_RE = re.compile(r"^ {0,3}> ?(.*)\Z")
+LIST_ITEM_RE = re.compile(r"^( {0,12})([-*+]|\d{1,9}[.)])(?:[ \t]+(.*))?\Z")
+DELIM_ROW_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*\Z")
 
 
 class EnvelopeError(ValueError):
@@ -119,6 +125,7 @@ def _check_block(block, here):
         raise EnvelopeError(_pointer(here, "type"), "required property is missing")
     if not isinstance(block["type"], str) or block["type"] not in BLOCK_TYPES:
         raise EnvelopeError(_pointer(here, "type"), "must be one of " + ", ".join(BLOCK_TYPES))
+    _check_numbers(block, here)
     if block["type"] == "post":
         _check_platforms_unique(block, here)
     try:
@@ -128,6 +135,22 @@ def _check_block(block, here):
     check = BLOCK_RULES.get(block["type"])
     if check is not None:
         check(block, here)
+
+
+def _check_numbers(value, where):
+    """Every number fits a float: JSON integers have no size limit, but a
+    browser reads 1e400 as Infinity and math.isfinite raises on them."""
+    if isinstance(value, bool):
+        return
+    if isinstance(value, (int, float)):
+        if not _finite_number(value):
+            raise EnvelopeError(where, "must be a finite number (too large for a float)")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _check_numbers(item, _pointer(where, key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _check_numbers(item, _pointer(where, index))
 
 
 def _check_platforms_unique(block, here):
@@ -183,11 +206,12 @@ def _check_contract(payload, ask, inputs):
 
 
 def _finite_number(value):
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-    )
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:  # an int beyond the float range
+        return False
 
 
 def _real_date(value):
@@ -349,14 +373,15 @@ def _check_labels(block, here):
 
 
 def _check_post_modes(block, here, ask):
+    """A plain platform id, or an object without mode, takes the ask's mode
+    (auto under approve, manual under do); an explicit other mode is an error."""
     want = PLATFORM_MODES[ask]
     for index, entry in enumerate(block["platforms"]):
-        where = _pointer(_pointer(here, "platforms"), index)
-        mode = entry.get("mode", "auto") if isinstance(entry, dict) else "auto"
-        if isinstance(entry, dict) and "mode" in entry:
-            where = _pointer(where, "mode")
-        if mode != want:
-            raise EnvelopeError(where, f"ask {ask} needs every platform {want}")
+        if isinstance(entry, dict) and entry.get("mode", want) != want:
+            raise EnvelopeError(
+                _pointer(_pointer(_pointer(here, "platforms"), index), "mode"),
+                f"ask {ask} needs every platform {want}",
+            )
 
 
 # --- reply targets -------------------------------------------------------------
@@ -367,23 +392,144 @@ def _closes(line, fence):
     return len(text) >= len(fence) and all(char == fence[0] for char in text)
 
 
-def sections(md):
-    """How many ## and ### headings the text has outside fenced code."""
-    count = 0
-    fence = None
-    for line in md.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        if fence is not None:
-            if _closes(line, fence):
-                fence = None
+def _split_row(line):
+    text = line.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|") and text[-2:-1] != "\\":
+        text = text[:-1]
+    cells, cell, index = [], "", 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and text[index + 1:index + 2] == "|":
+            cell += "|"
+            index += 2
+            continue
+        if char == "|":
+            cells.append(cell.strip())
+            cell = ""
+        else:
+            cell += char
+        index += 1
+    cells.append(cell.strip())
+    return cells
+
+
+def _starts_block(line):
+    return any(pattern.match(line) for pattern in (FENCE_RE, HEADING_RE, RULE_RE, QUOTE_RE, LIST_ITEM_RE))
+
+
+def _list_end(lines, at):
+    """The line after the list that starts at `at` (the renderer's list loop)."""
+    first_ordered, outer, count = None, None, 0
+    while at < len(lines):
+        line = lines[at]
+        item = LIST_ITEM_RE.match(line)
+        if item and not RULE_RE.match(line):
+            ordered = item.group(2)[0].isdigit()
+            indent = len(item.group(1))
+            if count and indent <= outer and ordered != first_ordered:
+                break
+            if not count:
+                first_ordered = ordered
+            outer = indent if outer is None else min(outer, indent)
+            count += 1
+            at += 1
+            continue
+        if line.strip() and count and (
+            re.match(r"\s{2,}", line) or (lines[at - 1].strip() and not _starts_block(line))
+        ):
+            at += 1
+            continue
+        if not line.strip():
+            following = at + 1
+            while following < len(lines) and not lines[following].strip():
+                following += 1
+            if following < len(lines) and (
+                LIST_ITEM_RE.match(lines[following]) or re.match(r"\s{2,}\S", lines[following])
+            ) and not RULE_RE.match(lines[following]):
+                at = following
+                continue
+        break
+    return at
+
+
+def _top_headings(md):
+    """(level, text) of every top-level heading, in document order.
+
+    Mirrors the review-doc block parser (core/static md renderer): ATX
+    headings, Setext headings (a line of = or - right under paragraph text;
+    after a blank line --- is a rule), and lines consumed by fenced code,
+    quotes and callouts, lists and tables, which hold no top-level heading.
+    """
+    lines = md.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    found, para, at = [], [], 0
+    while at < len(lines):
+        line = lines[at]
+        if not line.strip():
+            para = []
+            at += 1
+            continue
+        if para and SETEXT_RE.match(line):
+            found.append((1 if "=" in line else 2, "\n".join(para)))
+            para = []
+            at += 1
             continue
         opened = FENCE_RE.match(line)
         if opened:
-            fence = opened.group(1)
+            para = []
+            at += 1
+            while at < len(lines) and not _closes(lines[at], opened.group(1)):
+                at += 1
+            at += 1
             continue
-        heading = SECTION_RE.match(line)
-        if heading and len(heading.group(1)) in (2, 3):
-            count += 1
-    return count
+        heading = HEADING_RE.match(line)
+        if heading:
+            para = []
+            found.append((len(heading.group(1)), heading.group(2) or ""))
+            at += 1
+            continue
+        if RULE_RE.match(line):
+            para = []
+            at += 1
+            continue
+        if QUOTE_RE.match(line):
+            para = []
+            while at < len(lines) and QUOTE_RE.match(lines[at]):
+                at += 1
+            continue
+        if LIST_ITEM_RE.match(line):
+            para = []
+            at = _list_end(lines, at)
+            continue
+        if (
+            "|" in line
+            and at + 1 < len(lines)
+            and DELIM_ROW_RE.match(lines[at + 1])
+            and "-" in lines[at + 1]
+            and len(_split_row(lines[at + 1])) == len(_split_row(line))
+        ):
+            para = []
+            at += 2
+            while (
+                at < len(lines) and lines[at].strip() and "|" in lines[at]
+                and not _starts_block(lines[at])
+            ):
+                at += 1
+            continue
+        para.append(re.sub(r"^ {0,3}", "", line))
+        at += 1
+    return found
+
+
+def section_headings(md):
+    """The text of each ## or ### heading (ATX or Setext), in document order."""
+    return [text.strip() for level, text in _top_headings(md) if level in (2, 3)]
+
+
+def sections(md):
+    """How many ## and ### headings the text has outside code, quotes, lists and tables."""
+    return len(section_headings(md))
 
 
 def anchors(payload):

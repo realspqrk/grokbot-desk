@@ -152,6 +152,9 @@ CONTRACT = [
     ("do", None, {}),
     ("do", DECIDE, {}),
     ("do", POST_MANUAL, {}),
+    ("do", POST_AUTO, {}),  # plain ids follow the ask: manual under do
+    ("do", dict(POST, platforms=[{"platform": "x"}]), {}),  # no mode: follows the ask
+    ("approve", dict(POST, platforms=[{"platform": "x"}, {"platform": "linkedin", "mode": "auto"}]), {}),
     ("choose", PICK, {}),
 ]
 
@@ -170,8 +173,8 @@ FORBIDDEN = [
     ("approve", dict(DECIDE, items=[{"id": "a", "title": "A", "choices": ["done"]}]), {},
      "/blocks/1/items/0/choices/0", "ask approve"),
     ("do", PICK, {}, "/blocks/1/type", "ask do takes no pick block"),
-    ("do", POST_AUTO, {}, "/blocks/1/platforms/0", "ask do needs every platform manual"),
-    ("do", dict(POST, platforms=[{"platform": "x"}]), {}, "/blocks/1/platforms/0", "ask do needs every platform manual"),
+    ("do", dict(POST, platforms=[{"platform": "x", "mode": "auto"}]), {},
+     "/blocks/1/platforms/0/mode", "ask do needs every platform manual"),
     ("do", dict(POST, platforms=[{"platform": "x", "mode": "manual"}, {"platform": "facebook", "mode": "auto"}]), {},
      "/blocks/1/platforms/1/mode", "ask do needs every platform manual"),
     ("do", dict(DECIDE, labels={"approve": "Pay"}), {}, "/blocks/1/labels", "ask do"),
@@ -290,11 +293,30 @@ def test_decide_item_due_is_a_real_calendar_day():
         ("   ## three spaces\n    ## four spaces is code", 1),
         ("##no space\n## Heading ##", 1),
         ("Text\n\n## A\ntext\n### B\n```js\nconst x = 1;\n```\n### C", 3),
+        # Setext: a line of - under paragraph text is an h2; after a blank line it is a rule
+        ("Title\n---\n\nText", 1),
+        ("Title\n=====\n\nText", 0),
+        ("Text\n\n---\n\nMore", 0),
+        ("- item\n---", 0),
+        ("> quoted\n---", 0),
+        ("```\nTitle\n---\n```", 0),
+        ("a|b\n---", 1),  # not a table (one delimiter cell for two head cells): a heading
+        ("a|b\n-|-\n---", 0),  # a table, then a rule
     ],
 )
 def test_anchors_sections_ignore_fences(md, sections):
     validated = validate_payload(report("review", [{"type": "text", "id": "doc", "md": md}]))
     assert anchors(validated) == {("doc", f"section:{n}") for n in range(sections)}
+
+
+def test_sections_mix_setext_and_atx_in_document_order():
+    md = (
+        "Intro\n\nFirst\n---\n\nbody\n\n## Second\n\nPara line one\nline two\n  ---\n\n"
+        "### Fourth\n\n```\nCode\n---\n```\n\nTop\n===\n\n---\n\nFifth  \n-\n"
+    )
+    assert payload_module.section_headings(md) == ["First", "Second", "Para line one\nline two", "Fourth", "Fifth"]
+    validated = validate_payload(report("review", [{"type": "text", "id": "doc", "md": md}]))
+    assert anchors(validated) == {("doc", f"section:{n}") for n in range(5)}
 
 
 def test_anchors_name_every_addressable_target():
@@ -467,6 +489,42 @@ CHART = {"type": "chart", "kind": "bar", "labels": ["a", "b"], "series": [{"name
 )
 def test_block_rules(payload, pointer, message):
     fails(payload, pointer, message)
+
+
+HUGE = "1" + "0" * 400
+
+
+def _huge_raw(blocks_json, ask="read"):
+    return (
+        '{"schema": "grokbot-desk/payload@2", "bot": "test-bot", "title": "Big", '
+        '"created": "2026-10-18T09:00:00+02:00", "ask": "%s", "blocks": [%s]}' % (ask, blocks_json)
+    ).encode()
+
+
+@pytest.mark.parametrize(
+    ("blocks_json", "pointer"),
+    [
+        ('{"type": "table", "columns": [{"key": "n", "label": "N", "type": "number"}], "rows": [{"n": %s}]}',
+         "/blocks/0/rows/0/n"),
+        ('{"type": "table", "columns": [{"key": "t", "label": "T"}], "rows": [{"t": %s}]}',
+         "/blocks/0/rows/0/t"),
+        ('{"type": "table", "columns": [{"key": "n", "label": "N", "type": "money"}], "rows": [{"n": 1}], "total": {"n": %s}}',
+         "/blocks/0/total/n"),
+        ('{"type": "chart", "kind": "bar", "labels": ["a"], "series": [{"name": "s", "values": [%s]}]}',
+         "/blocks/0/series/0/values/0"),
+        ('{"type": "chart", "kind": "line", "labels": ["a"], "series": [{"name": "s", "values": [1]}], "target": -%s}',
+         "/blocks/0/target"),
+        ('{"type": "stats", "items": [{"label": "a", "value": "1", "spark": [1, %s]}]}',
+         "/blocks/0/items/0/spark/1"),
+        ('{"type": "stats", "items": [{"label": "a", "value": "1", "delta": %s}]}',
+         "/blocks/0/items/0/delta"),
+    ],
+)
+def test_a_number_too_large_for_a_float_is_an_envelope_error(blocks_json, pointer):
+    with pytest.raises(EnvelopeError) as caught:
+        validate_payload_bytes(_huge_raw(blocks_json % HUGE))
+    assert caught.value.pointer == pointer, caught.value
+    assert "finite" in caught.value.message
 
 
 def test_blocks_schema_is_restricted_json_schema_with_media_markers():
