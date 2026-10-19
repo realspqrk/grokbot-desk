@@ -64,6 +64,7 @@ class RunStore:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._runs = {}
+        self._legacy = []  # open payload@1 records, expired by expire_legacy
         self.media = {}
         self.avatars = {}  # sha256 -> (bytes, content type), served at /avatar/<sha256>
         self._load()
@@ -83,6 +84,8 @@ class RunStore:
                     self.action_log.write(
                         path.stem, "warning", {"what": "run_skipped", "reason": "payload@1"}
                     )
+                    if record.get("state") == "open" and isinstance(record["payload"].get("run_id"), str):
+                        self._legacy.append(record)
                     continue
                 if (self.results_dir / f"{record['payload']['run_id']}.json").exists():
                     record["state"] = loads(
@@ -365,7 +368,7 @@ class RunStore:
             self._runs[run_id]["unread"] = False
             self._save(self._runs[run_id])
 
-    def decide(self, run_id, status, data=None, by_bot=False):
+    def decide(self, run_id, status, data=None, by_bot=False, reason=None):
         """Write the result. Every end the bot did not cause itself (its own
         `cancel` is by_bot) rings the doorbell."""
         with self._lock:
@@ -415,20 +418,59 @@ class RunStore:
                     ],
                 }
             result_path = write_result(self.results_dir, run_id, envelope)
-            record["state"] = status
-            self._save(record)
-            event = {"submitted": "submit", "cancelled": "cancel", "expired": "expire"}[status]
-            self.action_log.write(run_id, event)
-            if not by_bot:
-                body = {
-                    "bot": payload["bot"],
-                    "bot_name": record.get("bot_name") or payload["bot"],
-                    "run_id": run_id,
-                    "status": status,
-                    "title": payload["title"],
-                }
-                self.doorbell.ring(run_id, body)
+            self._finish(record, status, by_bot, reason)
             return result_path
+
+    def _finish(self, record, status, by_bot=False, reason=None):
+        """After the result file exists: save the state, log, ring the doorbell."""
+        payload = record["payload"]
+        run_id = payload["run_id"]
+        record["state"] = status
+        self._save(record)
+        event = {"submitted": "submit", "cancelled": "cancel", "expired": "expire"}[status]
+        self.action_log.write(run_id, event, {"reason": reason} if reason else None)
+        if not by_bot:
+            body = {
+                "bot": payload["bot"],
+                "bot_name": record.get("bot_name") or payload["bot"],
+                "run_id": run_id,
+                "status": status,
+                "title": payload["title"],
+            }
+            self.doorbell.ring(run_id, body)
+
+    def expire_legacy(self):
+        """Expire every open payload@1 report once (reason "upgrade") so its
+        bot asks again. Idempotent: a restart after a crash between the
+        result file and the saved record finishes the job without a second
+        result. Returns the run ids it wrote a result for."""
+        expired = []
+        with self._lock:
+            pending, self._legacy = self._legacy, []
+            for record in pending:
+                run_id = record["payload"]["run_id"]
+                try:
+                    result = self.results_dir / f"{run_id}.json"
+                    if result.exists():
+                        # an interrupted earlier try: keep its result as is
+                        status = loads(result.read_text(encoding="utf-8"))["status"]
+                        self._finish(record, status, reason="upgrade")
+                        continue
+                    # decide() writes the same result as any expiry
+                    self._runs[run_id] = record
+                    try:
+                        self.decide(run_id, "expired", reason="upgrade")
+                    finally:
+                        self._runs.pop(run_id, None)
+                    expired.append(run_id)
+                except (AlreadyDecided, ResultExists):
+                    pass
+                except Exception as error:
+                    self._legacy.append(record)
+                    self.action_log.write(
+                        run_id, "error", {"what": "upgrade_failed", "error": type(error).__name__}
+                    )
+        return expired
 
     def expire_due(self):
         expired = []

@@ -1134,6 +1134,8 @@ def _serve(data_dir, port):
     config = load_config(data_dir)
     server = ReportHTTPServer(("127.0.0.1", port), Handler, data_dir, config)
     _write_state(server)
+    # reports from before payload@2 end once, so their bots ask again
+    server.runs.expire_legacy()
     maintenance = threading.Thread(target=_maintenance, args=(server,), daemon=True)
     maintenance.start()
     restore_signals = install_signal_handlers(server)
