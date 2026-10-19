@@ -169,3 +169,23 @@ test('decided line: what happened, by decision', () => {
   /* submitted, but the result is not known yet */
   assert.equal(line(run('do'), null), t('ask_done_unknown', { bot: 'Office Bot' }));
 });
+
+test('a blocked approval names the way out: the handle hint replaces the progress line', () => {
+  const post = withInput('approve', { type: 'post' });
+  for (const key of ['ask_hint_all_left_out', 'ask_hint_none_postable']) {
+    const h = { ...handle({ answer: null, done: 0, total: 2 }), hint: () => ({ key, vars: {} }) };
+    const f = RSAsk.footer(post, h, 'decide');
+    assert.deepEqual([f.status, f.primary.enabled], [t(key), false], key);
+    assert.match(f.status, new RegExp(de.ask_request_changes + '|' + de.ask_reject.toLowerCase(), 'i'));
+    assert.deepEqual(f.alts.map((a) => a.label), [de.ask_reject, de.ask_request_changes], 'the way out stays offered');
+  }
+  /* no hint, or a null one: the generic progress line */
+  const plain = { ...handle({ answer: null, done: 1, total: 2 }), hint: () => null };
+  assert.equal(RSAsk.footer(post, plain, 'decide').status, t('ask_progress', { done: 1, total: 2 }));
+});
+
+test('approve with a post block and no action: open banner and decided line both say the bot posts', () => {
+  const post = withInput('approve', { type: 'post' });
+  assert.equal(RSAsk.banner(post, new Date('2026-10-19T10:00:00+02:00')).lines[0], t('ask_line_approve_post', { bot: 'Office Bot' }));
+  assert.equal(RSAsk.decidedLine({ ...post, state: 'submitted' }, { decision: 'approve' }), t('ask_done_approve_post', { bot: 'Office Bot' }));
+});

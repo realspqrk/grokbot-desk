@@ -228,7 +228,8 @@
   }
 
   function rememberTemplateFocus(target) {
-    if (!state.activeId || !target || !el.mount.contains(target) || !target.id) return;
+    if (!state.activeId || !target || !target.id) return;
+    if (!el.mount.contains(target) && !el.composerSlot.contains(target)) return;
     var saved = { id: target.id };
     if (typeof target.selectionStart === 'number') {
       saved.start = target.selectionStart;
@@ -245,7 +246,7 @@
     try { saved = JSON.parse(sessionStorage.getItem(FOCUS_PREFIX + runId) || 'null'); } catch (e) { return false; }
     if (!saved || typeof saved.id !== 'string') return false;
     var target = document.getElementById(saved.id);
-    if (!target || !root.contains(target) || target.disabled) return false;
+    if (!target || !(root.contains(target) || el.composerSlot.contains(target)) || target.disabled || target.readOnly) return false;
     target.focus({ preventScroll: true });
     if (typeof target.setSelectionRange === 'function' && typeof saved.start === 'number') {
       var length = typeof target.value === 'string' ? target.value.length : 0;
@@ -2282,7 +2283,10 @@
     el.mount.addEventListener('input', notifyChange);
     ['focusin', 'input', 'select', 'keyup', 'mouseup'].forEach(function (name) {
       el.mount.addEventListener(name, function (ev) { rememberTemplateFocus(ev.target); });
+      /* the composer's note keeps its caret across a reload too */
+      el.composerSlot.addEventListener(name, function (ev) { rememberTemplateFocus(ev.target); });
     });
+    window.addEventListener('pagehide', function () { rememberTemplateFocus(document.activeElement); });
     el.mount.addEventListener('change', function (ev) {
       notifyChange(ev);
       var row = ev.target;

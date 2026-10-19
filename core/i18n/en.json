@@ -356,5 +356,7 @@
   "cmp_add_note": "Add a note",
   "cmp_refs_label": "What the note refers to",
   "cmp_ref_remove": "Remove reference “{what}”",
-  "cmp_sent_note": "Your note"
+  "cmp_sent_note": "Your note",
+  "ask_hint_all_left_out": "Every platform is left out: request changes or reject",
+  "ask_hint_none_postable": "No platform can be posted as it is: request changes or reject"
 }

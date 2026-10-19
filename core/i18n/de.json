@@ -356,5 +356,7 @@
   "cmp_add_note": "Notiz hinzufügen",
   "cmp_refs_label": "Bezüge der Notiz",
   "cmp_ref_remove": "Bezug „{what}“ entfernen",
-  "cmp_sent_note": "Deine Notiz"
+  "cmp_sent_note": "Deine Notiz",
+  "ask_hint_all_left_out": "Alle Plattformen ausgelassen: Änderungen anfordern oder ablehnen",
+  "ask_hint_none_postable": "Keine Plattform kann so gepostet werden: Änderungen anfordern oder ablehnen"
 }

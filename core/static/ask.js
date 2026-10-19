@@ -16,7 +16,10 @@
  * Request changes and None of these switch the footer to a mode where the
  * composer note is required and the primary sends revise; Cancel returns.
  * Reject and Skip send at once. An input block reports through its handle:
- * {answer() -> object|null, progress() -> {done, total}, primaryLabel()}.
+ * {answer() -> object|null, progress() -> {done, total}, primaryLabel(),
+ * hint?() -> {key, vars}|null}; a hint replaces the progress status while
+ * the answer is incomplete (e.g. every post platform left out: the status
+ * points to Request changes or Reject, so the footer never deadlocks).
  *
  * UMD: window.RSAsk in the page, module.exports in Node. Strings come from
  * use({t, date, zone}); rs.js sets them before the first render.
@@ -70,8 +73,11 @@
   }
   function botOrDefault(run) { return botName(run) || t('task_the_bot'); }
 
+  /* what the bot does once approved: the action, or posting for a post block */
   function verbOf(run) {
-    return run && (run.action === 'post' || run.action === 'send') ? run.action : 'continue';
+    if (run && (run.action === 'post' || run.action === 'send')) return run.action;
+    var kind = inputOf(run);
+    return kind && kind.type === 'post' ? 'post' : 'continue';
   }
 
   function requestAlt() { return { label: t('ask_request_changes'), decision: null, needsNote: false, mode: 'request' }; }
@@ -142,7 +148,11 @@
       enabled = answer !== null && answer !== undefined;
       if (!enabled) {
         var progress = input && typeof input.progress === 'function' ? input.progress() : null;
-        if (kind.type === 'pick') status = t('ask_pick_hint');
+        /* the block may know why nothing can be approved (every platform
+           left out or unpostable): its hint names the way out */
+        var hint = input && typeof input.hint === 'function' ? input.hint() : null;
+        if (hint && typeof hint.key === 'string') status = t(hint.key, hint.vars || {});
+        else if (kind.type === 'pick') status = t('ask_pick_hint');
         else if (progress && progress.total) status = t('ask_progress', { done: progress.done, total: progress.total });
       }
     }

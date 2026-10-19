@@ -331,6 +331,23 @@ describe('footer: composer, chips, ask contract, request state (served, headless
     } finally { await ctx.close(); }
   });
 
+  test('reload keeps focus and the caret inside a normal note', async () => {
+    const run = show(load('review'));
+    const { ctx, page } = await open(run);
+    try {
+      await page.click('#rs-note');
+      await page.keyboard.type('Fix the second heading.');
+      await page.$eval('#rs-note', (n) => n.setSelectionRange(4, 10));
+      await page.reload();
+      await ready(page);
+      const kept = await page.evaluate(() => {
+        const n = document.activeElement;
+        return { id: n.id, start: n.selectionStart, end: n.selectionEnd, value: n.value };
+      });
+      assert.deepEqual(kept, { id: 'rs-note', start: 4, end: 10, value: 'Fix the second heading.' });
+    } finally { await ctx.close(); }
+  });
+
   test('a read note survives a reload open', async () => {
     const run = show(load('read'));
     const { ctx, page } = await open(run);
