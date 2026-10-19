@@ -15,7 +15,7 @@ import pytest
 
 import core.cli as cli
 import core.server as server_module
-from conftest import ROOT, show_fixture
+from conftest import ROOT, free_port, show_fixture
 from core.envelope import EnvelopeError, validate_payload
 from core.paths import ensure_layout, load_config
 from core.payload import ResultError
@@ -539,7 +539,7 @@ def test_a_payload_1_record_is_skipped_with_a_log_line_and_keeps_its_run_id(tmp_
                     "data": {}},
         "state": "open", "expires": "2026-10-11T13:00:00+02:00",
     }), encoding="utf-8")
-    server = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, load_config(data_dir))
+    server = ReportHTTPServer(("127.0.0.1", free_port()), Handler, data_dir, load_config(data_dir))
     try:
         assert not server.runs.has(old_id) and server.runs.open_count() == 0
         events = [json.loads(line) for path in (data_dir / "log").glob("*.jsonl")

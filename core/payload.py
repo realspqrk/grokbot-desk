@@ -675,8 +675,6 @@ def _pick_answer(block, value, where):
 
 
 def _post_answer(block, ask, value, where):
-    from .postcount import problems
-
     _object(value, where, ("platforms",), ("platforms",))
     at = _pointer(where, "platforms")
     field = "included" if ask == "approve" else "choice"
@@ -690,16 +688,10 @@ def _post_answer(block, ask, value, where):
 
     names = [entry["platform"] if isinstance(entry, dict) else entry for entry in block["platforms"]]
     rows = _answers(value["platforms"], at, names, "platform", check)
-    if field == "included":
-        if not any(answer["included"] for _, answer in rows):
-            raise ResultError(at, "needs at least one platform included (or decision reject)")
-        for index, answer in sorted(rows, key=lambda row: row[0]):
-            found = problems(block, answer["platform"]) if answer["included"] else []
-            if found:
-                raise ResultError(
-                    _pointer(_pointer(at, index), "included"),
-                    f"{answer['platform']} cannot be published ({'; '.join(found)})",
-                )
+    # limits and media needs are the page's gate (count.js); the server
+    # checks the structure of the answer only
+    if field == "included" and not any(answer["included"] for _, answer in rows):
+        raise ResultError(at, "needs at least one platform included (or decision reject)")
     return {"platforms": [{"platform": answer["platform"], field: answer[field]} for _, answer in rows]}
 
 

@@ -219,35 +219,17 @@ def test_auto_post_approves_the_included_platforms():
         "/blocks/post/platforms/0/choice", "unknown field")
 
 
-def test_auto_post_over_limit_cannot_be_included():
+def test_auto_post_answer_is_checked_for_structure_only():
+    """Limits are the page's gate (count.js): a long text is no server error."""
     long = "word " * 700  # 3500 code points: over LinkedIn's 3000
-    payload = report("approve", [dict(POST, text=long.strip(), platforms=["x", "linkedin"])])
-    both = {"post": {"platforms": [{"platform": "x", "included": True}, {"platform": "linkedin", "included": True}]}}
-    fails(payload, {"decision": "approve", "blocks": both}, "/blocks/post/platforms/1/included",
-          "linkedin cannot be published (over its 3000 character limit)")
-    only_x = {"post": {"platforms": [{"platform": "x", "included": True}, {"platform": "linkedin", "included": False}]}}
-    assert result_summary(payload, validate_result(payload, {"decision": "approve", "blocks": only_x})) == "approve · x"
-
-
-def test_auto_post_instagram_needs_media_and_at_most_five_hashtags():
-    tags = ["one", "two", "three", "four", "five", "six"]
-    payload = report("approve", [dict(POST, hashtags=tags, platforms=["instagram", "facebook"])])
-    answer = {"post": {"platforms": [{"platform": "instagram", "included": True}, {"platform": "facebook", "included": True}]}}
-    error = fails(payload, {"decision": "approve", "blocks": answer}, "/blocks/post/platforms/0/included", "instagram cannot be published")
-    assert "more than 5 hashtags" in error.message and "an image or a video" in error.message
-
-
-def test_x_counts_weighted_but_never_blocks_a_post_the_page_allows():
-    from core.postcount import x_weight_floor
-    assert x_weight_floor("hello") == 5
-    assert x_weight_floor("日本語") == 6
-    # a URL weighs 23 on X however long it is; the floor never counts more
-    assert x_weight_floor("https://example.com/" + "a" * 500) <= 23
-    # one family emoji is one entity of weight 2
-    assert x_weight_floor("\U0001F468‍\U0001F469‍\U0001F467‍\U0001F466") <= 2
-    payload = report("approve", [dict(POST, text="x" * 25001, platforms=["x"])])
-    fails(payload, {"decision": "approve", "blocks": {"post": {"platforms": [{"platform": "x", "included": True}]}}},
-          "/blocks/post/platforms/0/included", "x cannot be published")
+    payload = report("approve", [dict(POST, text=long.strip(), platforms=["x", "linkedin", "instagram"])])
+    every = {"post": {"platforms": [{"platform": p, "included": True} for p in ("x", "linkedin", "instagram")]}}
+    data = validate_result(payload, {"decision": "approve", "blocks": every})
+    assert result_summary(payload, data) == "approve · x, linkedin, instagram"
+    fails(payload, {"decision": "approve", "blocks": {"post": {"platforms": [
+        {"platform": "x", "included": True}, {"platform": "linkedin", "included": True},
+        {"platform": "facebook", "included": True}]}}},
+        "/blocks/post/platforms/2/platform", "is not a platform of this block")
 
 
 def test_manual_post_ignores_limits():

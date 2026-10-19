@@ -63,7 +63,7 @@ def media_server(tmp_path):
     picture.write_bytes(IMAGE_BYTES)
     data_dir = ensure_layout(tmp_path / "data")
     config = dict(load_config(data_dir), media_roots=[str(media_root)])
-    server = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, config)
+    server = ReportHTTPServer(("127.0.0.1", free_port()), Handler, data_dir, config)
     server.port = server.server_port
     shown = dict(valid_payload(), blocks=[{"type": "media", "path": str(picture), "alt": "Loaves"}])
     detail = server.runs.register(validate_payload(shown))
