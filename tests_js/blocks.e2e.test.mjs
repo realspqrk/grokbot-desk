@@ -350,19 +350,51 @@ describe('content blocks (served, headless browser)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('bar value labels never cross the target line', async () => {
-    const run = show(withMedia(load('report-long')));
-    for (const width of [1200, 390]) {
-      const { ctx, page } = await open(run, { width });
-      try {
-        const hits = await page.$eval('[data-rs-block-type="chart"] svg', (svg) => {
-          const line = svg.querySelector('.rs-chart__target-line').getBBox();
-          return [...svg.querySelectorAll('.rs-chart__value')].map((t) => t.getBBox())
-            .filter((b) => line.y >= b.y && line.y <= b.y + b.height && b.x < line.x + line.width && b.x + b.width > line.x)
-            .length;
-        });
-        assert.equal(hits, 0, `width ${width}`);
-      } finally { await ctx.close(); }
+  /* every text of every chart on the page: pairs whose boxes overlap,
+     after the chart has been redrawn at its column width */
+  async function overlappingTexts(page) {
+    await page.waitForFunction(() => [...document.querySelectorAll('.rs-chartbox')].every((box) => {
+      const svg = box.querySelector('svg');
+      return svg && Math.abs(Number(svg.getAttribute('width')) - Math.max(280, Math.round(box.clientWidth))) <= 1;
+    }), null, { timeout: 5000 });
+    return page.$$eval('.rs-chartbox svg', (svgs) => svgs.flatMap((svg, n) => {
+      const boxes = [...svg.querySelectorAll('text')].map((t) => ({ text: t.textContent, b: t.getBBox() }));
+      const hits = [];
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const p = boxes[i].b;
+          const q = boxes[j].b;
+          if (p.x + 0.5 < q.x + q.width && q.x + 0.5 < p.x + p.width && p.y + 0.5 < q.y + q.height && q.y + 0.5 < p.y + p.height) {
+            hits.push(`chart ${n}: "${boxes[i].text}" x "${boxes[j].text}"`);
+          }
+        }
+      }
+      return hits;
+    }));
+  }
+
+  test('chart texts never overlap: value, target, category and axis labels', async () => {
+    const chart = (id, extra) => ({ type: 'chart', id, kind: 'bar', ...extra });
+    const run = show({
+      schema: 'grokbot-desk/payload@2', bot: 'ops-bot', title: 'Crowded charts', ask: 'read',
+      blocks: [
+        chart('long-values', { labels: ['A', 'B'], series: [{ name: 'S', values: [123456789.012345, 123456789.022345] }], target: 123456789.022345 }),
+        chart('negative', { labels: ['A', 'B'], series: [{ name: 'S', values: [-90, -100] }], target: -100 }),
+        chart('mixed', { labels: ['Alpha', 'Beta', 'Gamma'], series: [{ name: 'S', values: [-90, 40, 75] }], target: 50 }),
+        chart('sideways', { orientation: 'horizontal', labels: ['Alpha', 'Beta'], series: [{ name: 'S', values: [-90, 40] }], target: -50 }),
+        chart('grouped', { labels: ['Q1', 'Q2', 'Q3'], series: [{ name: 'This year', values: [12, -4, 30] }, { name: 'Last year', values: [10, 6, 28] }], target: 25 }),
+      ],
+    });
+    const long = show(withMedia(load('report-long')));
+    /* column widths 280 and 640 (the mount pads 32px each side), the window widths 1200 and 390 */
+    for (const [r, width] of [[run, 344], [run, 704], [run, 1200], [run, 390], [long, 1200], [long, 390]]) {
+      for (const colorScheme of r === long ? ['dark'] : ['light']) {
+        const { ctx, page, log } = await open(r, { width, colorScheme });
+        try {
+          assert.deepEqual(await overlappingTexts(page), [], `window ${width}`);
+          assert.deepEqual(log.errors, []);
+        } finally { await ctx.close(); }
+      }
     }
   });
 });

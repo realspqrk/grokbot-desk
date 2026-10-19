@@ -33,7 +33,7 @@
     return Math.max(MIN_W, w);
   }
   /* a rough text width at 12px system UI: layout only, never clipping */
-  function textWidth(s) { return String(s).length * 6.6; }
+  function textWidth(s) { return String(s).length * 7; }
 
   function el(tag, attrs, text) {
     var n = document.createElementNS(NS, tag);
@@ -47,7 +47,7 @@
   /* decimals a value is written with (0.001 -> 3, 1e-7 -> 7, 48200 -> 0) */
   function decimals(v) {
     if (typeof v !== 'number' || !isFinite(v) || v === 0) return 0;
-    var s = String(Number(Math.abs(v).toPrecision(12)));
+    var s = String(Number(Math.abs(v).toPrecision(15)));
     var e = /e([+-])(\d+)$/.exec(s);
     var mantissa = e ? s.slice(0, e.index) : s;
     var dot = mantissa.indexOf('.');
@@ -57,7 +57,8 @@
   }
   function numberFormat(ctx, digits) {
     var f = new Intl.NumberFormat(locale(ctx), { maximumFractionDigits: digits, minimumFractionDigits: digits });
-    return function (v) { return f.format(v); };
+    /* a typographic minus, as in the tables */
+    return function (v) { return f.format(v).replace(/-/g, '−'); };
   }
   /* values (labels, summaries, data tables): as many decimals as the data uses */
   function formatter(ctx, values) {
@@ -198,17 +199,20 @@
     return 24;
   }
 
-  /* the target line; its label sits in the right gutter (label: true) */
-  function target(svg, x0, x1, y, text, horizontal, y0, y1) {
-    var g = el('g', { class: 'rs-chart__target', 'aria-hidden': 'true' });
-    if (horizontal) {
-      g.appendChild(el('line', { x1: y, x2: y, y1: y0, y2: y1, class: 'rs-chart__target-line' }));
-      g.appendChild(el('text', { x: y + 4, y: y0 + 10, class: 'rs-chart__text rs-chart__text--muted' }, text));
-    } else {
-      g.appendChild(el('line', { x1: x0, x2: x1, y1: y, y2: y, class: 'rs-chart__target-line' }));
-      if (text) g.appendChild(el('text', { x: x1 + 8, y: y + 4, class: 'rs-chart__text rs-chart__text--muted' }, text));
-    }
-    svg.appendChild(g);
+  /* Layout never moves a label after the fact: every text gets its own
+     reserved space. The target label sits outside the plot (a right
+     gutter, or a row above the plot when the gutter would take more than
+     30% of the width); value labels sit in a band above positive and below
+     negative bar ends; category labels sit beyond that band. The target
+     line is drawn over the bars and under the value labels, whose halo
+     (blocks.css) keeps digits readable where the line passes. */
+  var LINE_H = 16;
+  function targetLine(svg, x0, x1, y0, y1) {
+    svg.appendChild(el('line', { x1: x0, x2: x1, y1: y0, y2: y1, class: 'rs-chart__target-line', 'aria-hidden': 'true' }));
+  }
+  function mutedText(svg, attrs, text) {
+    attrs['class'] = 'rs-chart__text rs-chart__text--muted';
+    svg.appendChild(el('text', attrs, text));
   }
 
   // ---------------------------------------------------------------- bar --
@@ -222,79 +226,98 @@
     var lo = Math.min(0, Math.min.apply(null, all));
     var hi = Math.max(0, Math.max.apply(null, all));
     if (hi === lo) hi = lo + 1;
-    var bars = labels.length * series.length;
-    var direct = bars <= 12;
     var hasTarget = typeof spec.target === 'number' && isFinite(spec.target);
     var targetText = hasTarget ? ctx.t('blk_chart_target', { value: fmt(spec.target) }) : '';
+    var targetW = hasTarget ? textWidth(targetText) : 0;
+    var values = [];
+    series.forEach(function (s) { s.values.forEach(function (v) { if (typeof v === 'number' && isFinite(v)) values.push(v); }); });
+    var hasNeg = values.some(function (v) { return v < 0; });
+    var hasPos = values.some(function (v) { return v >= 0; });
+    var valueW = Math.max.apply(null, values.map(function (v) { return textWidth(fmt(v)); }));
+    var legendH = series.length > 1 ? 24 : 0;
+    var texts = [];
+    var direct;
 
     if (spec.orientation === 'horizontal') {
       var labelW = Math.min(200, Math.max.apply(null, labels.map(textWidth)) + 12);
-      var valueW = direct ? Math.max.apply(null, all.map(function (v) { return textWidth(withUnit(fmt(v), '')); })) + 10 : 0;
       var rowH = series.length > 1 ? 10 * series.length + 14 : 26;
-      var top = (series.length > 1 ? 24 : 0) + (hasTarget ? 16 : 0);
+      var barH = series.length > 1 ? 10 : 16;
+      /* value labels: a column right of the positive bars and one left of
+         the negative ones, while the bars keep at least 40% of the room */
+      direct = labels.length * series.length <= 12
+        && W - labelW - (valueW + 8) * ((hasPos ? 1 : 0) + (hasNeg ? 1 : 0)) >= 0.4 * (W - labelW);
+      var x0 = labelW + (direct && hasNeg ? valueW + 8 : 0);
+      var x1 = W - (direct && hasPos ? valueW + 8 : 0);
+      var top = legendH + (hasTarget ? LINE_H + 4 : 0);
       var hgt = top + labels.length * rowH + 4;
       var svgH = svgRoot(W, hgt, label, 'rs-chart--bar rs-chart--horizontal');
       legend(svgH, series, 0);
-      var x0 = labelW;
-      var x1 = W - valueW;
       var sx = function (v) { return x0 + (v - lo) / (hi - lo) * (x1 - x0); };
       var zero = sx(0);
-      var barH = series.length > 1 ? 10 : 16;
       labels.forEach(function (name, i) {
         var y = top + i * rowH;
-        svgH.appendChild(el('text', { x: 0, y: y + rowH / 2 + 4, class: 'rs-chart__text' }, name));
+        svgH.appendChild(el('text', { x: 0, y: y + rowH / 2 + 4, 'class': 'rs-chart__text' }, name));
         series.forEach(function (s, k) {
           var v = s.values[i];
           if (typeof v !== 'number') return;
           var by = y + (rowH - barH * series.length - 2 * (series.length - 1)) / 2 + k * (barH + 2);
           var d = barPath(zero, by, sx(v) - zero, barH, true);
-          if (d) svgH.appendChild(el('path', { d: d, class: s.cls + ' rs-chart__fill' }));
+          if (d) svgH.appendChild(el('path', { d: d, 'class': s.cls + ' rs-chart__fill' }));
           if (direct) {
-            var end = sx(v);
-            var lx = v >= 0 ? end + 6 : end - 6;
-            /* a value label never sits on the target line: it moves past it */
-            if (hasTarget) {
-              var tx = sx(spec.target);
-              var w = textWidth(fmt(v));
-              var from = v >= 0 ? lx : lx - w;
-              if (tx >= from - 3 && tx <= from + w + 3) lx = v >= 0 ? tx + 6 : tx - 6;
-            }
-            svgH.appendChild(el('text', {
-              x: lx, y: by + barH / 2 + 4, 'text-anchor': v >= 0 ? 'start' : 'end',
-              class: 'rs-chart__text rs-chart__value'
+            texts.push(el('text', {
+              x: v >= 0 ? sx(v) + 6 : sx(v) - 6, y: by + barH / 2 + 4, 'text-anchor': v >= 0 ? 'start' : 'end',
+              'class': 'rs-chart__text rs-chart__value'
             }, fmt(v)));
           }
         });
       });
-      svgH.appendChild(el('line', { x1: zero, x2: zero, y1: top - 2, y2: hgt - 2, class: 'rs-chart__base' }));
-      if (hasTarget) target(svgH, 0, 0, sx(spec.target), targetText, true, top - 14, hgt - 2);
+      svgH.appendChild(el('line', { x1: zero, x2: zero, y1: top - 2, y2: hgt - 2, 'class': 'rs-chart__base' }));
+      if (hasTarget) {
+        var tx = sx(spec.target);
+        targetLine(svgH, tx, tx, top - 2, hgt - 2);
+        /* in the row above the bars, beside the line, inside the width */
+        var toRight = tx + 4 + targetW <= W;
+        mutedText(svgH, { x: toRight ? tx + 4 : tx - 4, y: top - 6, 'text-anchor': toRight ? 'start' : 'end' }, targetText);
+      }
+      texts.forEach(function (t) { svgH.appendChild(t); });
       return svgH;
     }
 
-    var legendH = series.length > 1 ? 24 : 0;
-    var topV = legendH + (direct ? 18 : 8) + (hasTarget ? 6 : 0);
-    var plotH = 160;
-    var bottomH = 24;
-    var heightV = topV + plotH + bottomH;
+    /* the target label: right gutter, or a row above the plot */
+    var gutter = hasTarget && targetW + 12 <= 0.3 * W ? targetW + 12 : 0;
+    var targetRow = hasTarget && !gutter ? LINE_H + 4 : 0;
+    var plotR = W - gutter;
+    var gap = series.length > 1 ? 2 : 0;
+    function groupFor(band) { return Math.min(band * 0.7, 56 * series.length); }
+    /* value labels only when each fits over its own bar */
+    direct = labels.length * series.length <= 12;
+    if (direct) {
+      var b0 = plotR / labels.length;
+      var slot = series.length > 1 ? (groupFor(b0) - gap * (series.length - 1)) / series.length + gap : b0;
+      direct = valueW + 6 <= slot;
+    }
     var tickVals = direct ? [] : ticks(lo, hi, 4);
     if (tickVals.length) { lo = Math.min(lo, tickVals[0]); hi = Math.max(hi, tickVals[tickVals.length - 1]); }
     var tickFmt = tickFormat(ctx, tickVals);
     var left = tickVals.length ? Math.max.apply(null, tickVals.map(function (v) { return textWidth(tickFmt(v)); })) + 10 : 0;
-    var right = hasTarget ? textWidth(targetText) + 12 : 0;
-    var plotR = W - right;
-    var svg = svgRoot(W, heightV, label, 'rs-chart--bar');
+    var aboveBand = direct && hasPos ? LINE_H + 2 : 8;
+    var belowBand = direct && hasNeg ? LINE_H + 2 : 0;
+    var topV = legendH + targetRow + aboveBand;
+    var plotH = 160;
+    var catY = topV + plotH + belowBand + 17;
+    var svg = svgRoot(W, catY + 7, label, 'rs-chart--bar');
     legend(svg, series, 0);
     var sy = function (v) { return topV + (hi - v) / (hi - lo) * plotH; };
     tickVals.forEach(function (v) {
-      svg.appendChild(el('line', { x1: left, x2: plotR, y1: sy(v), y2: sy(v), class: 'rs-chart__grid' }));
-      svg.appendChild(el('text', { x: left - 8, y: sy(v) + 4, 'text-anchor': 'end', class: 'rs-chart__text rs-chart__text--muted' }, tickFmt(v)));
+      svg.appendChild(el('line', { x1: left, x2: plotR, y1: sy(v), y2: sy(v), 'class': 'rs-chart__grid' }));
+      mutedText(svg, { x: left - 8, y: sy(v) + 4, 'text-anchor': 'end' }, tickFmt(v));
     });
     var band = (plotR - left) / labels.length;
-    var group = Math.min(band * 0.7, 56 * series.length);
-    var gap = series.length > 1 ? 2 : 0;
+    var group = groupFor(band);
     var bw = (group - gap * (series.length - 1)) / series.length;
     var base = sy(0);
-    var every = Math.max(1, Math.ceil(labels.length / Math.max(1, Math.floor((plotR - left) / 56))));
+    /* category labels: every k-th, so that neighbours never touch */
+    var every = Math.max(1, Math.ceil((Math.max.apply(null, labels.map(textWidth)) + 8) / band));
     labels.forEach(function (name, i) {
       var gx = left + i * band + (band - group) / 2;
       series.forEach(function (s, k) {
@@ -302,26 +325,23 @@
         if (typeof v !== 'number') return;
         var x = gx + k * (bw + gap);
         var d = barPath(x, sy(v), bw, base - sy(v), false);
-        if (d) svg.appendChild(el('path', { d: d, class: s.cls + ' rs-chart__fill' }));
+        if (d) svg.appendChild(el('path', { d: d, 'class': s.cls + ' rs-chart__fill' }));
         if (direct) {
-          var ly = v >= 0 ? sy(v) - 6 : sy(v) + 14;
-          /* a value label never sits on the target line: it moves past it,
-             away from its bar (the text box is about 14px high) */
-          if (hasTarget) {
-            var ty = sy(spec.target);
-            if (ty >= ly - 14 && ty <= ly + 5) ly = v >= 0 ? ty - 6 : ty + 16;
-          }
-          svg.appendChild(el('text', {
-            x: x + bw / 2, y: ly, 'text-anchor': 'middle', class: 'rs-chart__text rs-chart__value'
+          texts.push(el('text', {
+            x: x + bw / 2, y: v >= 0 ? sy(v) - 5 : sy(v) + 13, 'text-anchor': 'middle', 'class': 'rs-chart__text rs-chart__value'
           }, fmt(v)));
         }
       });
-      if (i % every === 0) {
-        svg.appendChild(el('text', { x: left + i * band + band / 2, y: topV + plotH + 17, 'text-anchor': 'middle', class: 'rs-chart__text rs-chart__text--muted' }, name));
-      }
+      if (i % every === 0) mutedText(svg, { x: left + i * band + band / 2, y: catY, 'text-anchor': 'middle' }, name);
     });
-    svg.appendChild(el('line', { x1: left, x2: plotR, y1: base, y2: base, class: 'rs-chart__base' }));
-    if (hasTarget) target(svg, left, plotR, sy(spec.target), targetText, false);
+    svg.appendChild(el('line', { x1: left, x2: plotR, y1: base, y2: base, 'class': 'rs-chart__base' }));
+    if (hasTarget) {
+      var ty = sy(spec.target);
+      targetLine(svg, left, plotR, ty, ty);
+      if (gutter) mutedText(svg, { x: plotR + 8, y: ty + 4 }, targetText);
+      else mutedText(svg, { x: plotR, y: legendH + LINE_H - 4, 'text-anchor': 'end' }, targetText);
+    }
+    texts.forEach(function (t) { svg.appendChild(t); });
     return svg;
   }
 
@@ -379,7 +399,7 @@
     });
     var ends = [];
     if (hasTarget) {
-      target(svg, left, x1, sy(spec.target), '', false);
+      targetLine(svg, left, x1, sy(spec.target), sy(spec.target));
       ends.push({ y: sy(spec.target), text: targetText, muted: true });
     }
     series.forEach(function (s, k) {
