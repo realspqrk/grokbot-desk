@@ -1,0 +1,26 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "deploy-bot",
+  "title": "Deploy version 4.2.0 to production",
+  "created": "2026-10-18T14:00:00+02:00",
+  "why": "All tests passed on staging. The release fixes the login timeout.",
+  "ask": "approve",
+  "action": "deploy",
+  "label": "Deploy 4.2.0",
+  "due": "2026-10-19T18:00:00+02:00",
+  "urgent": true,
+  "expires_minutes": 120,
+  "blocks": [
+    {"type": "facts", "items": [
+      {"label": "Version", "value": "4.2.0"},
+      {"label": "Changes", "value": "12 commits, 3 fixes"},
+      {"label": "Window", "value": "today 17:00 to 18:00"}
+    ]},
+    {"type": "checks", "items": [
+      {"label": "Unit tests", "state": "ok"},
+      {"label": "Staging smoke test", "state": "ok"},
+      {"label": "Change ticket", "state": "open", "detail": "closes after the deploy"}
+    ]},
+    {"type": "copy", "title": "Rollback", "items": [{"label": "Rollback command", "text": "deploy rollback --to 4.1.3"}]}
+  ]
+}

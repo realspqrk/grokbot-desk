@@ -1,0 +1,76 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "ops-bot",
+  "identity": {
+    "name": "Ops Bot",
+    "avatar_shape": "blob",
+    "avatar_color": "teal"
+  },
+  "title": "Weekly operations: all systems normal",
+  "created": "2026-10-18T08:00:00+02:00",
+  "why": "Nothing needs a decision this week. Backups and certificates are fine.",
+  "ask": "read",
+  "dedupe_key": "ops-weekly-2026-w43",
+  "dedupe_hours": 48,
+  "blocks": [
+    {
+      "type": "stats",
+      "items": [
+        {
+          "label": "Uptime",
+          "value": "99.98 %",
+          "delta": "+0.02",
+          "good": "up",
+          "spark": [
+            99.91,
+            99.95,
+            99.97,
+            99.98
+          ]
+        },
+        {
+          "label": "Open tickets",
+          "value": "7",
+          "delta": -3,
+          "good": "down",
+          "note": "two older than a week"
+        }
+      ]
+    },
+    {
+      "type": "checks",
+      "title": "Nightly checks",
+      "items": [
+        {
+          "label": "Backups",
+          "state": "ok",
+          "detail": "7 of 7 nights"
+        },
+        {
+          "label": "TLS certificates",
+          "state": "warn",
+          "detail": "one expires in 21 days"
+        },
+        {
+          "label": "Disk space",
+          "state": "ok"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Notes",
+      "collapsed": true,
+      "md": "The staging database moved to the new host on Tuesday.\n\n- No downtime\n- Old host is switched off next week"
+    },
+    {
+      "type": "decide",
+      "items": [
+        {
+          "id": "one",
+          "title": "One"
+        }
+      ]
+    }
+  ]
+}

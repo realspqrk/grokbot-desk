@@ -1,0 +1,1309 @@
+{
+  "text": {
+    "type": "object",
+    "required": [
+      "type",
+      "md"
+    ],
+    "additionalProperties": false,
+    "description": "Markdown prose: headings, lists, tables, callouts, code, links, images by key.",
+    "properties": {
+      "type": {
+        "const": "text"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "md": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60000,
+        "description": "Markdown. Raw HTML is shown as text. ## and ### headings can be replied to."
+      },
+      "collapsed": {
+        "type": "boolean",
+        "default": false,
+        "description": "Start folded behind the title."
+      },
+      "images": {
+        "type": "array",
+        "maxItems": 8,
+        "x-rs-unique-key": "key",
+        "items": {
+          "type": "object",
+          "required": [
+            "key",
+            "path",
+            "alt"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+              "description": "Name used in the Markdown image target."
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000,
+              "x-rs-media": true,
+              "description": "Absolute image path under a media root (png, jpg, jpeg, webp, gif)."
+            },
+            "alt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Alt text, used when the Markdown gives none."
+            }
+          }
+        }
+      }
+    }
+  },
+  "stats": {
+    "type": "object",
+    "required": [
+      "type",
+      "items"
+    ],
+    "additionalProperties": false,
+    "description": "One to four key numbers.",
+    "properties": {
+      "type": {
+        "const": "stats"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "items": {
+          "type": "object",
+          "required": [
+            "label",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "The number as shown, with its unit."
+            },
+            "delta": {
+              "description": "Change against the last period: a number or a short signed text such as +6.1 %.",
+              "oneOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 24
+                }
+              ]
+            },
+            "good": {
+              "enum": [
+                "up",
+                "down"
+              ],
+              "description": "Which direction of the delta is good."
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "spark": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 60,
+              "description": "Recent values for a small line, oldest first.",
+              "items": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "table": {
+    "type": "object",
+    "required": [
+      "type",
+      "columns",
+      "rows"
+    ],
+    "additionalProperties": false,
+    "description": "A data table.",
+    "properties": {
+      "type": {
+        "const": "table"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "columns": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 12,
+        "x-rs-unique-key": "key",
+        "items": {
+          "type": "object",
+          "required": [
+            "key",
+            "label"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,32}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "Header text; put the unit here."
+            },
+            "type": {
+              "enum": [
+                "text",
+                "number",
+                "money",
+                "percent",
+                "delta",
+                "status",
+                "date"
+              ],
+              "default": "text"
+            },
+            "align": {
+              "enum": [
+                "left",
+                "right",
+                "center"
+              ]
+            }
+          }
+        }
+      },
+      "rows": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 200,
+        "items": {
+          "type": "object",
+          "description": "Cells by column key. A missing cell or null is empty."
+        }
+      },
+      "total": {
+        "type": "object",
+        "description": "Optional last row in bold, same cells as a row."
+      }
+    }
+  },
+  "chart": {
+    "type": "object",
+    "required": [
+      "type",
+      "kind",
+      "labels",
+      "series"
+    ],
+    "additionalProperties": false,
+    "description": "A bar or line chart.",
+    "properties": {
+      "type": {
+        "const": "chart"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "kind": {
+        "enum": [
+          "bar",
+          "line"
+        ]
+      },
+      "orientation": {
+        "enum": [
+          "horizontal",
+          "vertical"
+        ],
+        "description": "Bar charts only."
+      },
+      "labels": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 60,
+        "description": "One label per point.",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        }
+      },
+      "series": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "values"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 60,
+              "description": "One value per label.",
+              "items": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      },
+      "unit": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 12
+      },
+      "target": {
+        "type": "number",
+        "description": "Optional target line."
+      }
+    }
+  },
+  "facts": {
+    "type": "object",
+    "required": [
+      "type",
+      "items"
+    ],
+    "additionalProperties": false,
+    "description": "Key and value pairs.",
+    "properties": {
+      "type": {
+        "const": "facts"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "required": [
+            "label",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        }
+      }
+    }
+  },
+  "checks": {
+    "type": "object",
+    "required": [
+      "type",
+      "items"
+    ],
+    "additionalProperties": false,
+    "description": "A status list.",
+    "properties": {
+      "type": {
+        "const": "checks"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "object",
+          "required": [
+            "label",
+            "state"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "state": {
+              "enum": [
+                "ok",
+                "warn",
+                "fail",
+                "open"
+              ]
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        }
+      }
+    }
+  },
+  "media": {
+    "type": "object",
+    "required": [
+      "type",
+      "path",
+      "alt"
+    ],
+    "additionalProperties": false,
+    "description": "An image or a video.",
+    "properties": {
+      "type": {
+        "const": "media"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "path": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000,
+        "x-rs-media": "any",
+        "description": "Absolute image or video path under a media root."
+      },
+      "alt": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      },
+      "poster": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000,
+        "x-rs-media": true,
+        "description": "Poster image of a video."
+      }
+    }
+  },
+  "copy": {
+    "type": "object",
+    "required": [
+      "type",
+      "items"
+    ],
+    "additionalProperties": false,
+    "description": "Values to copy.",
+    "properties": {
+      "type": {
+        "const": "copy"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "required": [
+            "label",
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 24,
+              "description": "Button label, e.g. \"Copy reference\"."
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000,
+              "description": "Exact string that lands on the clipboard."
+            }
+          }
+        }
+      }
+    }
+  },
+  "decide": {
+    "type": "object",
+    "required": [
+      "type",
+      "items"
+    ],
+    "additionalProperties": false,
+    "description": "Input: one decision per item.",
+    "properties": {
+      "type": {
+        "const": "decide"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "labels": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Labels of the choices under ask approve. Each choice of an item needs its own label: a label that repeats another choice, or reads like another choice's default label in any UI language, is rejected. Not allowed under ask do.",
+        "properties": {
+          "approve": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24,
+            "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+            "description": "Label of the approve choice instead of Approve. The result value stays approve."
+          },
+          "reject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24,
+            "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+            "description": "Label of the reject choice instead of Reject. The result value stays reject."
+          },
+          "later": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24,
+            "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+            "description": "Label of the later choice instead of Later. The result value stays later."
+          }
+        }
+      },
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 12,
+        "x-rs-unique-key": "id",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "title"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{1,40}$",
+              "description": "Unique in the block; echoed in the result."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 140
+            },
+            "meta": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "description": "Short quiet line, e.g. an amount."
+            },
+            "md": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 600,
+              "description": "Short Markdown detail."
+            },
+            "labels": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Labels of the choices under ask approve. Each choice of an item needs its own label: a label that repeats another choice, or reads like another choice's default label in any UI language, is rejected. Not allowed under ask do.",
+              "properties": {
+                "approve": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 24,
+                  "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+                  "description": "Label of the approve choice instead of Approve. The result value stays approve."
+                },
+                "reject": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 24,
+                  "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+                  "description": "Label of the reject choice instead of Reject. The result value stays reject."
+                },
+                "later": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 24,
+                  "pattern": "^[^\\s\\x00-\\x1F\\x7F](?:[^\\x00-\\x1F\\x7F]*[^\\s\\x00-\\x1F\\x7F])?$",
+                  "description": "Label of the later choice instead of Later. The result value stays later."
+                }
+              }
+            },
+            "choices": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "uniqueItems": true,
+              "description": "Choices in this order: approve, reject, later under ask approve; done, skipped, later under ask do.",
+              "items": {
+                "enum": [
+                  "approve",
+                  "reject",
+                  "later",
+                  "done",
+                  "skipped"
+                ]
+              }
+            },
+            "due": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
+              "description": "YYYY-MM-DD, a real calendar day."
+            },
+            "url": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 2048,
+              "pattern": "^https?://[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.?(?::(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[0-9]{1,4}))?(?:[/?#][^\\x00-\\x1F\\x7F-\\x9F\\s\\\\]*)?$",
+              "x-rs-url": true
+            },
+            "copy": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "required": [
+                  "label",
+                  "text"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 24,
+                    "description": "Button label, e.g. \"Copy reference\"."
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Exact string that lands on the clipboard."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "pick": {
+    "type": "object",
+    "required": [
+      "type",
+      "options"
+    ],
+    "additionalProperties": false,
+    "description": "Input: choose one of two to four options.",
+    "properties": {
+      "type": {
+        "const": "pick"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "options": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 4,
+        "x-rs-unique-key": "id",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+              "description": "The result's choice."
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 48
+            },
+            "md": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 600
+            },
+            "facts": {
+              "type": "array",
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "suggested": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+        "description": "Option id the bot suggests; marked, never preselected."
+      },
+      "allow_none": {
+        "type": "boolean",
+        "default": true,
+        "description": "Offer None of these (note required)."
+      }
+    }
+  },
+  "post": {
+    "type": "object",
+    "required": [
+      "type",
+      "author",
+      "text",
+      "hashtags",
+      "platforms"
+    ],
+    "additionalProperties": false,
+    "x-rs-exclusive": [
+      "image",
+      "video"
+    ],
+    "description": "Input: a social post preview per platform.",
+    "properties": {
+      "type": {
+        "const": "post"
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,40}$",
+        "description": "Optional, unique in the report. Without it the block is b<position> (b1 is the first block)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80,
+        "description": "Optional heading above the block."
+      },
+      "persona": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40,
+        "description": "Optional voice or persona the draft was written in; a quiet line in the overflow menu."
+      },
+      "post_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60,
+        "description": "Optional id of this post draft at the agent; a quiet line in the overflow menu."
+      },
+      "author": {
+        "type": "object",
+        "required": [
+          "name",
+          "handle"
+        ],
+        "additionalProperties": false,
+        "description": "The account the post is published from.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "handle": {
+            "type": "string",
+            "pattern": "^[^\\s@]{1,30}$",
+            "description": "Without @; X shows it as @handle."
+          },
+          "headline": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "LinkedIn headline under the name."
+          },
+          "avatar": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "x-rs-media": true,
+            "description": "Absolute image path under a media root."
+          }
+        }
+      },
+      "text": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 63206,
+        "description": "Post text for every platform without a variant."
+      },
+      "hashtags": {
+        "type": "array",
+        "maxItems": 30,
+        "description": "Stored without #; appended as \"#a #b\" after a blank line when hashtag_mode is append. At most 30 here; Instagram blocks auto approval above 5. A platform's variants[p].hashtags replaces this list for that platform.",
+        "items": {
+          "type": "string",
+          "pattern": "^[^\\s#]{1,100}$"
+        }
+      },
+      "hashtag_mode": {
+        "enum": [
+          "append",
+          "none"
+        ],
+        "default": "append"
+      },
+      "first_comment": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1250,
+        "description": "Optional first comment the reviewer posts under the post."
+      },
+      "link": {
+        "type": "object",
+        "required": [
+          "url",
+          "title",
+          "domain"
+        ],
+        "additionalProperties": false,
+        "description": "Link card, rendered from these fields only (nothing is fetched). Shown when there is no image.",
+        "properties": {
+          "url": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2000
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "domain": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          }
+        }
+      },
+      "image": {
+        "type": "object",
+        "required": [
+          "path",
+          "alt",
+          "ratio"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "x-rs-media": true,
+            "description": "Absolute image path under a media root."
+          },
+          "alt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "ratio": {
+            "enum": [
+              "1:1",
+              "4:5",
+              "3:4",
+              "9:16",
+              "1.91:1",
+              "16:9"
+            ]
+          }
+        }
+      },
+      "video": {
+        "type": "object",
+        "required": [
+          "path",
+          "poster",
+          "alt",
+          "ratio"
+        ],
+        "additionalProperties": false,
+        "description": "Optional video in place of image (the two cannot both be set). The preview shows the poster and plays the file inline. Instagram treats a video as the required media.",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "x-rs-media": "video",
+            "description": "Absolute .mp4 or .webm path under a media root, at most 200 MB."
+          },
+          "poster": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "x-rs-media": true,
+            "description": "Poster image, required with a video. Absolute image path under a media root."
+          },
+          "alt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "ratio": {
+            "enum": [
+              "1:1",
+              "4:5",
+              "3:4",
+              "9:16",
+              "1.91:1",
+              "16:9"
+            ]
+          }
+        }
+      },
+      "target": {
+        "type": "object",
+        "required": [
+          "type",
+          "url"
+        ],
+        "additionalProperties": false,
+        "description": "Optional quoted post or reply parent. Not part of the composed text: X does not count this URL.",
+        "properties": {
+          "type": {
+            "enum": [
+              "quote",
+              "reply"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "x-rs-url": "https",
+            "description": "https address the opener accepts (hostname or IPv6, valid port, no credentials). Uppercase scheme and a zero-padded port are accepted. http is not."
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "author": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "The account being quoted or replied to. Both fields are optional.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "handle": {
+                "type": "string",
+                "pattern": "^[^\\s@]{1,30}$",
+                "description": "Without @."
+              }
+            }
+          }
+        }
+      },
+      "platforms": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "description": "The platform tabs, in order. Plain ids are auto; objects {platform, mode} name the mode. Under ask approve every platform is auto (the bot posts after the approval); under ask do every platform is manual (the person posts it and marks it).",
+        "oneOf": [
+          {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "x",
+                "linkedin",
+                "instagram",
+                "facebook"
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "x-rs-unique-key": "platform",
+            "items": {
+              "type": "object",
+              "required": [
+                "platform"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "platform": {
+                  "enum": [
+                    "x",
+                    "linkedin",
+                    "instagram",
+                    "facebook"
+                  ]
+                },
+                "mode": {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ],
+                  "default": "auto",
+                  "description": "auto: the bot posts after the approval. manual: the reviewer posts it and marks it as posted."
+                }
+              }
+            },
+            "minItems": 1
+          }
+        ]
+      },
+      "variants": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Per platform: `text` replaces `text` and `hashtags` replaces `hashtags` for that platform (give one or both).",
+        "properties": {
+          "x": {
+            "description": "Text and/or hashtags for this platform; at least one of the two.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63206
+                  },
+                  "hashtags": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^\\s#]{1,100}$"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "hashtags"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "hashtags": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^\\s#]{1,100}$"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "linkedin": {
+            "description": "Text and/or hashtags for this platform; at least one of the two.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63206
+                  },
+                  "hashtags": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^\\s#]{1,100}$"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "hashtags"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "hashtags": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^\\s#]{1,100}$"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "instagram": {
+            "description": "Text and/or hashtags for this platform; at least one of the two.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63206
+                  },
+                  "hashtags": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^\\s#]{1,100}$"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "hashtags"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "hashtags": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^\\s#]{1,100}$"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "facebook": {
+            "description": "Text and/or hashtags for this platform; at least one of the two.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63206
+                  },
+                  "hashtags": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^\\s#]{1,100}$"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "hashtags"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "hashtags": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Hashtags for this platform only, replacing `hashtags` (same item rules).",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^\\s#]{1,100}$"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "notes": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600,
+        "description": "The agent's note to the reviewer, shown above the previews."
+      },
+      "flag": {
+        "type": "array",
+        "maxItems": 8,
+        "uniqueItems": true,
+        "description": "Characters or words the post should avoid (house style); any found in the composed text or the first comment are named in one quiet style note. Never blocks approving.",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20
+        }
+      }
+    }
+  }
+}

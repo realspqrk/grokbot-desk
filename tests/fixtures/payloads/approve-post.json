@@ -1,0 +1,19 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "social-bot",
+  "title": "Post: autumn opening hours",
+  "created": "2026-10-18T11:00:00+02:00",
+  "why": "The new hours start on Monday.",
+  "ask": "approve",
+  "blocks": [
+    {"type": "post", "id": "post",
+     "author": {"name": "Example Bakery", "handle": "examplebakery", "headline": "Bread and pastries since 1990"},
+     "text": "From Monday we open at 6:30. Fresh rolls from the first minute.",
+     "hashtags": ["bakery", "autumn"],
+     "platforms": ["x", "linkedin"],
+     "variants": {"linkedin": {"text": "From Monday our shop opens at 6:30. Thank you to our early team for making this possible."}},
+     "image": {"path": "/srv/media/social/opening-hours.png", "alt": "Shop window with the new opening hours", "ratio": "1:1"},
+     "notes": "The image was made from the shop sign template.",
+     "flag": ["!!"]}
+  ]
+}

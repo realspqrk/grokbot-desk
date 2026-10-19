@@ -40,8 +40,9 @@ ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 MAX_MEDIA_SIZE = 20 * 1024 * 1024
 # A post video (X allows 512 MB) is served in ranges, never read whole.
 MAX_VIDEO_SIZE = 200 * 1024 * 1024
-# x-rs-media: true marks an image path; "video" marks a video path.
-MEDIA_KINDS = {True: IMAGE_EXTENSIONS, "video": VIDEO_EXTENSIONS}
+# x-rs-media: true marks an image path; "video" marks a video path; "any"
+# takes either (the media block).
+MEDIA_KINDS = {True: IMAGE_EXTENSIONS, "video": VIDEO_EXTENSIONS, "any": ALLOWED_EXTENSIONS}
 CONTENT_TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".webp": "image/webp", ".gif": "image/gif",
@@ -352,7 +353,7 @@ def _replace_media(value, schemas, roots, media, template_root=None, template_id
     layers = _schema_layers(value, schemas)
     kinds = [
         schema["x-rs-media"] for schema in layers
-        if schema.get("x-rs-media") is True or schema.get("x-rs-media") == "video"
+        if schema.get("x-rs-media") is True or schema.get("x-rs-media") in ("video", "any")
     ]
     if kinds:
         entry = register_media(

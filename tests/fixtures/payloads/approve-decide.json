@@ -1,0 +1,26 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "office-bot",
+  "identity": {"name": "Office Bot", "avatar_shape": "blob", "avatar_color": "orange"},
+  "title": "Two invoices this week",
+  "created": "2026-10-18T09:00:00+02:00",
+  "why": "Hosting is due Friday.",
+  "ask": "approve",
+  "due": "2026-10-23",
+  "urgent": false,
+  "expires_minutes": 240,
+  "dedupe_key": "invoices-w43",
+  "blocks": [
+    {"type": "stats", "items": [{"label": "Open", "value": "221.90 EUR"}, {"label": "Due Friday", "value": "1"}]},
+    {"type": "decide", "id": "invoices", "labels": {"approve": "Pay", "reject": "Don't pay"},
+     "items": [
+       {"id": "hosting", "title": "Hosting, October", "meta": "89 EUR", "due": "2026-10-23",
+        "url": "https://billing.example.com/invoices/1043",
+        "copy": [{"label": "Copy reference", "text": "INV-1043"}]},
+       {"id": "toner", "title": "Toner, 132.90 EUR", "meta": "132.90 EUR",
+        "md": "Two cartridges, **black**. The usual vendor raised the price by 12 %.",
+        "labels": {"later": "Next week"}},
+       {"id": "parking", "title": "Parking permit renewal", "meta": "0 EUR", "choices": ["approve", "reject"]}
+     ]}
+  ]
+}

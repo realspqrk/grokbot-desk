@@ -1,0 +1,17 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "social-bot",
+  "title": "Post the workshop clip yourself",
+  "created": "2026-10-18T17:00:00+02:00",
+  "why": "The video is too large for the bot's upload. Post it by hand.",
+  "ask": "do",
+  "blocks": [
+    {"type": "post",
+     "author": {"name": "Example Workshop", "handle": "exampleworkshop"},
+     "text": "How we fix a bike chain in under two minutes.",
+     "hashtags": ["repair"],
+     "platforms": [{"platform": "instagram", "mode": "manual"}, {"platform": "facebook", "mode": "manual"}],
+     "video": {"path": "/srv/media/social/chain.mp4", "poster": "/srv/media/social/chain-poster.jpg", "alt": "Hands fixing a bike chain", "ratio": "9:16"},
+     "target": {"type": "reply", "url": "https://social.example.com/posts/123", "excerpt": "Any tips for chains?"}}
+  ]
+}

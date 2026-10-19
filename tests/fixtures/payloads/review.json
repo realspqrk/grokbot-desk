@@ -1,0 +1,14 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "writer-bot",
+  "title": "Draft: onboarding guide for new staff",
+  "created": "2026-10-18T10:15:00+02:00",
+  "why": "Please read the draft before it goes to the team wiki.",
+  "ask": "review",
+  "blocks": [
+    {"type": "text", "id": "guide",
+     "images": [{"key": "floor-plan", "path": "/srv/media/onboarding/floor-plan.png", "alt": "Office floor plan"}],
+     "md": "# Onboarding guide\n\nWelcome to the team.\n\n## First day\n\nYou get a laptop and a badge.\n\n![Floor plan](floor-plan)\n\n## First week\n\n> [!NOTE]\n> Book a desk in the room planner.\n\n### Accounts\n\nMail, chat and the ticket system are ready on day one."},
+    {"type": "copy", "items": [{"label": "Wiki page", "text": "Handbook / Onboarding / Guide"}]}
+  ]
+}

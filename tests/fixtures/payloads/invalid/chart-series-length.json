@@ -1,0 +1,220 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "finance-bot",
+  "title": "Monthly report, September",
+  "created": "2026-10-01T07:00:00+02:00",
+  "why": "Revenue is up, costs are flat. One supplier is late with an invoice.",
+  "ask": "read",
+  "expires_minutes": 10080,
+  "blocks": [
+    {
+      "type": "stats",
+      "items": [
+        {
+          "label": "Revenue",
+          "value": "48,200 EUR",
+          "delta": "+6.1 %",
+          "good": "up",
+          "spark": [
+            41000,
+            43500,
+            45400,
+            48200
+          ]
+        },
+        {
+          "label": "Costs",
+          "value": "31,050 EUR",
+          "delta": "+0.4 %",
+          "good": "down"
+        },
+        {
+          "label": "Margin",
+          "value": "35.6 %",
+          "delta": 3.4,
+          "good": "up"
+        },
+        {
+          "label": "Open invoices",
+          "value": "3",
+          "note": "one overdue"
+        }
+      ]
+    },
+    {
+      "type": "chart",
+      "title": "Revenue by month",
+      "kind": "bar",
+      "orientation": "vertical",
+      "unit": "EUR",
+      "labels": [
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep"
+      ],
+      "series": [
+        {
+          "name": "Revenue",
+          "values": [
+            41000,
+            43500,
+            45400,
+            48200
+          ]
+        }
+      ],
+      "target": 45000
+    },
+    {
+      "type": "chart",
+      "title": "Costs and revenue",
+      "kind": "line",
+      "labels": [
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep"
+      ],
+      "series": [
+        {
+          "name": "Revenue",
+          "values": [
+            41000,
+            43500,
+            45400,
+            48200
+          ]
+        },
+        {
+          "name": "Costs",
+          "values": [
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "id": "suppliers",
+      "title": "Largest suppliers",
+      "columns": [
+        {
+          "key": "name",
+          "label": "Supplier"
+        },
+        {
+          "key": "amount",
+          "label": "Amount (EUR)",
+          "type": "money"
+        },
+        {
+          "key": "share",
+          "label": "Share",
+          "type": "percent"
+        },
+        {
+          "key": "change",
+          "label": "Change",
+          "type": "delta"
+        },
+        {
+          "key": "status",
+          "label": "Invoice",
+          "type": "status"
+        },
+        {
+          "key": "due",
+          "label": "Due",
+          "type": "date"
+        }
+      ],
+      "rows": [
+        {
+          "name": "Paper Supply Ltd",
+          "amount": 4200.5,
+          "share": 13.5,
+          "change": 2.1,
+          "status": "ok",
+          "due": "2026-10-10"
+        },
+        {
+          "name": "Coffee Roasters",
+          "amount": 1980,
+          "share": 6.4,
+          "change": -0.8,
+          "status": "warn",
+          "due": "2026-10-03"
+        },
+        {
+          "name": "Cleaning Service",
+          "amount": 1500,
+          "share": 4.8,
+          "change": 0,
+          "status": "fail",
+          "due": null
+        }
+      ],
+      "total": {
+        "name": "Total",
+        "amount": 7680.5,
+        "share": 24.7
+      }
+    },
+    {
+      "type": "facts",
+      "items": [
+        {
+          "label": "Period",
+          "value": "September 2026"
+        },
+        {
+          "label": "Prepared",
+          "value": "October 1"
+        }
+      ]
+    },
+    {
+      "type": "checks",
+      "items": [
+        {
+          "label": "Bank reconciliation",
+          "state": "ok"
+        },
+        {
+          "label": "Supplier invoice",
+          "state": "fail",
+          "detail": "Cleaning Service, not received"
+        }
+      ]
+    },
+    {
+      "type": "media",
+      "title": "Shop floor",
+      "path": "/srv/media/reports/shop-floor.jpg",
+      "alt": "The shop floor after the refit"
+    },
+    {
+      "type": "media",
+      "path": "/srv/media/reports/walkthrough.webm",
+      "alt": "Short walkthrough of the new storage room",
+      "poster": "/srv/media/reports/walkthrough.png"
+    },
+    {
+      "type": "text",
+      "id": "details",
+      "md": "## Revenue\n\nThe online shop grew fastest.\n\n```text\n## not a heading, this is code\n```\n\n## Costs\n\nRent and wages unchanged.\n\n### Energy\n\nSlightly lower than August.\n\n#### Small print\n\nRounded to whole euros."
+    },
+    {
+      "type": "copy",
+      "items": [
+        {
+          "label": "Copy summary",
+          "text": "September: revenue 48,200 EUR (+6.1 %), costs 31,050 EUR."
+        }
+      ]
+    }
+  ]
+}

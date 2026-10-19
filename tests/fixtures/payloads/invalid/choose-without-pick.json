@@ -1,0 +1,37 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "office-bot",
+  "title": "Pick a date for the team lunch",
+  "created": "2026-10-18T09:30:00+02:00",
+  "why": "The restaurant holds the table until Wednesday.",
+  "ask": "choose",
+  "blocks": [
+    {
+      "type": "table",
+      "title": "Who can come",
+      "columns": [
+        {
+          "key": "day",
+          "label": "Day",
+          "type": "text"
+        },
+        {
+          "key": "people",
+          "label": "People",
+          "type": "number",
+          "align": "right"
+        }
+      ],
+      "rows": [
+        {
+          "day": "Thursday",
+          "people": 9
+        },
+        {
+          "day": "Friday",
+          "people": 7
+        }
+      ]
+    }
+  ]
+}

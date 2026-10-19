@@ -1,0 +1,50 @@
+{
+  "schema": "grokbot-desk/payload@2",
+  "bot": "community-bot",
+  "title": "Three replies to post yourself",
+  "created": "2026-10-18T16:00:00+02:00",
+  "ask": "do",
+  "blocks": [
+    {
+      "type": "decide",
+      "id": "replies",
+      "title": "Replies",
+      "items": [
+        {
+          "id": "reply-1",
+          "title": "Question about delivery times",
+          "url": "https://forum.example.org/t/4711",
+          "copy": [
+            {
+              "label": "Copy reply",
+              "text": "We deliver within two working days."
+            }
+          ]
+        },
+        {
+          "id": "reply-2",
+          "title": "Thanks for the new feature",
+          "choices": [
+            "done",
+            "skipped"
+          ],
+          "copy": [
+            {
+              "label": "Copy reply",
+              "text": "Thank you, glad it helps."
+            }
+          ]
+        },
+        {
+          "id": "reply-3",
+          "title": "Bug report: export button",
+          "md": "Ask for the browser version first.",
+          "due": "2026-10-21"
+        }
+      ],
+      "labels": {
+        "approve": "Posted"
+      }
+    }
+  ]
+}
