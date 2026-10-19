@@ -289,8 +289,8 @@ def test_contrast_math_matches_wcag_reference_values():
 
 def test_theme_tokens_are_parsed_from_tokens_css():
     themes, focus = ident.default_theme()
-    assert themes["light"]["--rs-accent"] == "#3b4fd8"
-    assert themes["dark"]["--rs-accent"] == "#8f9cf7"
+    assert themes["light"]["--rs-accent"].startswith("oklch(")
+    assert themes["dark"]["--rs-accent"].startswith("oklch(")
     assert {"--rs-paper", "--rs-card", "--rs-rail-bg", "--rs-selected"} <= set(focus)
 
 
@@ -306,7 +306,7 @@ def test_hover_fill_contrast_falls_back_only_in_the_failing_theme():
     tokens, fallback, failures = ident.theme_accents("#0891b2")
     themes, _ = ident.default_theme()
     assert fallback == ["light"]
-    assert tokens["light"]["--rs-accent"] == themes["light"]["--rs-accent"]
+    assert tokens["light"]["--rs-accent"] == ident.to_hex(themes["light"]["--rs-accent"])
     assert tokens["dark"]["--rs-accent"] == "#0891b2"
     assert [item["pair"] for item in failures["light"]] == [
         "--rs-accent-hover/--rs-paper",
@@ -330,12 +330,22 @@ def test_low_contrast_accent_falls_back_per_theme():
     themes, _ = ident.default_theme()
     tokens, fallback, failures = ident.theme_accents("#f6c945")    # pale: fails on white
     assert fallback == ["light"]
-    assert tokens["light"]["--rs-accent"] == themes["light"]["--rs-accent"]
+    assert tokens["light"]["--rs-accent"] == ident.to_hex(themes["light"]["--rs-accent"])
     assert tokens["dark"]["--rs-accent"] == "#f6c945"
     assert any(item["pair"] == "--rs-accent/--rs-paper" for item in failures["light"])
     tokens, fallback, _ = ident.theme_accents("#1f3a5f")           # dark navy: fails on dark
     assert fallback == ["dark"]
-    assert tokens["dark"]["--rs-accent"] == themes["dark"]["--rs-accent"]
+    assert tokens["dark"]["--rs-accent"] == ident.to_hex(themes["dark"]["--rs-accent"])
+
+
+def test_fallback_accent_tokens_are_hex_for_the_page():
+    # tokens.css speaks oklch(); the page only applies #rrggbb accent tokens
+    themes, _ = ident.default_theme()
+    tokens, fallback, _ = ident.theme_accents("#f6c945")
+    assert fallback == ["light"]
+    for name in ident.ACCENT_TOKENS:
+        assert ident.ACCENT_RE.fullmatch(tokens["light"][name]), (name, tokens["light"][name])
+    assert ident.contrast(tokens["light"]["--rs-accent"], themes["light"]["--rs-accent"]) == pytest.approx(1, abs=0.02)
 
 
 def test_resolve_records_accent_fallback_and_a_warning():

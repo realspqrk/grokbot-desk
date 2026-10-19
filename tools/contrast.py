@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Check grokbot-desk design-token foreground/background contrast pairs."""
+"""Check grokbot-desk design-token foreground/background contrast pairs.
+
+Colours are #rrggbb or oklch(L C H); oklch() is converted to sRGB through
+OKLab and gamut-mapped by chroma reduction (core/colour.py).
+"""
 from __future__ import annotations
 
 import argparse
@@ -7,6 +11,13 @@ import json
 import re
 import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.colour import delta_e_ok, in_gamut, oklab, to_hex  # noqa: E402,F401
+from core.colour import contrast, parse as parse_color  # noqa: E402
 
 
 TOKEN_RE = re.compile(r"(--[\w-]+)\s*:\s*([^;{}]+);")
@@ -45,25 +56,9 @@ def parse_token_themes(css: str) -> dict[str, dict[str, str]]:
     return {"light": _resolve(light), "dark": _resolve(dark)}
 
 
-def _rgb(value: str) -> tuple[float, float, float]:
-    match = re.fullmatch(r"#([0-9a-fA-F]{6})", value.strip())
-    if not match:
-        raise ValueError(f"expected opaque 6-digit hex colour, got {value!r}")
-    number = match.group(1)
-    return tuple(int(number[index : index + 2], 16) / 255 for index in (0, 2, 4))
-
-
-def _luminance(value: str) -> float:
-    channels = [
-        channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
-        for channel in _rgb(value)
-    ]
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
-
-
 def contrast_ratio(foreground: str, background: str) -> float:
-    first, second = sorted((_luminance(foreground), _luminance(background)), reverse=True)
-    return (first + 0.05) / (second + 0.05)
+    """WCAG 2.x ratio of two opaque colours (#rrggbb or oklch())."""
+    return contrast(foreground, background)
 
 
 def evaluate_pairs(themes: dict[str, dict[str, str]], pairs: list[dict]) -> dict:
@@ -111,7 +106,7 @@ def evaluate_pairs(themes: dict[str, dict[str, str]], pairs: list[dict]) -> dict
 
 
 def main(argv=None) -> int:
-    root = Path(__file__).resolve().parents[1]
+    root = ROOT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tokens", type=Path, default=root / "core" / "static" / "tokens.css")
     parser.add_argument(

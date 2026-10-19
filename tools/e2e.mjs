@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { browserChannel, PYTHON, startServer, loadChromium, ROOT } from './dev/rs-server.mjs';
 import { isSameOriginPath } from './dev/browser-safety.mjs';
+import { parseColor, toHex } from './colour.mjs';
 import { resolvedTemplates } from './template-registry.mjs';
 import {
   CALM_THRESHOLDS,
@@ -1614,12 +1615,12 @@ const IDENTITY_SCENES = [
   },
 ];
 
-/* a token's #rrggbb in the light (:root) and forced-dark blocks of tokens.css */
+/* a token's #rrggbb (hex or oklch() in the file) in the light (:root) and forced-dark blocks of tokens.css */
 function themeToken(name) {
   const css = readFileSync(path.join(ROOT, 'core', 'static', 'tokens.css'), 'utf8');
   const value = (block) => {
     const start = block.indexOf(`${name}:`);
-    return start < 0 ? null : block.slice(start + name.length + 1).match(/^\s*(#[0-9a-f]{6})/iu)[1].toLowerCase();
+    return start < 0 ? null : toHex(parseColor(block.slice(start + name.length + 1).match(/^\s*(#[0-9a-f]{6}|oklch\([^)]*\))/iu)[1]));
   };
   return {
     light: value(css.match(/:root\s*\{([^}]*)\}/u)[1]),

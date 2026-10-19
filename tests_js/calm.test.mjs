@@ -165,6 +165,23 @@ describe('C16 calm synthetic pages', { skip }, () => {
     copy_focus: true,
   };
 
+  test('focus facts read oklch() outlines and backgrounds (design tokens are OKLCH)', async () => {
+    const context = await browser.newContext({ viewport: { width: 640, height: 360 } });
+    const page = await context.newPage();
+    try {
+      await page.setContent(
+        '<body style="margin:0;background:oklch(0.2 0.006 265)">'
+        + '<button id="b" style="outline:2px solid oklch(0.72 0.125 275);outline-offset:2px">Go</button></body>',
+      );
+      await page.focus('#b');
+      const facts = await page.evaluate(focusedControlFacts);
+      assert.equal(facts.outline_visible, true, JSON.stringify(facts));
+      assert.ok(facts.outline_contrast > 6.5 && facts.outline_contrast < 7.8, String(facts.outline_contrast));
+    } finally {
+      await context.close();
+    }
+  });
+
   test('review finding 1: visible native and role controls count independently of tabindex', async () => {
     for (const controls of [
       Array.from({ length: 15 }, (_, index) => (

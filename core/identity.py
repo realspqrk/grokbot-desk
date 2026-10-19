@@ -34,6 +34,7 @@ import stat
 import unicodedata
 from pathlib import Path, PureWindowsPath
 
+from . import colour
 from .jsonutil import loads
 from .media import _is_relative_to
 from .platform import final_path_for_handle
@@ -99,30 +100,25 @@ UNKNOWN_REASON = {
 # ----------------------------------------------------------- colour math --
 
 def _rgb(value):
-    value = value.strip()
-    if not ACCENT_RE.fullmatch(value):
-        raise ValueError(f"expected #RRGGBB, got {value!r}")
-    return tuple(int(value[index:index + 2], 16) for index in (1, 3, 5))
+    """0-255 channels of a #rrggbb or oklch() colour (tokens.css speaks oklch)."""
+    return tuple(channel * 255 for channel in colour.parse(value))
 
 
 def _hex(rgb):
     return "#" + "".join(f"{max(0, min(255, round(channel))):02x}" for channel in rgb)
 
 
+def to_hex(value):
+    """#rrggbb of a token value; the page applies accent tokens only as hex."""
+    return colour.to_hex(value)
+
+
 def luminance(value):
-    channels = []
-    for channel in _rgb(value):
-        normalized = channel / 255
-        channels.append(
-            normalized / 12.92 if normalized <= 0.04045
-            else ((normalized + 0.055) / 1.055) ** 2.4
-        )
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+    return colour.luminance(value)
 
 
 def contrast(left, right):
-    bright, dark = sorted((luminance(left), luminance(right)), reverse=True)
-    return (bright + 0.05) / (dark + 0.05)
+    return colour.contrast(left, right)
 
 
 def mix(value, target, amount):
@@ -170,7 +166,7 @@ def default_theme():
 
 def accent_tokens(accent, theme_tokens, focus_bgs):
     """Derived accent tokens for one theme, or (None, failures) if a check fails."""
-    accent = accent.lower()
+    accent = to_hex(accent)
     on_accent = max(ON_ACCENT_CHOICES, key=lambda label: contrast(label, accent))
     # hover moves away from the label colour, so the label only gains contrast
     hover = mix(accent, "#000000" if on_accent == "#ffffff" else "#ffffff", HOVER_MIX)
@@ -224,7 +220,7 @@ def theme_accents(accent, themes=None, focus_bgs=None):
         if tokens is None:
             fallback.append(theme)
             failures[theme] = failed
-            tokens = {name: themes[theme][name].lower() for name in ACCENT_TOKENS}
+            tokens = {name: to_hex(themes[theme][name]) for name in ACCENT_TOKENS}
         result[theme] = tokens
     return result, fallback, failures
 
@@ -262,9 +258,9 @@ def validate_enum(field, value):
 
 
 def avatar_fill(color, theme, themes=None):
-    """The fill of a named colour in one theme (tokens.css --rs-avatar-<name>)."""
+    """The #rrggbb fill of a named colour in one theme (tokens.css --rs-avatar-<name>)."""
     themes = themes or default_theme()[0]
-    return themes[theme][f"--rs-avatar-{color}"].lower()
+    return to_hex(themes[theme][f"--rs-avatar-{color}"])
 
 
 def sniff_image(head):

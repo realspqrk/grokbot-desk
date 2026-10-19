@@ -50,10 +50,9 @@ def test_tokens_define_a_fill_per_colour_and_theme():
     themes, _ = ident.default_theme()
     for theme in ident.THEMES:
         for colour in ident.AVATAR_COLORS + ("default",):
-            value = themes[theme][f"--rs-avatar-{colour}"]
-            assert ident.ACCENT_RE.fullmatch(value), (theme, colour, value)
+            assert ident.ACCENT_RE.fullmatch(ident.avatar_fill(colour, theme)), (theme, colour)
         # the default fill is the theme's default accent
-        assert themes[theme]["--rs-avatar-default"].lower() == themes[theme]["--rs-accent"].lower()
+        assert ident.avatar_fill("default", theme) == ident.to_hex(themes[theme]["--rs-accent"])
     # "black" is the ink-like fill: dark on light, white on dark (as in the bot app)
     assert ident.luminance(themes["light"]["--rs-avatar-black"]) < 0.05
     assert themes["dark"]["--rs-avatar-black"].lower() == "#ffffff"
@@ -180,9 +179,9 @@ def test_colour_seeds_the_accent_through_the_contrast_check():
     for theme in ident.THEMES:
         token = result["accent"][theme]["--rs-accent"]
         if theme in result["accent_fallback"]:
-            assert token == themes[theme]["--rs-accent"].lower()
+            assert token == ident.to_hex(themes[theme]["--rs-accent"])
         else:
-            assert token == themes[theme]["--rs-avatar-violet"].lower()
+            assert token == ident.avatar_fill("violet", theme)
     # a seeded accent that fails a check falls back quietly, without a warning
     assert result["warnings"] == []
 

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { parseColor, toHex } from '../tools/colour.mjs';
 
 const PORT = Number(process.env.RS_E2E_PORT || 18900) + 12;
 if (PORT === 18742) throw new Error('refusing the product port');
@@ -17,8 +18,9 @@ const token = (theme, name) => {
   const block = theme === 'light'
     ? tokensCss.match(/:root\s*\{([^}]*)\}/)[1]
     : tokensCss.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/)[1];
-  const own = block.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6})`, 'i'));
-  return (own || tokensCss.match(/:root\s*\{([^}]*)\}/)[1].match(new RegExp(`${name}:\\s*(#[0-9a-f]{6})`, 'i')))[1].toLowerCase();
+  const own = block.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6}|oklch\\([^)]*\\))`, 'i'));
+  const value = (own || tokensCss.match(/:root\s*\{([^}]*)\}/)[1].match(new RegExp(`${name}:\\s*(#[0-9a-f]{6}|oklch\\([^)]*\\))`, 'i')))[1];
+  return toHex(parseColor(value));
 };
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const CORRUPT = 'data:image/png;base64,' + Buffer.from('\x89PNG\r\n\x1a\nnot really a png').toString('base64');
@@ -30,6 +32,7 @@ const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
 
 function hex(rgb) {
+  if (/^\s*(#[0-9a-f]{6}|oklch\()/i.test(String(rgb))) return toHex(parseColor(rgb));
   const m = String(rgb).match(/\d+(\.\d+)?/g);
   return m ? '#' + m.slice(0, 3).map((x) => Number(x).toString(16).padStart(2, '0')).join('') : String(rgb);
 }

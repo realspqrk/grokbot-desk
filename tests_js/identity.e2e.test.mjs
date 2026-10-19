@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { parseColor, toHex } from '../tools/colour.mjs';
 
 const PORT = Number(process.env.RS_E2E_PORT || 18900) + 5;
 if (PORT === 18742) throw new Error('refusing the product port');
@@ -14,12 +15,12 @@ const STARTER = path.join(ROOT, 'templates/builtin/_starter');
 const golden = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/golden.json'), 'utf8'));
 const tokensCss = readFileSync(path.join(ROOT, 'core/static/tokens.css'), 'utf8');
 const DEFAULT_ACCENT = {
-  light: tokensCss.match(/:root\s*\{[^}]*?--rs-accent:\s*(#[0-9a-f]{6})/i)[1],
-  dark: tokensCss.match(/html\[data-theme="dark"\]\s*\{[^}]*?--rs-accent:\s*(#[0-9a-f]{6})/i)[1],
+  light: toHex(parseColor(tokensCss.match(/:root\s*\{[^}]*?--rs-accent:\s*(#[0-9a-f]{6}|oklch\([^)]*\))/i)[1])),
+  dark: toHex(parseColor(tokensCss.match(/html\[data-theme="dark"\]\s*\{[^}]*?--rs-accent:\s*(#[0-9a-f]{6}|oklch\([^)]*\))/i)[1])),
 };
 const DEFAULT_HOVER = {
-  light: tokensCss.match(/:root\s*\{[^}]*?--rs-accent-hover:\s*(#[0-9a-f]{6})/i)[1],
-  dark: tokensCss.match(/html\[data-theme="dark"\]\s*\{[^}]*?--rs-accent-hover:\s*(#[0-9a-f]{6})/i)[1],
+  light: toHex(parseColor(tokensCss.match(/:root\s*\{[^}]*?--rs-accent-hover:\s*(#[0-9a-f]{6}|oklch\([^)]*\))/i)[1])),
+  dark: toHex(parseColor(tokensCss.match(/html\[data-theme="dark"\]\s*\{[^}]*?--rs-accent-hover:\s*(#[0-9a-f]{6}|oklch\([^)]*\))/i)[1])),
 };
 // 1x1 PNG: a valid raster avatar; CORRUPT passes the server's type sniff but
 // cannot be decoded, so the page must fall back to initials on its own.
@@ -33,6 +34,7 @@ const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
 
 function hex(rgb) {
+  if (/^\s*(#[0-9a-f]{6}|oklch\()/i.test(String(rgb))) return toHex(parseColor(rgb));
   const m = String(rgb).match(/\d+(\.\d+)?/g);
   return m ? '#' + m.slice(0, 3).map((x) => Number(x).toString(16).padStart(2, '0')).join('') : String(rgb);
 }

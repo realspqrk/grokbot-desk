@@ -21,7 +21,7 @@ const SVG_NS_LINE = "var SVG_NS = 'http://www.w3.org/2000/svg';";
 
 for (const f of files) {
   test('no colour literals: ' + f, () => {
-    const hits = read(f).split('\n').filter((l) => /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/.test(l));
+    const hits = read(f).split('\n').filter((l) => /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/.test(l));
     assert.deepEqual(hits, []);
   });
   test('no URLs: ' + f, () => {

@@ -15,6 +15,7 @@ import pytest
 from conftest import free_port
 from core import VERSION, __version__
 from core.cli import build_parser
+from core.colour import to_hex
 from core.paths import ensure_layout, load_config
 from core.server import Handler, ReportHTTPServer
 
@@ -117,7 +118,8 @@ def test_static_lookup_stays_inside_the_listed_files(server):
 def tokens(block):
     css = (STATIC / "tokens.css").read_text(encoding="utf-8")
     body = re.search(block, css).group(1)
-    return dict(re.findall(r"(--rs-[a-z0-9-]+):\s*(#[0-9a-f]{6})\b", body, re.I))
+    found = re.findall(r"(--rs-[a-z0-9-]+):\s*(#[0-9a-f]{6}\b|oklch\([^)]*\))", body, re.I)
+    return {name: to_hex(value) for name, value in found}
 
 
 def test_manifest_names_the_app_and_uses_token_colours(server):

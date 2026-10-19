@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "notes": "Foreground/background token pairs actually used for text (min 4.5), large text (min 3.0) and non-text UI such as the focus ring and input borders (min 3.0, WCAG 1.4.11). Every pair is checked in both themes (light = :root, dark = the html[data-theme=\"dark\"] block). WCAG 2.x relative luminance; colours are opaque hex.",
+  "notes": "Foreground/background token pairs actually used for text (min 4.5), large text (min 3.0) and non-text UI such as the focus ring and input borders (min 3.0, WCAG 1.4.11). Every pair is checked in both themes (light = :root, dark = the html[data-theme=\"dark\"] block). WCAG 2.x relative luminance; colours are opaque OKLCH or hex values; OKLCH is read through OKLab into sRGB.",
   "themes": [
     "light",
     "dark"
@@ -171,8 +171,8 @@
     {
       "fg": "--rs-status-warn",
       "bg": "--rs-paper",
-      "min": 2.0,
-      "use": "warn status dot (always paired with text)"
+      "min": 3.0,
+      "use": "warn status dot"
     },
     {
       "fg": "--rs-status-danger",
@@ -485,6 +485,204 @@
       "bg": "--rs-task-urgent-bg",
       "min": 3.0,
       "use": "task banner edge on its tint (urgent, non-text)"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-raised",
+      "min": 4.5,
+      "use": "text on a raised surface (composer, menus)"
+    },
+    {
+      "fg": "--rs-muted",
+      "bg": "--rs-raised",
+      "min": 4.5,
+      "use": "meta text on a raised surface"
+    },
+    {
+      "fg": "--rs-focus",
+      "bg": "--rs-raised",
+      "min": 3.0,
+      "use": "focus ring on a raised surface"
+    },
+    {
+      "fg": "--rs-line-strong",
+      "bg": "--rs-raised",
+      "min": 3.0,
+      "use": "input borders on a raised surface"
+    },
+    {
+      "fg": "--rs-status-info",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "info status dot"
+    },
+    {
+      "fg": "--rs-status-ok",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "ok status dot in the card"
+    },
+    {
+      "fg": "--rs-status-warn",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "warn status dot in the card"
+    },
+    {
+      "fg": "--rs-status-danger",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "danger status dot in the card"
+    },
+    {
+      "fg": "--rs-status-info",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "info status dot in the card"
+    },
+    {
+      "fg": "--rs-status-ok-text",
+      "bg": "--rs-status-ok-tint",
+      "min": 4.5,
+      "use": "ok status word on its tint"
+    },
+    {
+      "fg": "--rs-status-ok-text",
+      "bg": "--rs-paper",
+      "min": 4.5,
+      "use": "ok status word on the page"
+    },
+    {
+      "fg": "--rs-status-ok-text",
+      "bg": "--rs-card",
+      "min": 4.5,
+      "use": "ok status word in the card"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-status-ok-tint",
+      "min": 4.5,
+      "use": "text on the ok tint"
+    },
+    {
+      "fg": "--rs-status-warn-text",
+      "bg": "--rs-status-warn-tint",
+      "min": 4.5,
+      "use": "warn status word on its tint"
+    },
+    {
+      "fg": "--rs-status-warn-text",
+      "bg": "--rs-paper",
+      "min": 4.5,
+      "use": "warn status word on the page"
+    },
+    {
+      "fg": "--rs-status-warn-text",
+      "bg": "--rs-card",
+      "min": 4.5,
+      "use": "warn status word in the card"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-status-warn-tint",
+      "min": 4.5,
+      "use": "text on the warn tint"
+    },
+    {
+      "fg": "--rs-status-danger-text",
+      "bg": "--rs-status-danger-tint",
+      "min": 4.5,
+      "use": "danger status word on its tint"
+    },
+    {
+      "fg": "--rs-status-danger-text",
+      "bg": "--rs-paper",
+      "min": 4.5,
+      "use": "danger status word on the page"
+    },
+    {
+      "fg": "--rs-status-danger-text",
+      "bg": "--rs-card",
+      "min": 4.5,
+      "use": "danger status word in the card"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-status-danger-tint",
+      "min": 4.5,
+      "use": "text on the danger tint"
+    },
+    {
+      "fg": "--rs-status-info-text",
+      "bg": "--rs-status-info-tint",
+      "min": 4.5,
+      "use": "info status word on its tint"
+    },
+    {
+      "fg": "--rs-status-info-text",
+      "bg": "--rs-paper",
+      "min": 4.5,
+      "use": "info status word on the page"
+    },
+    {
+      "fg": "--rs-status-info-text",
+      "bg": "--rs-card",
+      "min": 4.5,
+      "use": "info status word in the card"
+    },
+    {
+      "fg": "--rs-ink",
+      "bg": "--rs-status-info-tint",
+      "min": 4.5,
+      "use": "text on the info tint"
+    },
+    {
+      "fg": "--rs-cat-1",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "chart series 1 on the page (non-text)"
+    },
+    {
+      "fg": "--rs-cat-1",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "chart series 1 in the card (non-text)"
+    },
+    {
+      "fg": "--rs-cat-2",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "chart series 2 on the page (non-text)"
+    },
+    {
+      "fg": "--rs-cat-2",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "chart series 2 in the card (non-text)"
+    },
+    {
+      "fg": "--rs-cat-3",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "chart series 3 on the page (non-text)"
+    },
+    {
+      "fg": "--rs-cat-3",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "chart series 3 in the card (non-text)"
+    },
+    {
+      "fg": "--rs-cat-4",
+      "bg": "--rs-paper",
+      "min": 3.0,
+      "use": "chart series 4 on the page (non-text)"
+    },
+    {
+      "fg": "--rs-cat-4",
+      "bg": "--rs-card",
+      "min": 3.0,
+      "use": "chart series 4 in the card (non-text)"
     }
   ]
 }

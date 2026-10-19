@@ -1,7 +1,9 @@
 // Token contrast: every pair in contrast-pairs.json passes in both themes.
+// Desk colours are oklch(), read through the same OKLab maths as tools/contrast.py.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { parseColor, toHex, contrast } from '../tools/colour.mjs';
 
 const css = readFileSync(new URL('../core/static/tokens.css', import.meta.url), 'utf8');
 const pairs = JSON.parse(readFileSync(new URL('../core/static/contrast-pairs.json', import.meta.url), 'utf8'));
@@ -16,37 +18,60 @@ function vars(text) {
   for (const m of text.matchAll(/(--rs-[a-z0-9-]+)\s*:\s*([^;]+);/g)) out[m[1]] = m[2].trim();
   return out;
 }
+function resolve(tokens) {
+  const out = { ...tokens };
+  for (const [k, v] of Object.entries(out)) {
+    let value = v;
+    for (let i = 0; i < 10; i += 1) {
+      const m = value.match(/^var\((--rs-[a-z0-9-]+)\)$/);
+      if (!m || !(m[1] in out)) break;
+      value = out[m[1]];
+    }
+    out[k] = value;
+  }
+  return out;
+}
 
-const light = vars(block(/:root\s*\{([^}]*)\}/));
+const light = resolve(vars(block(/:root\s*\{([^}]*)\}/)));
 const darkMedia = vars(block(/html:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}/));
 const darkForced = vars(block(/\nhtml\[data-theme="dark"\]\s*\{([^}]*)\}/));
-const dark = { ...light, ...darkForced };
+const dark = resolve({ ...vars(block(/:root\s*\{([^}]*)\}/)), ...darkForced });
+const COLOUR = /^(#[0-9a-f]{6}|oklch\([^)]*\))$/i;
 
-function lum(hex) {
-  const v = hex.replace('#', '');
-  assert.equal(v.length, 6, 'opaque 6-digit hex expected, got ' + hex);
-  const c = [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255)
-    .map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+export const ratio = contrast;
+
+for (const [text, hex] of [
+  ['oklch(1 0 0)', '#ffffff'],
+  ['oklch(0% 0 0)', '#000000'],
+  ['oklch(50% 0 0)', '#636363'],
+  ['oklch(0.6279554 0.2576833 29.2338851)', '#ff0000'],
+  ['oklch(0.4520137 0.3132143 264.0520206)', '#0000ff'],
+  ['oklch(0.8664396 0.2948272 142.4953)', '#00ff00'],
+  ['#3B4FD8', '#3b4fd8'],
+]) {
+  test('oklch reference vector: ' + text, () => assert.equal(toHex(parseColor(text)), hex));
 }
-export function ratio(a, b) {
-  const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x);
-  return (l1 + 0.05) / (l2 + 0.05);
-}
+
+test('out-of-gamut oklch is clipped by chroma onto the sRGB edge', () => {
+  const rgb = parseColor('oklch(0.7 0.4 145)');
+  assert.ok(rgb.every((c) => c >= 0 && c <= 1));
+  assert.ok(Math.min(...rgb) < 1e-3 || Math.max(...rgb) > 1 - 1e-3);
+});
 
 test('both dark blocks are identical', () => {
   assert.deepEqual(darkMedia, darkForced);
 });
 
 test('every dark colour token overrides a light one', () => {
-  for (const k of Object.keys(darkForced)) assert.ok(k in light, k + ' missing in :root');
-  for (const [k, v] of Object.entries(light)) {
-    if (/^#[0-9a-f]{6}$/i.test(v)) assert.ok(k in darkForced, k + ' has no dark value');
+  const root = vars(block(/:root\s*\{([^}]*)\}/));
+  for (const k of Object.keys(darkForced)) assert.ok(k in root, k + ' missing in :root');
+  for (const [k, v] of Object.entries(root)) {
+    if (COLOUR.test(v)) assert.ok(k in darkForced, k + ' has no dark value');
   }
 });
 
-test('colour literals appear only as hex token values', () => {
-  assert.doesNotMatch(css, /\b(rgb|rgba|hsl|hsla)\(/);
+test('colour literals are oklch() or hex token values only', () => {
+  assert.doesNotMatch(css, /\b(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab)\(/);
 });
 
 for (const [name, theme] of [['light', light], ['dark', dark]]) {
@@ -55,7 +80,7 @@ for (const [name, theme] of [['light', light], ['dark', dark]]) {
     for (const p of pairs.pairs) {
       assert.ok(theme[p.fg], name + ': unknown token ' + p.fg);
       assert.ok(theme[p.bg], name + ': unknown token ' + p.bg);
-      const r = ratio(theme[p.fg], theme[p.bg]);
+      const r = contrast(theme[p.fg], theme[p.bg]);
       if (r < p.min) fails.push(`${p.fg} on ${p.bg}: ${r.toFixed(2)} < ${p.min} (${p.use})`);
     }
     assert.deepEqual(fails, []);

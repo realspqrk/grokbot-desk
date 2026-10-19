@@ -41,16 +41,34 @@ export function focusedControlFacts() {
   }
   const style = getComputedStyle(element);
   const rect = element.getBoundingClientRect();
+  let colorContext = null;
   const parseColor = (value) => {
-    const match = String(value || '').match(
+    const text = String(value || '').trim();
+    const match = text.match(
       /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/u,
     );
-    return match ? {
-      r: Number(match[1]),
-      g: Number(match[2]),
-      b: Number(match[3]),
-      a: match[4] === undefined ? 1 : Number(match[4]),
-    } : null;
+    if (match) {
+      return {
+        r: Number(match[1]),
+        g: Number(match[2]),
+        b: Number(match[3]),
+        a: match[4] === undefined ? 1 : Number(match[4]),
+      };
+    }
+    // tokens are oklch(); computed styles keep that space, so let the
+    // browser paint the colour once and read it back as sRGB
+    if (!text || !CSS.supports('color', text)) return null;
+    if (!colorContext) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      colorContext = canvas.getContext('2d', { willReadFrequently: true });
+    }
+    colorContext.clearRect(0, 0, 1, 1);
+    colorContext.fillStyle = text;
+    colorContext.fillRect(0, 0, 1, 1);
+    const [r, g, b, alpha] = colorContext.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: alpha / 255 };
   };
   const composite = (foreground, background) => {
     if (!foreground || foreground.a <= 0) return background;
