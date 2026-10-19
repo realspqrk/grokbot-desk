@@ -1,14 +1,16 @@
 /* grokbot-desk page core.
  *
  * Load order (shell.html <head>): count.js, md.js, charts.js, blocks.js,
- * ask.js, composer.js, rs.js, components.js. Everything that touches the
- * DOM starts on DOMContentLoaded.
+ * inputs.js, ask.js, composer.js, rs.js, components.js. Everything that
+ * touches the DOM starts on DOMContentLoaded.
  *
  * A report is a list of blocks; mountRun renders each through RSBlocks with
- * a ctx bound to that report (blocks.js). Every report ends in the footer:
- * one composer (RSComposer: note and reply chips), the quiet alternatives
- * and one primary, as the report's ask says (RSAsk). window.RS is the
- * page-wide API (components use RS.t / copy / toast / count).
+ * a ctx bound to that report (blocks.js), and the one input block through
+ * RSInputs (inputs.js), whose handle the footer reads. Every report ends in
+ * the footer: one composer (RSComposer: note and reply chips), the quiet
+ * alternatives and one primary, as the report's ask says (RSAsk).
+ * window.RS is the page-wide API (components use RS.t / copy / toast /
+ * count).
  */
 (function () {
   'use strict';
@@ -954,7 +956,7 @@
 
   function decisionControlKey(control) {
     if (control.id) return 'id:' + control.id;
-    var item = control.closest('rs-action-row[data-item]');
+    var item = control.closest('rs-segmented[data-item]');
     if (item) {
       return 'item:' + item.getAttribute('data-item')
         + (control === item ? '' : ':button:' + (control.value || ''));
@@ -969,7 +971,7 @@
   function captureDecisionState(root) {
     if (!root) return [];
     return Array.prototype.map.call(
-      root.querySelectorAll('rs-action-row, input, textarea, select, button'),
+      root.querySelectorAll('rs-segmented, input, textarea, select, button'),
       function (control, index) {
         return {
           control: control,
@@ -988,7 +990,7 @@
 
   function restoreDecisionState(root, snapshot) {
     if (!root || !snapshot) return;
-    var controls = root.querySelectorAll('rs-action-row, input, textarea, select, button');
+    var controls = root.querySelectorAll('rs-segmented, input, textarea, select, button');
     snapshot.forEach(function (saved) {
       var control = saved.control && root.contains(saved.control) ? saved.control : null;
       if (!control && saved.key) {
@@ -1007,7 +1009,7 @@
   }
 
   function lockDecisionControls(root, allowTemplateNavigation) {
-    root.querySelectorAll('rs-action-row').forEach(function (row) { row.setAttribute('disabled', ''); });
+    root.querySelectorAll('rs-segmented').forEach(function (row) { row.setAttribute('disabled', ''); });
     root.querySelectorAll('textarea').forEach(function (input) { input.readOnly = true; });
     root.querySelectorAll('input').forEach(function (input) {
       var type = (input.type || 'text').toLowerCase();
@@ -1523,12 +1525,22 @@
     root.className = 'rs-report';
     var ctx = blockCtx(run);
     var failed = false;
+    var handle = null;
     (Array.isArray(run.blocks) ? run.blocks : []).forEach(function (block) {
-      if (!window.RSBlocks || window.RSBlocks.types.indexOf(block && block.type) < 0) return;
-      try { root.appendChild(window.RSBlocks.render(block, ctx)); } catch (e) { console.error(e); failed = true; }
+      var type = block && block.type;
+      try {
+        if (window.RSBlocks && window.RSBlocks.types.indexOf(type) >= 0) {
+          root.appendChild(window.RSBlocks.render(block, ctx));
+        } else if (window.RSInputs && window.RSInputs.types.indexOf(type) >= 0 && !handle) {
+          /* the one input block: its controls are the answer, the footer sends */
+          handle = window.RSInputs.create(block, run, ctx);
+          root.appendChild(handle.el);
+        }
+      } catch (e) { console.error(e); failed = true; }
     });
     if (failed) toast(t('blk_error'));
     el.mount.appendChild(root);
+    if (handle) ctx.input(handle);
     renderBar();
     if (run.state === 'open') renderPendingOperation(run.run_id, root);
     var refocused = run.state === 'open' && restoreReloadFocus(run.run_id, root);

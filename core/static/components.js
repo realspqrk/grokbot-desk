@@ -3,7 +3,7 @@
  * Light DOM only (no shadow DOM), so tokens, shell.css, axe and the text
  * checks reach every node. Styles live in shell.css. Components talk to the
  * core only through window.RS: RS.t, RS.copy, RS.toast, RS.count.
- * Elements: rs-card, rs-action-row, rs-copy, rs-badge, rs-counter,
+ * Elements: rs-card, rs-segmented, rs-copy, rs-badge, rs-counter,
  * rs-post-frame, rs-confirm. API reference: see docs/GUIDE.md.
  * Calm UI semantics set here where the core owns the markup: copy controls
  * are icon-only (28 px) with an aria-label and stay visible (each is its own
@@ -156,11 +156,15 @@
     }
   }
 
-  // ======================================================== rs-action-row ==
-  // Children: <button value="…">label</button> (or the `options` property).
-  // Attributes: label (accessible name), value (selected value), disabled.
-  // Property: value, options = [{value, label}]. Event: change {detail:{value}}.
-  class RsActionRow extends HTMLElement {
+  // ========================================================= rs-segmented ==
+  // A labelled segmented control with radiogroup semantics: the segment IS
+  // the answer (no "select, then confirm"). Unset by default; never a
+  // checkbox. Children: <button value="...">. Other children (no value
+  // attribute) are left alone. Attributes: label (accessible name), value
+  // (selected value), disabled. Property: value. Event: change
+  // {detail:{value}}. Click, Enter or Space picks the focused segment; the
+  // arrow keys, Home and End only move focus (a stray arrow never decides).
+  class RsSegmented extends HTMLElement {
     static get observedAttributes() { return ['label', 'value', 'disabled']; }
     constructor() {
       super();
@@ -169,7 +173,7 @@
       this._onClick = this._onClick.bind(this);
     }
     connectedCallback() {
-      upgradeProps(this, ['value', 'options']);
+      upgradeProps(this, ['value']);
       if (!this._init) {
         this._init = true;
         this.setAttribute('role', 'radiogroup');
@@ -188,26 +192,14 @@
       if (this._init) this._sync();
     }
     get buttons() {
-      return Array.prototype.filter.call(this.children, function (c) { return c.tagName === 'BUTTON'; });
+      return Array.prototype.filter.call(this.children, function (c) {
+        return c.tagName === 'BUTTON' && c.hasAttribute('value');
+      });
     }
     get value() { return this._value; }
     set value(v) { this._set(v === null || v === undefined ? '' : String(v), false); }
     get disabled() { return this.hasAttribute('disabled'); }
     set disabled(v) { if (v) this.setAttribute('disabled', ''); else this.removeAttribute('disabled'); }
-    set options(list) {
-      this.buttons.forEach(function (b) { b.remove(); });
-      var self = this;
-      (list || []).forEach(function (o) {
-        var b = document.createElement('button');
-        b.value = o.value;
-        b.textContent = o.label;
-        self.appendChild(b);
-      });
-      this._sync();
-    }
-    get options() {
-      return this.buttons.map(function (b) { return { value: b.value, label: b.textContent }; });
-    }
     _set(v, emit) {
       if (v === this._value) return;
       this._value = v;
@@ -215,36 +207,41 @@
       this._sync();
       if (emit) this.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { value: v } }));
     }
+    /* the segment that takes Tab: the chosen one, else the first */
+    get current() {
+      var btns = this.buttons;
+      var v = this._value;
+      return btns.filter(function (b) { return v !== '' && b.value === v; })[0] || btns[0] || null;
+    }
     _sync() {
       var label = this.getAttribute('label');
       if (label) this.setAttribute('aria-label', label);
       var dis = this.disabled;
       if (dis) this.setAttribute('aria-disabled', 'true'); else this.removeAttribute('aria-disabled');
-      var btns = this.buttons;
+      if (this._value) this.setAttribute('data-chosen', this._value); else this.removeAttribute('data-chosen');
       var v = this._value;
-      var hasSel = btns.some(function (b) { return b.value === v && v !== ''; });
-      btns.forEach(function (b, i) {
+      var stop = this.current;
+      this.buttons.forEach(function (b) {
         b.type = 'button';
         b.setAttribute('role', 'radio');
-        b.classList.add('rs-choice');
-        var on = hasSel && b.value === v;
+        var on = v !== '' && b.value === v;
         b.setAttribute('aria-checked', on ? 'true' : 'false');
-        b.tabIndex = (on || (!hasSel && i === 0)) ? 0 : -1;
+        b.tabIndex = b === stop ? 0 : -1;
         b.disabled = dis;
       });
     }
     _onClick(e) {
       var b = e.target.closest('button');
-      if (!b || b.parentNode !== this || this.disabled) return;
+      if (!b || b.parentNode !== this || !b.hasAttribute('value') || this.disabled || b.disabled) return;
       this._set(b.value, true);
-      b.focus();
     }
     _onKey(e) {
       var b = e.target.closest('button');
-      if (!b || b.parentNode !== this || this.disabled) return;
-      var btns = this.buttons;
+      if (!b || b.parentNode !== this || !b.hasAttribute('value') || e.altKey || e.ctrlKey || e.metaKey) return;
+      var btns = this.buttons.filter(function (x) { return !x.disabled; });
       var i = btns.indexOf(b);
       var n = btns.length;
+      if (i < 0 || !n) return;
       var j = -1;
       switch (e.key) {
         case 'ArrowRight': case 'ArrowDown': j = (i + 1) % n; break;
@@ -254,7 +251,7 @@
         default: return;
       }
       e.preventDefault();
-      this._set(btns[j].value, true);
+      btns.forEach(function (x, k) { x.tabIndex = k === j ? 0 : -1; });
       btns[j].focus();
     }
   }
@@ -1345,7 +1342,7 @@
   }
 
   define('rs-card', RsCard);
-  define('rs-action-row', RsActionRow);
+  define('rs-segmented', RsSegmented);
   define('rs-copy', RsCopy);
   define('rs-badge', RsBadge);
   define('rs-counter', RsCounter);

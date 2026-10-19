@@ -10,7 +10,7 @@ const files = [
   'core/static/twitter-text-v3-data.js',
   'core/static/platforms.json', 'core/static/contrast-pairs.json', 'core/i18n/de.json',
   'tools/dev/kit-preview.html', 'tools/dev/kit-preview.mjs',
-  'core/static/rs.js', 'core/static/ask.js', 'core/static/composer.js', 'core/static/shell.html',
+  'core/static/rs.js', 'core/static/ask.js', 'core/static/composer.js', 'core/static/inputs.js', 'core/static/shell.html',
   'templates/builtin/_starter/template.html', 'templates/builtin/_starter/template.css', 'templates/builtin/_starter/template.js',
   'templates/builtin/preview-post/template.html',
   'templates/builtin/preview-post/template.css',

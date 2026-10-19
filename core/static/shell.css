@@ -873,35 +873,6 @@ rs-card[variant="quiet"] { padding: 0; border: 0; background: transparent; box-s
   line-height: var(--rs-lh-tight);
 }
 
-/* ---- rs-action-row: a segmented control ---- */
-rs-action-row {
-  display: inline-flex;
-  flex-wrap: wrap;
-}
-.rs-choice {
-  min-height: var(--rs-control-h);
-  padding: 0 var(--space-4);
-  border: var(--rs-border) solid var(--rs-line-strong);
-  border-left-width: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--rs-ink);
-  font-weight: var(--rs-fw-normal);
-  cursor: pointer;
-  transition: background-color var(--rs-dur) var(--rs-ease);
-}
-.rs-choice:first-child { border-left-width: 1px; border-radius: var(--rs-r-md) 0 0 var(--rs-r-md); }
-.rs-choice:last-child { border-radius: 0 var(--rs-r-md) var(--rs-r-md) 0; }
-.rs-choice:only-child { border-radius: var(--rs-r-md); }
-.rs-choice:hover { background: var(--rs-hover); }
-.rs-choice[aria-checked="true"],
-.rs-choice[aria-checked="true"]:hover {
-  background: var(--rs-selected);
-  font-weight: var(--rs-fw-strong);
-}
-.rs-choice:focus-visible { position: relative; z-index: 1; }
-.rs-choice:disabled { cursor: not-allowed; color: var(--rs-on-disabled); }
-
 /* ---- rs-copy: caption / value + copy icon (icon-only, 28 px, aria-label) ---- */
 rs-copy {
   display: inline-grid;

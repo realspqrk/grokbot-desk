@@ -35,6 +35,9 @@ export const SMOKE = {
     '1 open: compact pop-up without a strip; header = quiet byline, strong report title',
     'a decision auto-advances to the next open report; the last one ends in a calm done state',
   ],
+  'inputs.e2e.test.mjs': [
+    'half-done decide + chips survive reload, send, reopen read-only',
+  ],
   'builtin-review-pick.e2e.test.mjs': [
     'review-doc: a half-done review survives a reload, sends, and reopens read-only',
   ],

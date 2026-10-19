@@ -358,5 +358,21 @@
   "cmp_ref_remove": "Remove reference “{what}”",
   "cmp_sent_note": "Your note",
   "ask_hint_all_left_out": "Every platform is left out: request changes or reject",
-  "ask_hint_none_postable": "No platform can be posted as it is: request changes or reject"
+  "ask_hint_none_postable": "No platform can be posted as it is: request changes or reject",
+  "inp_choice_skip": "Skip",
+  "inp_choice_posted": "Posted",
+  "inp_suggested": "Suggested",
+  "inp_choose_named": "Choose {name}",
+  "inp_approve_post_to": "Approve & post to {platforms}",
+  "inp_leave_out": "Leave out {platform}",
+  "inp_include": "Include {platform} again",
+  "inp_post_goes_out": "Goes out on {platform}",
+  "inp_post_left_out_line": "Left out, not posted",
+  "inp_post_included": "goes out",
+  "inp_post_left_out": "left out",
+  "inp_post_blocked": "cannot be posted as it is",
+  "inp_post_posted": "posted",
+  "inp_post_skipped": "skipped",
+  "inp_post_open": "open",
+  "inp_post_ref": "Post on {platform}"
 }

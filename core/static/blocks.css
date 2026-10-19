@@ -287,3 +287,258 @@
 /* ---------------------------------------------------------------- copy -- */
 .rs-copies { display: grid; gap: var(--space-3); max-width: var(--rs-measure); }
 
+/* ======================================================= input blocks == */
+/* inputs.js: the control is the decision. A segmented control
+   (rs-segmented, a radiogroup) is unset and outlined until answered; the
+   chosen segment fills with its state tint and shows its icon, the others
+   go quiet. Never a checkbox, never a box that reads as ticked. */
+
+/* ---------------------------------------------------------- segmented -- */
+rs-segmented { display: inline-flex; flex-wrap: nowrap; min-width: 0; max-width: 100%; }
+.rs-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--rs-control-h);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--rs-line-strong);
+  border-left-width: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--rs-ink);
+  font: inherit;
+  font-weight: var(--rs-fw-normal);
+  line-height: var(--rs-lh-tight);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--rs-dur) var(--rs-ease), color var(--rs-dur) var(--rs-ease), border-color var(--rs-dur) var(--rs-ease);
+}
+.rs-seg:first-child { border-left-width: 1px; border-radius: var(--rs-r-md) 0 0 var(--rs-r-md); }
+.rs-seg:last-child { border-radius: 0 var(--rs-r-md) var(--rs-r-md) 0; }
+.rs-seg:only-child { border-radius: var(--rs-r-md); }
+.rs-seg:focus-visible { position: relative; z-index: 1; }
+.rs-seg:hover:not(:disabled) { background: var(--rs-hover); }
+/* the label keeps the width of its bold (chosen) form: no jump on a choice */
+.rs-seg__label { display: inline-flex; flex-direction: column; }
+.rs-seg__label::after {
+  content: attr(data-text);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: var(--rs-fw-strong);
+  speak: never;
+}
+.rs-seg__icon { display: none; }
+.rs-seg__icon > .rs-ico { width: 16px; height: 16px; }
+.rs-seg[aria-checked="true"] .rs-seg__icon { display: inline-flex; }
+/* answered: the others step back, the choice carries tint, icon and weight */
+rs-segmented[data-chosen] > .rs-seg[aria-checked="false"] { color: var(--rs-muted); border-color: var(--rs-line); }
+.rs-seg[aria-checked="true"],
+.rs-seg[aria-checked="true"]:hover:not(:disabled) {
+  background: var(--rs-selected);
+  color: var(--rs-ink);
+  font-weight: var(--rs-fw-strong);
+}
+.rs-seg[aria-checked="true"][data-tone="ok"],
+.rs-seg[aria-checked="true"][data-tone="ok"]:hover:not(:disabled) {
+  background: var(--rs-status-ok-tint);
+  color: var(--rs-status-ok-text);
+}
+.rs-seg[aria-checked="true"][data-tone="danger"],
+.rs-seg[aria-checked="true"][data-tone="danger"]:hover:not(:disabled) {
+  background: var(--rs-status-danger-tint);
+  color: var(--rs-status-danger-text);
+}
+.rs-seg:disabled { cursor: default; }
+
+/* --------------------------------------------------------------- decide -- */
+/* rows share one grid (subgrid), so every row's segments line up in
+   columns: twelve rows scan like a table, the choice next to its title */
+.rs-blk--decide { container-type: inline-size; }
+.rs-decide {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto) auto;
+}
+.rs-decide > .rs-drow {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  row-gap: var(--space-2);
+  max-width: none;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--rs-line);
+}
+.rs-drow:last-child { border-bottom: 0; }
+.rs-drow__main { grid-column: 1; display: grid; gap: var(--space-1); min-width: 0; padding-right: var(--space-5); }
+.rs-drow__main > * { max-width: var(--rs-measure); }
+.rs-drow__title { color: var(--rs-ink); overflow-wrap: anywhere; }
+.rs-drow__meta { font-size: var(--rs-fs-sm); color: var(--rs-muted); font-variant-numeric: tabular-nums; }
+.rs-drow__md { font-size: var(--rs-fs-sm); color: var(--rs-muted); gap: var(--space-1); }
+.rs-drow__extra { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-4); padding-top: var(--space-1); min-width: 0; }
+.rs-drow__url { font-size: var(--rs-fs-sm); }
+.rs-drow__act { display: contents; }
+.rs-drow rs-segmented { grid-column: 2 / span 3; display: grid; grid-template-columns: subgrid; }
+.rs-drow rs-segmented[data-count="2"] { grid-column: 2 / span 2; }
+.rs-drow rs-segmented[data-count="1"] { grid-column: 2; }
+.rs-drow .rs-seg { justify-content: center; }
+.rs-drow .rs-reply { grid-column: 5; margin-left: var(--space-1); }
+@container (max-width: 560px) {
+  .rs-decide { grid-template-columns: minmax(0, 1fr); }
+  .rs-decide > .rs-drow { grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .rs-drow__main { padding-right: 0; }
+  .rs-drow__act { display: flex; align-items: center; gap: var(--space-1); }
+  .rs-drow rs-segmented, .rs-drow rs-segmented[data-count] { display: inline-flex; }
+  .rs-drow .rs-reply { margin-left: 0; }
+}
+
+/* ----------------------------------------------------------------- pick -- */
+.rs-blk--pick { container-type: inline-size; }
+rs-segmented.rs-pick {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+  align-items: stretch;
+}
+.rs-pick[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rs-pick[data-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.rs-pick > .rs-pick__card { grid-row: 1; }
+.rs-pick > .rs-pick__reply { grid-row: 2; justify-self: start; }
+.rs-pick > [data-i="0"] { grid-column: 1; }
+.rs-pick > [data-i="1"] { grid-column: 2; }
+.rs-pick > [data-i="2"] { grid-column: 3; }
+.rs-pick > [data-i="3"] { grid-column: 4; }
+.rs-pick__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--rs-line-strong);
+  border-radius: var(--rs-r-lg);
+  background: var(--rs-card);
+  color: var(--rs-ink);
+  font: inherit;
+  line-height: var(--rs-lh);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background-color var(--rs-dur) var(--rs-ease), border-color var(--rs-dur) var(--rs-ease);
+}
+.rs-pick__card:hover:not(:disabled) { background: var(--rs-hover); }
+.rs-pick__card[aria-checked="true"],
+.rs-pick__card[aria-checked="true"]:hover:not(:disabled) {
+  border-color: var(--rs-ink);
+  box-shadow: inset 0 0 0 1px var(--rs-ink);
+  background: var(--rs-selected);
+}
+.rs-pick[data-chosen] > .rs-pick__card[aria-checked="false"] { border-color: var(--rs-line); }
+.rs-pick__card:disabled { cursor: default; }
+.rs-pick__head { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; flex-wrap: wrap; }
+.rs-pick__mark { flex: none; display: inline-grid; color: var(--rs-muted); }
+.rs-pick__mark > .rs-ico { grid-area: 1 / 1; width: 20px; height: 20px; }
+.rs-pick__on { display: none; }
+.rs-pick__card[aria-checked="true"] .rs-pick__mark { color: var(--rs-ink); }
+.rs-pick__card[aria-checked="true"] .rs-pick__off { display: none; }
+.rs-pick__card[aria-checked="true"] .rs-pick__on { display: block; }
+.rs-pick__name { font-weight: var(--rs-fw-strong); min-width: 0; flex: 1 1 auto; }
+.rs-pick__suggested {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--rs-line-strong);
+  border-radius: var(--rs-r-pill);
+  font-size: var(--rs-fs-sm);
+  color: var(--rs-muted);
+}
+.rs-pick__md { font-size: var(--rs-fs-sm); color: var(--rs-muted); gap: var(--space-1); }
+.rs-pick__facts { display: grid; gap: var(--space-2); }
+.rs-pick__fact { display: flex; justify-content: space-between; gap: var(--space-3); min-width: 0; padding-top: var(--space-2); border-top: 1px solid var(--rs-line); }
+.rs-pick__label { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.rs-pick__value { font-variant-numeric: tabular-nums; text-align: right; }
+@container (max-width: 520px) {
+  rs-segmented.rs-pick, .rs-pick[data-count] { grid-template-columns: minmax(0, 1fr); }
+  .rs-pick > .rs-pick__card, .rs-pick > .rs-pick__reply { grid-row: auto; grid-column: 1; }
+}
+
+/* ----------------------------------------------------------------- post -- */
+.rs-blk--post { container-type: inline-size; gap: var(--space-4); }
+.rs-post__note { max-width: var(--rs-measure); color: var(--rs-muted); }
+.rs-post__meta { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.rs-post__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-5);
+  border-bottom: 1px solid var(--rs-line);
+}
+.rs-post__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--rs-primary-h);
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--rs-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: color var(--rs-dur) var(--rs-ease), border-color var(--rs-dur) var(--rs-ease);
+}
+.rs-post__tab:hover { color: var(--rs-ink); }
+.rs-post__tab[aria-selected="true"] { border-bottom-color: var(--rs-ink); color: var(--rs-ink); font-weight: var(--rs-fw-strong); }
+.rs-post__mark { min-width: 1ch; font-weight: var(--rs-fw-strong); }
+.rs-post__mark:empty { display: none; }
+.rs-post__tab[data-state="left-out"] .rs-post__tabname,
+.rs-post__tab[data-state="skipped"] .rs-post__tabname { text-decoration: line-through; text-decoration-color: var(--rs-muted); }
+.rs-post__mark[data-rs-status="danger"] { color: var(--rs-status-danger-text); }
+.rs-post__tab[data-state="included"] .rs-post__mark,
+.rs-post__tab[data-state="posted"] .rs-post__mark { color: var(--rs-status-ok-text); }
+
+.rs-post__panel {
+  display: grid;
+  grid-template-columns: minmax(480px, 500px) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.rs-post__panel rs-post-frame { --rs-pf-max: none; }
+/* a left-out platform reads as out: its preview steps back */
+.rs-post__panel[data-state="left-out"] rs-post-frame,
+.rs-post__panel[data-state="blocked"] rs-post-frame { opacity: 0.55; }
+.rs-post__side { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; padding-top: var(--space-1); }
+.rs-post__decide { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.rs-post__state { display: flex; align-items: baseline; gap: var(--space-2); }
+.rs-post__state[hidden] { display: none; }
+.rs-post__glyph { min-width: 1ch; font-weight: var(--rs-fw-strong); }
+.rs-post__panel[data-state="included"] .rs-post__glyph { color: var(--rs-status-ok-text); }
+.rs-post__panel:is([data-state="left-out"], [data-state="blocked"]) .rs-post__state { color: var(--rs-muted); }
+.rs-post__toggle, .rs-post__reveal { padding: 0; }
+/* posting by hand: the copies come first, then Posted */
+.rs-post__panel[data-mode="manual"] .rs-post__copies { order: -1; }
+.rs-post__reason { display: flex; align-items: center; gap: var(--space-2); font-size: var(--rs-fs-sm); color: var(--rs-ink); }
+.rs-post__reason[data-advice] { color: var(--rs-muted); }
+.rs-post__counts { display: flex; flex-direction: column; gap: var(--space-1); }
+.rs-post__counts rs-counter, .rs-post__counts rs-counter[over] { color: var(--rs-muted); }
+.rs-post__counts rs-counter > .rs-dot { display: none; }
+.rs-post__counts .rs-counter__over { color: var(--rs-ink); font-weight: var(--rs-fw-strong); }
+.rs-post__tagcount { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.rs-post__quiet { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.rs-post__copies { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.rs-post__copies rs-copy.rs-post__comment { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+.rs-post__comment .rs-copy__btn { grid-column: 1; grid-row: 1; }
+.rs-post__comment .rs-copy__caption { grid-column: 2; grid-row: 1; color: var(--rs-ink); }
+.rs-post__comment .rs-copy__value { grid-column: 1 / -1; grid-row: 2; font-size: var(--rs-fs-sm); }
+.rs-post__tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+/* narrow: the decision first (what goes out, Leave out / Posted), then
+   the preview, then counts and copies */
+@container (max-width: 719px) {
+  .rs-post__panel { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4); }
+  .rs-post__panel rs-post-frame { --rs-pf-max: 560px; order: 0; }
+  .rs-post__side { display: contents; }
+  .rs-post__decide { order: -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+  .rs-post__side > :not(.rs-post__decide) { order: 1; }
+  .rs-post__panel[data-mode="manual"] .rs-post__copies { order: -2; }
+}
+

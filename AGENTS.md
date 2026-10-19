@@ -26,6 +26,7 @@ launcher that finds a Python 3.11+), `report-shell.cmd` (Windows, `py -3`).
 | `core/runs.py`, `core/results.py`, `core/envelope.py` | report store (`runs/`), result files, payload and result envelopes |
 | `core/registry.py`, `core/schema.py`, `core/check.py`, `core/lint.py` | template registry, restricted JSON Schema, `check`, template lint |
 | `core/static/ask.js` + `core/static/composer.js` | the decision contract per ask (footer buttons, banner, decided line) and the one composer (note + reply chips) |
+| `core/static/inputs.js` | input blocks (decide, pick, post): the segmented control or card is the answer; the footer reads its handle |
 | `core/identity.py`, `core/launcher.py`, `core/launch_coordination.py` | bot identity/avatars, browser app-window launch, burst coordination |
 | `core/platform*.py` | OS layer (`platform_windows.py`, `platform_darwin.py`) |
 | `core/paths.py` | data dir (`%LOCALAPPDATA%\grokbot-desk`, `~/Library/Application Support/grokbot-desk`, `RS_DATA_DIR`) |

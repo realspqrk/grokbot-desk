@@ -358,5 +358,21 @@
   "cmp_ref_remove": "Bezug „{what}“ entfernen",
   "cmp_sent_note": "Deine Notiz",
   "ask_hint_all_left_out": "Alle Plattformen ausgelassen: Änderungen anfordern oder ablehnen",
-  "ask_hint_none_postable": "Keine Plattform kann so gepostet werden: Änderungen anfordern oder ablehnen"
+  "ask_hint_none_postable": "Keine Plattform kann so gepostet werden: Änderungen anfordern oder ablehnen",
+  "inp_choice_skip": "Überspringen",
+  "inp_choice_posted": "Gepostet",
+  "inp_suggested": "Vorschlag",
+  "inp_choose_named": "{name} wählen",
+  "inp_approve_post_to": "Freigeben & auf {platforms} posten",
+  "inp_leave_out": "{platform} auslassen",
+  "inp_include": "{platform} wieder aufnehmen",
+  "inp_post_goes_out": "Wird auf {platform} gepostet",
+  "inp_post_left_out_line": "Ausgelassen, wird nicht gepostet",
+  "inp_post_included": "wird gepostet",
+  "inp_post_left_out": "ausgelassen",
+  "inp_post_blocked": "kann so nicht gepostet werden",
+  "inp_post_posted": "gepostet",
+  "inp_post_skipped": "übersprungen",
+  "inp_post_open": "offen",
+  "inp_post_ref": "Post auf {platform}"
 }
