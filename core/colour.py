@@ -72,6 +72,8 @@ def _oklch_numbers(text):
     lightness, percent, chroma, hue = match.groups()
     lightness = float(lightness) / (100 if percent else 1)
     chroma, hue = float(chroma), float(hue)
+    if not all(math.isfinite(number) for number in (lightness, chroma, hue)):
+        raise ValueError(f"oklch() component is not a finite number: {text!r}")
     if not 0 <= lightness <= 1 or chroma < 0:
         raise ValueError(f"oklch() out of range: {text!r}")
     return lightness, chroma, hue

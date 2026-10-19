@@ -7,6 +7,7 @@ OKLab and gamut-mapped by chroma reduction (core/colour.py).
 from __future__ import annotations
 
 import argparse
+import math
 import json
 import re
 import sys
@@ -95,7 +96,8 @@ def evaluate_pairs(themes: dict[str, dict[str, str]], pairs: list[dict]) -> dict
                             "foreground": tokens[case["fg"]],
                             "background": tokens[case["bg"]],
                             "ratio": ratio,
-                            "pass": ratio + 1e-12 >= float(case["min"]),
+                            # NaN or inf never passes a gate
+                            "pass": math.isfinite(ratio) and ratio + 1e-12 >= float(case["min"]),
                         }
                     )
                 except (TypeError, ValueError) as error:

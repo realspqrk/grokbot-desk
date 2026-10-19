@@ -39,6 +39,7 @@ const dark = resolve({ ...vars(block(/:root\s*\{([^}]*)\}/)), ...darkForced });
 const COLOUR = /^(#[0-9a-f]{6}|oklch\([^)]*\))$/i;
 
 export const ratio = contrast;
+const passes = (r, min) => Number.isFinite(r) && r >= min;
 
 for (const [text, hex] of [
   ['oklch(1 0 0)', '#ffffff'],
@@ -56,6 +57,16 @@ test('out-of-gamut oklch is clipped by chroma onto the sRGB edge', () => {
   const rgb = parseColor('oklch(0.7 0.4 145)');
   assert.ok(rgb.every((c) => c >= 0 && c <= 1));
   assert.ok(Math.min(...rgb) < 1e-3 || Math.max(...rgb) > 1 - 1e-3);
+});
+
+for (const text of ['oklch(0.5 0.1 1e999)', 'oklch(0.5 1e999 20)', 'oklch(1e999% 0 0)']) {
+  test('nonfinite oklch component is rejected: ' + text, () => assert.throws(() => parseColor(text)));
+}
+
+test('the gate treats a nonfinite ratio as failing', () => {
+  assert.equal(passes(Number.NaN, 3), false);
+  assert.equal(passes(Number.POSITIVE_INFINITY, 3), false);
+  assert.equal(passes(4.5, 4.5), true);
 });
 
 test('both dark blocks are identical', () => {
@@ -81,7 +92,7 @@ for (const [name, theme] of [['light', light], ['dark', dark]]) {
       assert.ok(theme[p.fg], name + ': unknown token ' + p.fg);
       assert.ok(theme[p.bg], name + ': unknown token ' + p.bg);
       const r = contrast(theme[p.fg], theme[p.bg]);
-      if (r < p.min) fails.push(`${p.fg} on ${p.bg}: ${r.toFixed(2)} < ${p.min} (${p.use})`);
+      if (!passes(r, p.min)) fails.push(`${p.fg} on ${p.bg}: ${r.toFixed(2)} < ${p.min} (${p.use})`);
     }
     assert.deepEqual(fails, []);
   });

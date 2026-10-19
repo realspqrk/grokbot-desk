@@ -46,8 +46,11 @@ export function parseColor(text) {
   const m = value.match(OKLCH);
   if (!m) throw new Error('expected #rrggbb or oklch(L C H), got ' + text);
   const l = Number(m[1]) / (m[2] ? 100 : 1);
-  if (!(l >= 0 && l <= 1) || Number(m[3]) < 0) throw new Error('oklch() out of range: ' + text);
-  return oklchToSrgb(l, Number(m[3]), Number(m[4]));
+  const c = Number(m[3]);
+  const h = Number(m[4]);
+  if (![l, c, h].every(Number.isFinite)) throw new Error('oklch() component is not a finite number: ' + text);
+  if (!(l >= 0 && l <= 1) || c < 0) throw new Error('oklch() out of range: ' + text);
+  return oklchToSrgb(l, c, h);
 }
 
 export function toHex(rgb) {

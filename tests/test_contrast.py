@@ -128,7 +128,7 @@ def test_out_of_gamut_oklch_keeps_lightness_and_hue_and_drops_chroma():
     assert 0.1 < math.hypot(a, b) < 0.4
 
 
-@pytest.mark.parametrize("text", ["oklch(0.5 0.1)", "oklch(0.5 0.1 20 / 0.5)", "rgb(0,0,0)", "#fff", "oklch(2 0 0)"])
+@pytest.mark.parametrize("text", ["oklch(0.5 0.1 1e999)", "oklch(0.5 1e999 20)", "oklch(1e999% 0 0)", "oklch(0.5 0.1)", "oklch(0.5 0.1 20 / 0.5)", "rgb(0,0,0)", "#fff", "oklch(2 0 0)"])
 def test_parse_color_rejects_what_it_cannot_check(text):
     with pytest.raises(ValueError):
         parse_color(text)
@@ -206,3 +206,12 @@ def test_desk_oklch_tokens_sit_inside_srgb():
         for name, value in tokens.items():
             if value.startswith("oklch("):
                 assert in_gamut(value), (theme, name, value)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_contrast_gate_fails_a_nonfinite_ratio(monkeypatch, bad):
+    import tools.contrast as module
+    monkeypatch.setattr(module, "contrast", lambda first, second: bad)
+    themes = {"light": {"--fg": "#000000", "--bg": "#ffffff"}, "dark": {"--fg": "#ffffff", "--bg": "#000000"}}
+    result = evaluate_pairs(themes, [{"fg": "--fg", "bg": "--bg", "min": 4.5}])
+    assert result["ok"] is False and result["passed"] == 0
