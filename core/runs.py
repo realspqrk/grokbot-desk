@@ -52,6 +52,12 @@ class RunIdAlreadyUsed(ValueError):
     pointer = "/run_id"
 
 
+def read_record(path):
+    """A stored run record. The one reader: the store and cleanup share it,
+    so a payload at the accepted depth (record depth + 1) parses in both."""
+    return loads(Path(path).read_text(encoding="utf-8"), max_depth=MAX_JSON_DEPTH + 1)
+
+
 class RunStore:
     def __init__(self, data_dir, config, action_log):
         self.data_dir = Path(data_dir)
@@ -72,10 +78,7 @@ class RunStore:
     def _load(self):
         for path in self.runs_dir.glob("*.json"):
             try:
-                record = loads(
-                    path.read_text(encoding="utf-8"),
-                    max_depth=MAX_JSON_DEPTH + 1,
-                )
+                record = read_record(path)
                 if not isinstance(record["payload"], dict):
                     raise TypeError("payload is not an object")
                 if record["payload"].get("schema") != SCHEMA:

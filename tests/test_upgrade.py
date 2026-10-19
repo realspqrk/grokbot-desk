@@ -13,6 +13,7 @@ import core.cli as cli
 import core.server as server_module
 from conftest import free_port
 from core import doorbell
+from core.jsonutil import MAX_JSON_DEPTH
 from core.paths import ensure_layout, load_config
 from core.runs import RunStore
 from core.server import Handler, ReportHTTPServer
@@ -168,10 +169,18 @@ def test_wait_answers_an_upgrade_expired_run_like_any_expiry(data_dir):
 def test_retention_does_not_delete_an_old_open_v1_run_before_the_upgrade(data_dir, monkeypatch):
     old_run(data_dir)
     old_run(data_dir, run_id="20260101-090000-gone-abcd", state="expired")
+    deep = "20260101-090000-deep-abcd"
+    nested = {}
+    for _ in range(MAX_JSON_DEPTH - 2):  # a record one level deeper than the default limit
+        nested = {"n": nested}
+    (data_dir / "runs" / f"{deep}.json").write_text(json.dumps({
+        "payload": dict(V1, run_id=deep, data=nested), "state": "open",
+        "expires": "2026-10-11T13:00:00+02:00"}), encoding="utf-8")
     long_ago = time.time() - 40 * 86400
-    for name in (OLD, "20260101-090000-gone-abcd"):
+    for name in (OLD, "20260101-090000-gone-abcd", deep):
         os.utime(data_dir / "runs" / f"{name}.json", (long_ago, long_ago))
     monkeypatch.setattr(ReportHTTPServer, "serve_forever", lambda self, poll_interval=.5: None)
     server_module._serve(data_dir, free_port())
     assert result_of(data_dir)["status"] == "expired"
+    assert result_of(data_dir, deep)["status"] == "expired"
     assert not (data_dir / "runs" / "20260101-090000-gone-abcd.json").exists()

@@ -44,7 +44,7 @@ from .platform import (
 )
 from .platform_types import LaunchResult
 from .product import RUNNER_ID
-from .runs import AlreadyDecided, RunIdAlreadyUsed, RunStore, UnknownRun
+from .runs import AlreadyDecided, RunIdAlreadyUsed, RunStore, UnknownRun, read_record
 from .payload import ResultError
 
 
@@ -77,7 +77,7 @@ GENERATED_RUN_ID_ATTEMPTS = 8
 def _awaits_upgrade(path):
     """An open payload@1 run: the desk expires it at start, so cleanup keeps it."""
     try:
-        record = json_loads(path.read_bytes())
+        record = read_record(path)
         return record["state"] == "open" and record["payload"]["schema"] != PAYLOAD_SCHEMA
     except (OSError, ValueError, TypeError, KeyError):
         return False
