@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A chart has a "Show data" table. Tables use row lines, aligned numbers, and a folded long list.
 - New colours, with better contrast in dark mode.
 - **Breaking:** an open report from before this version expires when the desk starts. The result status is `expired`. The result's `log` field is the path of the action log.
+- After the update, the first `show` replaces a desk that still runs the older version, even with a report open. The old window shows that the connection is lost. Close it once; `show` opens a new one. Later desk restarts reload an open window by themselves.
 - **Breaking:** `show` takes `--data` only. `check FILE` validates a payload file.
 
 ### Removed
