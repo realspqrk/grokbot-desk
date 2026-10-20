@@ -1195,6 +1195,47 @@ describe('C16 calm synthetic pages', { skip }, () => {
     + 'border-left:4px solid #1b7340;background:#e2f3e7"><p>Approve, then the bot posts</p>'
     + `<p>Check the text and the platforms.</p>${inner}</section>`;
 
+  test('K11: a nameless bot shown by its id in the shell name slots is its name; the id in content is noise', async () => {
+    const slots = await judgeHtml(calmPage().replace(
+      '<header><h1>Review report</h1>',
+      '<header><p id="rs-bot-name">deploy-bot</p><h1>Review report</h1>',
+    ).replace('>Run 1</a>', '><span class="rs-inbox__bot">deploy-bot</span> · Urgent</a>'));
+    try {
+      assert.equal(slots.judged.items.K11.pass, true, slots.judged.items.K11.reasons.join('; '));
+    } finally {
+      await slots.context.close();
+    }
+    const content = await judgeHtml(calmPage().replace('</main>', '<p>Sent by deploy-bot</p></main>'));
+    try {
+      assert.equal(content.judged.items.K11.pass, false);
+    } finally {
+      await content.context.close();
+    }
+  });
+
+  test('K6 status exception: a small status mark passes; a small mark painting a large child does not', async () => {
+    const small = await judgeHtml(calmPage().replace(
+      '</main>',
+      '<p>Backups <span data-rs-status="ok" style="color:#1b7340">✓ fine</span></p></main>',
+    ));
+    try {
+      assert.equal(small.judged.items.K6.pass, true, small.judged.items.K6.reasons.join('; '));
+    } finally {
+      await small.context.close();
+    }
+    // a 10x10 marked box whose overflowing child paints 800x500 off-accent
+    const large = await judgeHtml(calmPage().replace(
+      '</main>',
+      '<span data-rs-status="danger" style="display:inline-block;width:10px;height:10px;overflow:visible">'
+        + '<span style="display:block;width:800px;height:500px;color:#d2691e">A large status text</span></span></main>',
+    ));
+    try {
+      assert.equal(large.judged.items.K6.pass, false, 'the exempt area includes overflowing descendants');
+    } finally {
+      await large.context.close();
+    }
+  });
+
   test('the task banner tint passes K6', async () => {
     const result = await judgeHtml(calmPage().replace('<main>', taskBanner()));
     try {

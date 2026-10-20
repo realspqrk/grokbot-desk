@@ -83,7 +83,7 @@ describe('post block: auto and manual platforms (served, headless browser)', { s
     return { ctx, page, log };
   }
 
-  const ready = (page) => page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+  const ready = (page) => server.ready(page);
 
   async function submitted(run) {
     const deadline = Date.now() + 5000;

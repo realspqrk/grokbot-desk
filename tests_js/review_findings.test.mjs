@@ -531,11 +531,38 @@ test('finding 6: no fixtures, an unknown fixture and a missing expect part fail'
   assert.throws(() => none.fixtureCases('--all'), /no fixture cases/i);
   const scope = sandbox();
   assert.throws(() => scope.fixtureCases('no-such-fixture'), /no payload fixture no-such-fixture/);
-  // needs: only fixtures whose expect file holds that part
+  // needs: the fixtures whose declared coverage holds that part
   const flows = scope.fixtureCases('--all', { needs: 'flow' });
   assert.ok(flows.length > 0 && flows.every((item) => Array.isArray(item.expect.flow)));
-  assert.ok(!flows.some((item) => item.id === 'do-post'), 'do-post has copies only');
+  assert.ok(!flows.some((item) => item.id === 'do-post'), 'do-post is declared copies-only');
   assert.throws(() => scope.fixtureCases('do-post', { needs: 'flow' }), /no fixture cases/i);
+});
+
+test('finding 6: required expect coverage is declared; a missing file, part or declaration fails', () => {
+  const coverage = sandbox().EXPECT_COVERAGE || vm.runInContext('EXPECT_COVERAGE', sandbox());
+  // every payload fixture is declared, copies-only cases by name
+  assert.deepEqual(Object.keys(coverage).sort(), payloadFixtureNames());
+  assert.deepEqual(
+    Object.entries(coverage).filter(([, parts]) => parts.length === 1 && parts[0] === 'copies').map(([name]) => name).sort(),
+    ['do-post', 'report-long'],
+  );
+  // a fixture nobody declared
+  const undeclared = sandbox({ payloadFixtureNames: () => [...payloadFixtureNames(), 'brand-new'], payloadFixture: () => ({}) });
+  assert.throws(() => undeclared.fixtureCases('--all'), /brand-new: no declared expect coverage/);
+  // a declared expect file that went missing
+  const missingFile = sandbox({ existsSync: (file) => !String(file).endsWith(`${path.sep}approve.json`) || !String(file).includes('expect') });
+  assert.throws(() => missingFile.fixtureCases('--all', { needs: 'keyboard' }), /approve: missing expect file/);
+  // a declared part that went missing
+  const missingPart = sandbox({
+    readFileSync: (file, ...rest) => {
+      const text = fs.readFileSync(file, ...rest);
+      if (!String(file).includes('expect') || !String(file).endsWith(`${path.sep}approve.json`)) return text;
+      const value = JSON.parse(text);
+      delete value.keyboard;
+      return JSON.stringify(value);
+    },
+  });
+  assert.throws(() => missingPart.fixtureCases('--all', { needs: 'flow' }), /approve: expect file lacks keyboard/);
 });
 
 test('finding 7: empty and one-letter payloads do not admit unrelated English text', async () => {
@@ -1434,14 +1461,14 @@ test('flake 8: time mode is repeatable back to back and under parallel load', as
   assert.ok(parallel.every((result) => result.total === 6));
 });
 
-test('round 3 finding 4: the envelope keeps the fixture bot and names a bot without a name', () => {
+test('round 3 finding 4: base scenes register the fixture as given; only calibration scenes add an identity', () => {
   const scope = sandbox();
   const named = scope.registrationEnvelope({ id: 'read', data: payloadFixture('read') });
   assert.equal(named.bot, 'ops-bot');
-  assert.equal(JSON.stringify(named.identity), JSON.stringify(payloadFixture('read').identity));
-  const derived = scope.registrationEnvelope({ id: 'approve', data: payloadFixture('approve') });
-  assert.equal(derived.bot, 'deploy-bot');
-  assert.equal(derived.identity.name, 'Deploy Bot');
+  assert.equal(Object.hasOwn(named, 'identity'), false, 'the fixture brings its own identity');
+  const nameless = scope.registrationEnvelope({ id: 'approve', data: payloadFixture('approve') });
+  assert.equal(nameless.bot, 'deploy-bot');
+  assert.equal(Object.hasOwn(nameless, 'identity'), false, 'no invented name');
   // identity scenes give every other report its own bot id and identity
   const scene = scope.registrationEnvelope({ id: 'approve', data: payloadFixture('approve') }, { name: 'Desk Agent' }, '-1');
   assert.deepEqual([scene.bot, scene.identity.name], ['deploy-bot-1', 'Desk Agent']);

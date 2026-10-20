@@ -88,7 +88,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     );
     return { ctx, page, log, response };
   }
-  const ready = (page) => page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+  const ready = (page) => server.ready(page);
   const activeIs = (page, id) => page.waitForFunction((x) => window.RS.activeRun === x
     && document.documentElement.dataset.rsReady === '1', id, { timeout: 8000 });
   const activeId = (page) => page.evaluate(() => window.RS.activeRun);

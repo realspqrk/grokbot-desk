@@ -66,7 +66,7 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
     await ready(page);
     return { ctx, page, errors };
   }
-  const ready = (page) => page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+  const ready = (page) => server.ready(page);
   const activeIs = (page, id) => page.waitForFunction((x) => window.RS.activeRun === x
     && document.documentElement.dataset.rsReady === '1', id, { timeout: 8000 });
   const announced = (page) => page.evaluate(() => window.__announced.slice());

@@ -170,17 +170,46 @@ function expectedViennaOffset(value) {
    texts. */
 const EXPECT_DIR = path.join(PAYLOAD_FIXTURES, 'expect');
 
+/* The coverage every fixture owes, declared here so it cannot shrink
+   unseen: a fixture without a declaration, a declared expect file that is
+   missing, or a declared part missing from it fails the run. Copies-only
+   cases are named: their flows live in the browser suites. */
+const FLOWS = Object.freeze(['flow', 'keyboard', 'result']);
+const EXPECT_COVERAGE = Object.freeze({
+  approve: Object.freeze([...FLOWS, 'copies']),
+  'approve-decide': Object.freeze([...FLOWS, 'copies']),
+  'approve-post': Object.freeze([...FLOWS, 'copies']),
+  choose: FLOWS,
+  do: Object.freeze([...FLOWS, 'copies']),
+  'do-decide': Object.freeze([...FLOWS, 'copies']),
+  read: FLOWS,
+  review: Object.freeze([...FLOWS, 'copies']),
+  /* copies only: the manual post flow is in post.e2e, the long read report
+     is read like `read` */
+  'do-post': Object.freeze(['copies']),
+  'report-long': Object.freeze(['copies']),
+});
+
 function fixtureCases(selected = null, { expectOnly = false, needs = null } = {}) {
   const all = payloadFixtureNames();
   const names = selected && selected !== '--all' ? [selected] : all;
   const cases = [];
   for (const name of names) {
     if (!all.includes(name)) throw new Error(`no payload fixture ${name} in tests/fixtures/payloads`);
+    const required = EXPECT_COVERAGE[name];
+    if (!required) throw new Error(`${name}: no declared expect coverage (EXPECT_COVERAGE in tools/e2e.mjs)`);
     const expectPath = path.join(EXPECT_DIR, `${name}.json`);
-    if ((expectOnly || needs) && !existsSync(expectPath)) continue;
-    const expect = existsSync(expectPath) ? json(expectPath) : null;
-    /* needs: only fixtures whose expect file holds that part */
-    if (needs && !(expect && Object.hasOwn(expect, needs))) continue;
+    let expect = null;
+    if (required.length) {
+      if (!existsSync(expectPath)) throw new Error(`${name}: missing expect file tests/fixtures/payloads/expect/${name}.json`);
+      expect = json(expectPath);
+      for (const part of required) {
+        if (!expect || !Object.hasOwn(expect, part)) throw new Error(`${name}: expect file lacks ${part}`);
+      }
+    }
+    if (expectOnly && !required.length) continue;
+    /* needs: only fixtures whose declared coverage holds that part */
+    if (needs && !required.includes(needs)) continue;
     cases.push({
       id: name,
       fixture: name,
@@ -208,19 +237,15 @@ function coverageReport(expectedCases, executedCases) {
 /* the envelope the harness pins: the fixture clock, and per identity scene
    its own bot id and identity */
 function registrationEnvelope(testCase, identity = null, botSuffix = '') {
-  /* a bot names itself (SKILL.md); a fixture without a name gets the one
-     a person would read from its id ("deploy-bot" -> "Deploy Bot"), so the
-     page never has to show a raw bot id (calm K11) */
+  /* the fixture as given: its bot and identity (or none); only the
+     identity calibration scenes pass an identity of their own */
   const data = testCase.data || {};
   const bot = typeof data.bot === 'string' && data.bot ? data.bot : MEASUREMENT_BOT_ID;
-  const named = identity || data.identity || {
-    name: bot.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
-  };
   return {
     bot: bot + botSuffix,
     title: typeof data.title === 'string' && data.title ? data.title : `Testbericht ${testCase.id}`,
     created: TIME_BASELINE.default.created,
-    identity: named,
+    ...(identity ? { identity } : {}),
   };
 }
 

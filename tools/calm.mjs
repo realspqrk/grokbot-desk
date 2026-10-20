@@ -1155,13 +1155,25 @@ export function calmEvaluator(options) {
   const taskBannerUnderTitle = taskBanner && taskTitle
     ? rectOf(taskBanner).top >= rectOf(taskTitle).bottom - 1
     : null;
+  /* the area a status mark paints: its own box and every descendant's,
+     overflow included (a small marked box cannot exempt a large child) */
+  const statusAreas = new Map();
+  const statusPaintedArea = (host) => {
+    if (!statusAreas.has(host)) {
+      const rects = [host, ...host.querySelectorAll('*')].filter(visible).map(rectOf)
+        .filter((box) => box.width > 0 && box.height > 0);
+      statusAreas.set(host, rects.length
+        ? (Math.max(...rects.map((box) => box.right)) - Math.min(...rects.map((box) => box.left)))
+          * (Math.max(...rects.map((box) => box.bottom)) - Math.min(...rects.map((box) => box.top)))
+        : 0);
+    }
+    return statusAreas.get(host);
+  };
   const offAccent = [];
   for (const element of elements.filter((item) => visible(item) && outsideMockupText(item))) {
-    const rect = rectOf(element);
     const statusHost = element.closest('[data-rs-status]');
-    const hostRect = statusHost ? rectOf(statusHost) : rect;
     const statusException = Boolean(statusHost)
-      && hostRect.width * hostRect.height < innerWidth * innerHeight
+      && statusPaintedArea(statusHost) < innerWidth * innerHeight
         * thresholds.statusViewportAreaMax;
     if (statusException) continue;
     const bannerBox = taskBanner?.contains(element)
@@ -1379,8 +1391,13 @@ export function calmEvaluator(options) {
     /\b[a-z0-9]+(?:-[a-z0-9]+)*-bot\b/iu,
   ];
   const noiseBlocks = new Map();
+  /* The shell shows a bot by its name; a bot that gives none is shown by its
+     id (SKILL.md: "The header still shows the name"). That text in the
+     shell's own name slots (header byline, inbox row, "…" menu) is the
+     bot's name, not meta noise; the same id anywhere else still is. */
+  const botNameSlot = '#rs-bot-name,.rs-inbox__bot,.rs-more__bot';
   for (const { node, parent } of textNodes().filter(({ parent }) => !parent.closest(
-      'details:not([open]),[role=tooltip],[hidden]',
+      `details:not([open]),[role=tooltip],[hidden],${botNameSlot}`,
     ))) {
     let block = parent;
     while (

@@ -8,8 +8,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import zlib from 'node:zlib';
-import { browserChannel, startServer, loadChromium, ROOT, PYTHON } from '../tools/dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, ROOT, PYTHON, png } from '../tools/dev/rs-server.mjs';
 import { e2ePort } from '../tools/node-tests.mjs';
 
 // tests use 18920-18939 only (AGENTS.md); never the product port
@@ -19,33 +18,6 @@ const AXE = path.join(ROOT, 'vendor/axe.min.js');
 const FIXTURES = path.join(ROOT, 'tests/fixtures/payloads');
 const load = (name) => JSON.parse(readFileSync(path.join(FIXTURES, name + '.json'), 'utf8'));
 const fill = (key, vars) => de[key].replace(/\{([a-z_]+)\}/g, (m, k) => String(vars[k]));
-
-/* a small real PNG (a soft gradient), so images load without errors */
-function png(width, height) {
-  const chunk = (type, data) => {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(body) >>> 0);
-    return Buffer.concat([len, body, crc]);
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4);
-  header[8] = 8; header[9] = 2;
-  const rows = [];
-  for (let y = 0; y < height; y++) {
-    const row = Buffer.alloc(1 + width * 3);
-    for (let x = 0; x < width; x++) {
-      row[1 + x * 3] = 120 + Math.round(60 * x / width);
-      row[2 + x * 3] = 140 + Math.round(50 * y / height);
-      row[3 + x * 3] = 170;
-    }
-    rows.push(row);
-  }
-  return Buffer.concat([
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
 
 const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
@@ -102,7 +74,7 @@ describe('content blocks (served, headless browser)', { skip }, () => {
     page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log.errors.push(m.type() + ': ' + m.text()); });
     page.on('pageerror', (e) => log.errors.push('pageerror: ' + e.message));
     await page.goto(server.url('?client=test&run=' + encodeURIComponent(run.run_id)));
-    await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+    await server.ready(page);
     return { ctx, page, log };
   }
 

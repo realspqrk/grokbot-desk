@@ -92,7 +92,7 @@ describe('pop-up: inbox, auto-advance, done state, keyboard (served, headless Ed
      Windows-runner stall of a freshly opened window) */
   const ready = async (page) => {
     try {
-      await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+      await server.ready(page);
     } catch (e) {
       const where = await page.evaluate(() => ({
         url: location.pathname + location.search.replace(/token=[^&]*/g, 'token=?'),

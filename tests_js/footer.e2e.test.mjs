@@ -80,7 +80,7 @@ describe('footer: composer, chips, ask contract, request state (served, headless
     return { ctx, page, log };
   }
 
-  const ready = (page) => page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+  const ready = (page) => server.ready(page);
 
   async function submitted(run) {
     const deadline = Date.now() + 5000;

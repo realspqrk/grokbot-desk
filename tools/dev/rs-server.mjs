@@ -209,6 +209,31 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
       return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null;
     },
     async stop() { await stopServer(server); },
+    /** Waits until the page is ready (data-rs-ready="1"). A timeout names
+     *  the port, the page, its readiness state and the server's stderr tail,
+     *  so a slow page is told apart from a dead server or a failed request. */
+    async ready(page, { timeout = 8000 } = {}) {
+      try {
+        await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout });
+      } catch (error) {
+        let state = 'page gone';
+        try {
+          state = await page.evaluate(() => {
+            /* a page script that never arrived leaves window.RS undefined */
+            const entries = performance.getEntriesByType('resource');
+            const missing = [...document.scripts].map((s) => s.src).filter(Boolean).filter((src) => {
+              const entry = entries.find((item) => item.name === src);
+              return !entry || entry.responseStatus === 0;
+            }).map((src) => new URL(src).pathname);
+            return `ready=${document.documentElement.dataset.rsReady} RS=${typeof window.RS} active=${window.RS?.activeRun}`
+              + ` title=${document.title} scripts not loaded=[${missing.join(' ')}]`;
+          });
+        } catch { /* the page or its context is closed */ }
+        const alive = processHasExited(server.proc) ? `server exited (${server.proc.exitCode ?? server.proc.signalCode})` : 'server running';
+        const tail = serverStderrTail(path.join(server.dataDir, 'server.stderr.log'), 2048).trimEnd() || '<empty>';
+        throw new Error(`${error.message}\n  port ${port}, ${alive}, page ${page.url()}, ${state}\n  server stderr tail:\n${tail}`, { cause: error });
+      }
+    },
     async csrf() {
       const page = await (await fetch(server.url())).text();
       const m = page.match(/<script id="rs-boot" type="application\/json">([\s\S]*?)<\/script>/);
