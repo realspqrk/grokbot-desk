@@ -8,6 +8,7 @@ the roots configured now: roots saved in the run file are not an allowlist.
 """
 import mimetypes
 import os
+import re
 import secrets
 import stat
 from contextlib import contextmanager
@@ -27,6 +28,10 @@ MAX_VIDEO_SIZE = 200 * 1024 * 1024
 # x-rs-media: true marks an image path; "video" marks a video path; "any"
 # takes either (the media block).
 MEDIA_KINDS = {True: IMAGE_EXTENSIONS, "video": VIDEO_EXTENSIONS, "any": ALLOWED_EXTENSIONS}
+# \\?\D:\... and \\.\D:\... name a drive path through the device namespace
+# (long paths, some shells): they are that drive path. \\?\UNC\..., volume
+# names and \\server\share stay network or device paths and are refused.
+DEVICE_DRIVE_RE = re.compile(r"^[\\/]{2}[?.][\\/]([A-Za-z]:[\\/].*)\Z", re.S)
 CONTENT_TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".webp": "image/webp", ".gif": "image/gif",
@@ -130,6 +135,9 @@ def _require_resolved_root(supplied, roots, label, kind=True):
 def register_media(value, roots, *, kind=True):
     if not isinstance(value, str) or not value:
         raise MediaError("media path must be a non-empty string")
+    device = DEVICE_DRIVE_RE.match(value)
+    if device:
+        value = device.group(1)
     windows = PureWindowsPath(value)
     if windows.anchor.startswith("\\\\") or value.startswith(("\\\\", "//")):
         raise MediaError("UNC media paths are forbidden")

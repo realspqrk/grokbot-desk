@@ -278,6 +278,11 @@ class ReportHTTPServer(ThreadingHTTPServer):
         self.port = address[1]
         self.token = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
+        # This run of the desk: its page carries it in a cookie, so a page an
+        # earlier desk served (stale csrf, older scripts) is told to reload
+        # when its event stream reconnects here (Handler._stale_page).
+        self.instance = secrets.token_hex(16)
+        self.page_served = False
         # display names of the shipped registry (runs carry their resolved identity)
         self.bots = display_names(load_registry(SHIPPED_REGISTRY, "shipped")[0])
         self.action_log = ActionLog(data_dir)
@@ -403,6 +408,11 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._json(400, {"error": "invalid_content_length"})
             return None
+        if length < 0:
+            # rfile.read(-1) would wait for the client to close the socket
+            self.close_connection = True
+            self._json(400, {"error": "invalid_content_length"})
+            return None
         if length > MAX_PAYLOAD:
             remaining = min(length, MAX_PAYLOAD + 1)
             while remaining:
@@ -462,7 +472,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path = parsed.path
         if path == "/":
-            self._headers(200, "text/html; charset=utf-8", len(self.server.page))
+            self.server.page_served = True
+            self._headers(200, "text/html; charset=utf-8", len(self.server.page), extra={
+                "Set-Cookie": f"{self._desk_cookie()}={self.server.instance}; Path=/; HttpOnly; SameSite=Strict",
+            })
             self.wfile.write(self.server.page)
         elif path == "/hello":
             self._json(200, {
@@ -470,11 +483,17 @@ class Handler(BaseHTTPRequestHandler):
                 "version": __version__,
                 "pid": os.getpid(),
                 "port": self.server.port,
+                # the payload schema /push takes: a CLI replaces a desk whose
+                # hello names none (one from before payload@2)
+                "payload": PAYLOAD_SCHEMA,
                 "open_runs": self.server.runs.open_count(),
                 "window_alive": self.server.hub.probe_window(),
                 "window_title": self.server.window_title,
             })
         elif path == "/events":
+            if self._stale_page():
+                self._send_reload()
+                return
             query = parse_qs(parsed.query, keep_blank_values=True)
             self._events(
                 "test" in query.get("client", []),
@@ -568,6 +587,50 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             # the player moved on (seek, pause): not an error
             self.close_connection = True
+
+    def _desk_cookie(self):
+        # cookies ignore the port: two desks on one host keep their own
+        return f"rs_desk_{self.server.port}"
+
+    def _stale_page(self):
+        """A page an earlier desk on this port served, reconnecting its
+        event stream here. Its csrf token is that desk's, its scripts may be
+        older; it cannot work against this desk.
+
+        A browser names the page (Referer) or the fetch (Sec-Fetch-Mode); a
+        script sends neither and is never a page. A page with this port's
+        cookie from another run is stale. One without the cookie is stale
+        only before this desk served its page once (it cannot be ours then);
+        later it may be a browser that refuses cookies, and it stays."""
+        if not (self.headers.get("Referer") or self.headers.get("Sec-Fetch-Mode")):
+            return False
+        name = self._desk_cookie()
+        value = None
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            key, sep, found = part.strip().partition("=")
+            if sep and key == name:
+                value = found
+        if value is None:
+            return not self.server.page_served
+        return value != self.server.instance
+
+    def _send_reload(self):
+        """Tell a stale page to load this desk's page and end its stream; it
+        never counts as the desk's window, so the next show opens one. A page
+        too old to know the reload event waits an hour before it reconnects."""
+        self.close_connection = True
+        body = b"retry: 3600000\n\nevent: reload\ndata: {}\n\n"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", CSP)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except OSError:
+            pass
 
     def _events(self, test_client, sid, app_token=None, previous=None):
         self.send_response(200)

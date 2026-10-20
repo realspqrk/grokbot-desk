@@ -53,7 +53,11 @@ SETEXT_RE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*\Z")
 RULE_RE = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*\Z")
 QUOTE_RE = re.compile(r"^ {0,3}> ?(.*)\Z")
 LIST_ITEM_RE = re.compile(r"^( {0,12})([-*+]|\d{1,9}[.)])(?:[ \t]+(.*))?\Z")
-DELIM_ROW_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*\Z")
+# Markdown whitespace is space and tab only, in both parsers: str.strip and
+# JS trim disagree on others (U+0085, U+FEFF), and a heading must not exist
+# in one parser only (tests/fixtures/section_vectors.json).
+MD_SPACE = " \t"
+DELIM_ROW_RE = re.compile(r"^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*\Z")
 
 
 class EnvelopeError(ValueError):
@@ -392,13 +396,17 @@ def _check_post_modes(block, here, ask):
 # --- reply targets -------------------------------------------------------------
 
 
+def _blank(line):
+    return not line.strip(MD_SPACE)
+
+
 def _closes(line, fence):
-    text = re.sub(r"^ {0,3}", "", line).rstrip()
+    text = re.sub(r"^ {0,3}", "", line).rstrip(MD_SPACE)
     return len(text) >= len(fence) and all(char == fence[0] for char in text)
 
 
 def _split_row(line):
-    text = line.strip()
+    text = line.strip(MD_SPACE)
     if text.startswith("|"):
         text = text[1:]
     if text.endswith("|") and text[-2:-1] != "\\":
@@ -411,12 +419,12 @@ def _split_row(line):
             index += 2
             continue
         if char == "|":
-            cells.append(cell.strip())
+            cells.append(cell.strip(MD_SPACE))
             cell = ""
         else:
             cell += char
         index += 1
-    cells.append(cell.strip())
+    cells.append(cell.strip(MD_SPACE))
     return cells
 
 
@@ -441,17 +449,17 @@ def _list_end(lines, at):
             count += 1
             at += 1
             continue
-        if line.strip() and count and (
-            re.match(r"\s{2,}", line) or (lines[at - 1].strip() and not _starts_block(line))
+        if not _blank(line) and count and (
+            re.match(r"[ \t]{2,}", line) or (not _blank(lines[at - 1]) and not _starts_block(line))
         ):
             at += 1
             continue
-        if not line.strip():
+        if _blank(line):
             following = at + 1
-            while following < len(lines) and not lines[following].strip():
+            while following < len(lines) and _blank(lines[following]):
                 following += 1
             if following < len(lines) and (
-                LIST_ITEM_RE.match(lines[following]) or re.match(r"\s{2,}\S", lines[following])
+                LIST_ITEM_RE.match(lines[following]) or re.match(r"[ \t]{2,}[^ \t]", lines[following])
             ) and not RULE_RE.match(lines[following]):
                 at = following
                 continue
@@ -471,7 +479,7 @@ def _top_headings(md):
     found, para, at = [], [], 0
     while at < len(lines):
         line = lines[at]
-        if not line.strip():
+        if _blank(line):
             para = []
             at += 1
             continue
@@ -517,7 +525,7 @@ def _top_headings(md):
             para = []
             at += 2
             while (
-                at < len(lines) and lines[at].strip() and "|" in lines[at]
+                at < len(lines) and not _blank(lines[at]) and "|" in lines[at]
                 and not _starts_block(lines[at])
             ):
                 at += 1
@@ -529,7 +537,7 @@ def _top_headings(md):
 
 def section_headings(md):
     """The text of each ## or ### heading (ATX or Setext), in document order."""
-    return [text.strip() for level, text in _top_headings(md) if level in (2, 3)]
+    return [text.strip(MD_SPACE) for level, text in _top_headings(md) if level in (2, 3)]
 
 
 def sections(md):

@@ -91,6 +91,55 @@
    "sections": [
     "Open"
    ]
+  },
+  {
+   "name": "a line of U+0085 is text, not a blank line",
+   "md": "Intro\n\u0085\n---",
+   "sections": [
+    "Intro\n\u0085"
+   ]
+  },
+  {
+   "name": "a line of U+FEFF is text, not a blank line",
+   "md": "Intro\n\ufeff\n---",
+   "sections": [
+    "Intro\n\ufeff"
+   ]
+  },
+  {
+   "name": "a line of no-break spaces is text, not a blank line",
+   "md": "Intro\n\u00a0\u3000\n---",
+   "sections": [
+    "Intro\n\u00a0\u3000"
+   ]
+  },
+  {
+   "name": "only spaces and tabs are trimmed from table rows",
+   "md": "| a | b |\u0085\n|---|---|\n---",
+   "sections": [
+    "| a | b |\u0085\n|---|---|"
+   ]
+  },
+  {
+   "name": "a delimiter row allows only spaces and tabs",
+   "md": "a | b\n|---\u0085|---|\n---",
+   "sections": [
+    "a | b\n|---\u0085|---|"
+   ]
+  },
+  {
+   "name": "a list ends at a line of U+0085",
+   "md": "- a\n\n\u0085\n  ## After the list",
+   "sections": [
+    "After the list"
+   ]
+  },
+  {
+   "name": "heading text keeps edge characters other than spaces and tabs",
+   "md": "## \u00a0Title\u00a0 \t",
+   "sections": [
+    "\u00a0Title\u00a0"
+   ]
   }
  ]
 }

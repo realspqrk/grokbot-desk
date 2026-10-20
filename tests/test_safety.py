@@ -1820,3 +1820,57 @@ def test_copy_image_copies_only_a_media_of_that_run(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def _threaded_server(tmp_path):
+    data_dir = ensure_layout(tmp_path / "data")
+    server = ReportHTTPServer(("127.0.0.1", 0), Handler, data_dir, load_config(data_dir))
+    server.port = server.server_port
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    def close():
+        server.stopping.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    return server, close
+
+
+def test_a_negative_content_length_is_refused_before_reading(tmp_path):
+    server, close = _threaded_server(tmp_path)
+    try:
+        with socket.create_connection(("127.0.0.1", server.port), timeout=REQUEST_TIMEOUT_S) as raw:
+            raw.sendall(
+                (
+                    f"POST /push HTTP/1.1\r\nHost: 127.0.0.1:{server.port}\r\n"
+                    f"X-RS-Token: {server.token}\r\nContent-Type: application/json\r\n"
+                    "Content-Length: -1\r\n\r\n{}"
+                ).encode()
+            )
+            chunks = []
+            while chunk := raw.recv(4096):
+                chunks.append(chunk)
+            answer = b"".join(chunks).decode("latin-1")
+        assert answer.startswith("HTTP/1.0 400") or answer.startswith("HTTP/1.1 400"), answer
+        assert "invalid_content_length" in answer
+    finally:
+        close()
+
+
+def test_push_accepts_one_leading_utf8_bom_as_the_cli_does(tmp_path):
+    server, close = _threaded_server(tmp_path)
+    headers = {
+        "Host": f"127.0.0.1:{server.port}",
+        "X-RS-Token": server.token,
+        "Content-Type": "application/json",
+    }
+    body = json.dumps(valid_payload()).encode("utf-8")
+    try:
+        status, answer = request(server.port, "POST", "/push", b"\xef\xbb\xbf" + body, headers)
+        assert status == 200, answer
+        status, answer = request(server.port, "POST", "/push", b"\xef\xbb\xbf" * 2 + body, headers)
+        assert status == 400, answer
+    finally:
+        close()

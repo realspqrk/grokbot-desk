@@ -184,3 +184,177 @@ def test_retention_does_not_delete_an_old_open_v1_run_before_the_upgrade(data_di
     assert result_of(data_dir)["status"] == "expired"
     assert result_of(data_dir, deep)["status"] == "expired"
     assert not (data_dir / "runs" / "20260101-090000-gone-abcd.json").exists()
+
+
+class _LegacyDesk:
+    """A desk from before payload@2 on the port: its hello names no payload
+    schema, it holds an open report, and it stops on POST /stop with the
+    token of its state.json, as every desk does."""
+
+    def __init__(self, data_dir, port):
+        import http.server
+        import secrets
+        import threading
+
+        from core.product import RUNNER_ID
+
+        self.token = secrets.token_urlsafe(16)
+        self.calls = []
+        desk = self
+
+        class Legacy(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def _answer(self, status, value):
+                body = json.dumps(value).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                if self.path == "/hello":
+                    self._answer(200, {"runner": RUNNER_ID, "version": "1.0.0-beta.5", "pid": os.getpid(),
+                                       "port": port, "open_runs": 1, "window_alive": False})
+                else:
+                    self._answer(404, {"error": "not_found"})
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                desk.calls.append(self.path)
+                if self.headers.get("X-RS-Token") != desk.token:
+                    self._answer(403, {"error": "token"})
+                elif self.path == "/stop":
+                    self._answer(200, {"ok": True})
+                    threading.Thread(target=desk.exit, daemon=True).start()
+                else:
+                    # beta.5 refused every payload@2 report
+                    self._answer(400, {"error": "invalid_payload"})
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Legacy)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        (data_dir / "state.json").write_text(json.dumps({
+            "token": self.token, "pid": os.getpid(), "port": port, "data_dir": str(data_dir.resolve()),
+        }), encoding="utf-8")
+        self.thread.start()
+
+    def exit(self):
+        # as the old desk's process ends: the port closes
+        self.server.shutdown()
+        self.server.server_close()
+
+    def close(self):
+        if self.thread.is_alive():
+            self.exit()
+        self.thread.join(timeout=2)
+
+
+def test_show_replaces_a_running_desk_from_before_payload_2_that_holds_an_open_report(
+    tmp_path, server_guard
+):
+    import subprocess
+    import sys
+    import urllib.request
+
+    from conftest import ROOT, show_fixture
+    from core.envelope import SCHEMA
+
+    data_dir = ensure_layout(tmp_path / "data")
+    old_run(data_dir)
+    port = free_port()
+    env = server_guard(dict(os.environ, RS_DATA_DIR=str(data_dir)), port)
+    source = tmp_path / "report.json"
+    source.write_text(json.dumps(show_fixture("read")), encoding="utf-8")
+    legacy = _LegacyDesk(data_dir, port)
+    try:
+        shown = subprocess.run(
+            [sys.executable, str(ROOT / "report_shell.py"), "--port", str(port), "show", "--data", str(source),
+             "--no-window"],
+            cwd=ROOT, env=env, capture_output=True, timeout=60,
+        )
+        assert shown.returncode == 0, shown.stderr.decode("utf-8", "replace")
+        assert legacy.calls == ["/stop"]
+        hello = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/hello", timeout=5).read())
+        assert hello["payload"] == SCHEMA and hello["open_runs"] == 1
+        # the new desk ended the old report once, so its bot asks again
+        assert (result_of(data_dir)["status"], result_of(data_dir)["run_id"]) == ("expired", OLD)
+    finally:
+        legacy.close()
+
+
+def _serve(data_dir):
+    import threading
+
+    server = ReportHTTPServer(("127.0.0.1", free_port()), Handler, data_dir, load_config(data_dir))
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": .05}, daemon=True)
+    thread.start()
+
+    def close():
+        server.stopping.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    return server, close
+
+
+def _events(port, headers):
+    """What /events sends first: the text up to the runs event, or all of it
+    when the desk ends the stream at once."""
+    import http.client
+
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    connection.request("GET", "/events?sid=" + "a" * 32, headers={"Host": f"127.0.0.1:{port}", **headers})
+    response = connection.getresponse()
+    text = ""
+    while True:
+        line = response.fp.readline().decode("utf-8")
+        if not line:
+            ended = True
+            break
+        text += line
+        if text.endswith("\n\n") and "event: runs" in text:
+            ended = False
+            break
+    connection.close()
+    return text, ended
+
+
+def test_a_page_from_an_earlier_desk_is_told_to_reload_and_is_no_window(data_dir):
+    import http.client
+
+    server, close = _serve(data_dir)
+    port = server.port
+    page = {"Referer": f"http://127.0.0.1:{port}/?run=x", "Sec-Fetch-Mode": "cors"}
+    name = f"rs_desk_{port}"
+    try:
+        # before this desk served its page, any page on the port is an earlier desk's
+        text, ended = _events(port, page)
+        assert "event: reload" in text and ended
+        assert not server.hub.has_subscribers()
+        assert server.hub.probe_window() is False
+        # a script (no page) still gets the stream
+        text, ended = _events(port, {})
+        assert "event: runs" in text and "event: reload" not in text and not ended
+
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        connection.request("GET", "/", headers={"Host": f"127.0.0.1:{port}"})
+        response = connection.getresponse()
+        response.read()
+        cookie = response.getheader("Set-Cookie")
+        connection.close()
+        assert cookie.startswith(f"{name}=") and "HttpOnly" in cookie and "SameSite=Strict" in cookie
+        current = cookie.split(";", 1)[0]
+
+        # a page this desk served stays; one an earlier run of the desk served reloads
+        text, ended = _events(port, {**page, "Cookie": f"other=1; {current}"})
+        assert "event: runs" in text and "event: reload" not in text and not ended
+        text, ended = _events(port, {**page, "Cookie": f"{name}=0123"})
+        assert "event: reload" in text and ended
+        # without any cookie (a browser that refuses cookies) a page is never sent away
+        text, ended = _events(port, page)
+        assert "event: runs" in text and "event: reload" not in text
+    finally:
+        close()

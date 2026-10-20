@@ -221,9 +221,14 @@ def _await_own_state(base, port, launched_at):
 
 def _replace_outdated(base, port, hello):
     """After an update, stop an idle desk that still runs the older code.
-    One with open desks keeps running until they are decided. Returns
+    One with open desks keeps running until they are decided, except a desk
+    from before payload@2 (its hello names no payload schema): it refuses
+    every report this CLI sends, and its open reports expire when the new
+    desk starts, so it is always replaced. Its open page reconnects to the
+    new desk and is told to reload (server: Handler._stale_page). Returns
     whether it is gone."""
-    if hello.get("version") == __version__ or hello.get("open_runs"):
+    legacy = "payload" not in hello
+    if not legacy and (hello.get("version") == __version__ or hello.get("open_runs")):
         return False
     try:
         _request(port, "/stop", token=_state(base).get("token"))

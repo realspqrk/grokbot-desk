@@ -106,8 +106,24 @@
     if (!isFinite(n) || n < 1 || n > MAX_TICKS || first + 1 === first || last - 1 === last) return ends;
     var out = [];
     for (var i = 0; i <= n; i++) out.push((first + i) * step);
-    for (var k = 1; k < out.length; k++) if (!(out[k] > out[k - 1])) return ends;
+    for (var k = 0; k < out.length; k++) if (!isFinite(out[k]) || (k && !(out[k] > out[k - 1]))) return ends;
     return out;
+  }
+
+  /* lo..hi with a nonzero span: a constant series gets room around it in
+     proportion to its size (1e20 + 1 is still 1e20), never past the
+     largest double */
+  function domain(lo, hi) {
+    if (hi > lo) return [lo, hi];
+    var pad = Math.abs(lo) / 10;
+    if (!(pad > 0) || !isFinite(pad)) pad = 1;
+    return [Math.max(-Number.MAX_VALUE, lo - pad), Math.min(Number.MAX_VALUE, hi + pad)];
+  }
+  /* where v sits in lo..hi, 0 to 1; a span beyond the largest double
+     (-1e308..1e308) is measured in halves, so no coordinate turns NaN */
+  function position(v, lo, hi) {
+    var span = hi - lo;
+    return isFinite(span) ? (v - lo) / span : (v / 2 - lo / 2) / (hi / 2 - lo / 2);
   }
 
   function svgRoot(width, height, label, cls) {
@@ -207,6 +223,12 @@
      line is drawn over the bars and under the value labels, whose halo
      (blocks.css) keeps digits readable where the line passes. */
   var LINE_H = 16;
+  /* a value label (12px: about 11px above its baseline, 3px below) keeps
+     this much room from the target line; one the line would touch moves
+     to the far side of the line, away from its bar, inside its band */
+  var CLEAR = 3;
+  function clearAbove(y, ty) { return ty >= y - 11 - CLEAR && ty <= y + 3 + CLEAR ? ty - CLEAR - 3 : y; }
+  function clearBelow(y, ty) { return ty >= y - 11 - CLEAR && ty <= y + 3 + CLEAR ? ty + CLEAR + 11 : y; }
   function targetLine(svg, x0, x1, y0, y1) {
     svg.appendChild(el('line', { x1: x0, x2: x1, y1: y0, y2: y1, class: 'rs-chart__target-line', 'aria-hidden': 'true' }));
   }
@@ -252,7 +274,7 @@
       var hgt = top + labels.length * rowH + 4;
       var svgH = svgRoot(W, hgt, label, 'rs-chart--bar rs-chart--horizontal');
       legend(svgH, series, 0);
-      var sx = function (v) { return x0 + (v - lo) / (hi - lo) * (x1 - x0); };
+      var sx = function (v) { return x0 + position(v, lo, hi) * (x1 - x0); };
       var zero = sx(0);
       labels.forEach(function (name, i) {
         var y = top + i * rowH;
@@ -264,8 +286,15 @@
           var d = barPath(zero, by, sx(v) - zero, barH, true);
           if (d) svgH.appendChild(el('path', { d: d, 'class': s.cls + ' rs-chart__fill' }));
           if (direct) {
+            var lx = v >= 0 ? sx(v) + 6 : sx(v) - 6;
+            if (hasTarget) {
+              var tx0 = sx(spec.target);
+              var lw = textWidth(fmt(v));
+              var from = v >= 0 ? lx : lx - lw;
+              if (tx0 >= from - CLEAR && tx0 <= from + lw + CLEAR) lx = v >= 0 ? tx0 + CLEAR : tx0 - CLEAR;
+            }
             texts.push(el('text', {
-              x: v >= 0 ? sx(v) + 6 : sx(v) - 6, y: by + barH / 2 + 4, 'text-anchor': v >= 0 ? 'start' : 'end',
+              x: lx, y: by + barH / 2 + 4, 'text-anchor': v >= 0 ? 'start' : 'end',
               'class': 'rs-chart__text rs-chart__value'
             }, fmt(v)));
           }
@@ -307,7 +336,7 @@
     var catY = topV + plotH + belowBand + 17;
     var svg = svgRoot(W, catY + 7, label, 'rs-chart--bar');
     legend(svg, series, 0);
-    var sy = function (v) { return topV + (hi - v) / (hi - lo) * plotH; };
+    var sy = function (v) { return topV + (1 - position(v, lo, hi)) * plotH; };
     tickVals.forEach(function (v) {
       svg.appendChild(el('line', { x1: left, x2: plotR, y1: sy(v), y2: sy(v), 'class': 'rs-chart__grid' }));
       mutedText(svg, { x: left - 8, y: sy(v) + 4, 'text-anchor': 'end' }, tickFmt(v));
@@ -327,8 +356,10 @@
         var d = barPath(x, sy(v), bw, base - sy(v), false);
         if (d) svg.appendChild(el('path', { d: d, 'class': s.cls + ' rs-chart__fill' }));
         if (direct) {
+          var ly = v >= 0 ? sy(v) - 5 : sy(v) + 13;
+          if (hasTarget) ly = v >= 0 ? clearAbove(ly, sy(spec.target)) : clearBelow(ly, sy(spec.target));
           texts.push(el('text', {
-            x: x + bw / 2, y: v >= 0 ? sy(v) - 5 : sy(v) + 13, 'text-anchor': 'middle', 'class': 'rs-chart__text rs-chart__value'
+            x: x + bw / 2, y: ly, 'text-anchor': 'middle', 'class': 'rs-chart__text rs-chart__value'
           }, fmt(v)));
         }
       });
@@ -353,9 +384,9 @@
     var all = allValues(series, spec.target);
     var fmt = formatter(ctx, all);
     var label = summary('line', spec, series, fmt, ctx);
-    var lo = Math.min.apply(null, all);
-    var hi = Math.max.apply(null, all);
-    if (hi === lo) { hi += 1; lo -= 1; }
+    var span = domain(Math.min.apply(null, all), Math.max.apply(null, all));
+    var lo = span[0];
+    var hi = span[1];
     var tickVals = ticks(lo, hi, 4);
     lo = Math.min(lo, tickVals[0]);
     hi = Math.max(hi, tickVals[tickVals.length - 1]);
@@ -376,7 +407,7 @@
     var x1 = W - right;
     var svg = svgRoot(W, height, label, 'rs-chart--line');
     legend(svg, series, 0);
-    var sy = function (v) { return top + (hi - v) / (hi - lo) * plotH; };
+    var sy = function (v) { return top + (1 - position(v, lo, hi)) * plotH; };
     var n = labels.length;
     var sx = function (i) { return n > 1 ? left + i * (x1 - left) / (n - 1) : (left + x1) / 2; };
     tickVals.forEach(function (v) {
@@ -432,14 +463,14 @@
     var nums = (values || []).filter(function (v) { return typeof v === 'number' && isFinite(v); });
     var fmt = formatter(ctx, nums);
     var w = 96, h = 28, pad = 3;
-    var lo = Math.min.apply(null, nums), hi = Math.max.apply(null, nums);
-    if (hi === lo) { hi += 1; lo -= 1; }
+    var span = domain(Math.min.apply(null, nums), Math.max.apply(null, nums));
+    var lo = span[0], hi = span[1];
     var svg = el('svg', {
       viewBox: '0 0 ' + w + ' ' + h, width: w, height: h, role: 'img', class: 'rs-spark',
       'aria-label': ctx.t('blk_spark_label', { first: fmt(nums[0]), last: fmt(nums[nums.length - 1]) })
     });
     var pts = nums.map(function (v, i) {
-      return [pad + i * (w - 2 * pad) / Math.max(1, nums.length - 1), pad + (hi - v) / (hi - lo) * (h - 2 * pad)];
+      return [pad + i * (w - 2 * pad) / Math.max(1, nums.length - 1), pad + (1 - position(v, lo, hi)) * (h - 2 * pad)];
     });
     svg.appendChild(el('polyline', {
       points: pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' '),

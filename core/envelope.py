@@ -58,7 +58,8 @@ def validate_payload_bytes(raw, used_ids=(), warnings=None):
     if len(raw) > MAX_PAYLOAD:
         raise EnvelopeError("", "payload exceeds 2 MB")
     try:
-        payload = loads(raw.decode("utf-8"))
+        # one leading BOM (PowerShell's UTF-8) is stripped, as on the CLI path
+        payload = loads(raw.decode("utf-8-sig"))
     except JSONBoundaryError as error:
         raise EnvelopeError(
             error.pointer, f"invalid JSON: {error.message}"

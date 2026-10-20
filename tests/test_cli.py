@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import pytest
 from core.cli import _load_show_payload
+from core.envelope import SCHEMA as PAYLOAD_SCHEMA
 from core.product import RUNNER_ID
 
 import core.cli as cli_module
@@ -1219,8 +1220,9 @@ def test_a_port_taken_without_our_state_is_still_foreign(tmp_path, monkeypatch):
             holder["server"].server_close()
 
 
-def _old_server_double(monkeypatch, open_runs):
-    """A desk from an older version answers on the port; record what show does."""
+def _old_server_double(monkeypatch, open_runs, payload=PAYLOAD_SCHEMA):
+    """A desk from an older version answers on the port; record what show does.
+    payload=None is a desk from before payload@2 (its hello names none)."""
     calls = []
     state = {"up": True}
 
@@ -1228,8 +1230,12 @@ def _old_server_double(monkeypatch, open_runs):
         if not state["up"]:
             return None
         if "launched" in calls:
-            return {"runner": RUNNER_ID, "version": cli_module.__version__, "open_runs": 0}
-        return {"runner": RUNNER_ID, "version": "0.0.1", "open_runs": open_runs}
+            return {"runner": RUNNER_ID, "version": cli_module.__version__, "open_runs": 0,
+                    "payload": PAYLOAD_SCHEMA}
+        old = {"runner": RUNNER_ID, "version": "0.0.1", "open_runs": open_runs}
+        if payload is not None:
+            old["payload"] = payload
+        return old
 
     def request(port, path, token=None, **_):
         calls.append(path)
@@ -1260,6 +1266,15 @@ def test_an_older_desk_with_open_desks_keeps_running(tmp_path, monkeypatch):
     hello = cli_module._ensure_server(tmp_path, free_port())
     assert calls == []
     assert hello["version"] == "0.0.1"
+
+
+@pytest.mark.parametrize("open_runs", [0, 2])
+def test_a_desk_from_before_payload_2_is_replaced_even_with_open_reports(tmp_path, monkeypatch, open_runs):
+    # its open reports expire when the new desk starts; it would refuse every payload@2 push
+    calls = _old_server_double(monkeypatch, open_runs=open_runs, payload=None)
+    hello = cli_module._ensure_server(tmp_path, free_port())
+    assert calls == ["/stop", "launched"]
+    assert hello["payload"] == PAYLOAD_SCHEMA
 
 
 def test_text_output_keeps_umlauts_on_a_utf8_stream(tmp_path):

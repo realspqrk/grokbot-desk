@@ -199,19 +199,24 @@
   var HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
   var RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
   var QUOTE = /^ {0,3}> ?(.*)$/;
-  var DELIM_ROW = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
+  var DELIM_ROW = /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
   var TASK = /^\[([ xX])\](?:[ \t]+([\s\S]*))?$/;
   /* > [!NOTE] alone on the first quoted line makes the quote a callout */
   var CALLOUT = /^\[!(note|tip|important|warning|caution)\][ \t]*$/i;
 
+  /* Markdown whitespace is space and tab only, as in core/payload.py
+     (MD_SPACE): trim and str.strip disagree on others (U+0085, U+FEFF),
+     and a reply section must not exist in one parser only. */
+  function strip(s) { return s.replace(/^[ \t]+|[ \t]+$/g, ''); }
+  function blank(line) { return !strip(line); }
   function closesFence(line, fence) {
-    var t = line.replace(/^ {0,3}/, '').replace(/\s+$/, '');
+    var t = line.replace(/^ {0,3}/, '').replace(/[ \t]+$/, '');
     if (t.length < fence.length) return false;
     for (var k = 0; k < t.length; k++) if (t.charAt(k) !== fence.charAt(0)) return false;
     return true;
   }
   function splitRow(line) {
-    var t = line.trim();
+    var t = strip(line);
     if (t.charAt(0) === '|') t = t.slice(1);
     if (t.charAt(t.length - 1) === '|' && t.charAt(t.length - 2) !== '\\') t = t.slice(0, -1);
     var cells = [];
@@ -219,10 +224,10 @@
     for (var k = 0; k < t.length; k++) {
       var ch = t.charAt(k);
       if (ch === '\\' && t.charAt(k + 1) === '|') { cell += '|'; k++; continue; }
-      if (ch === '|') { cells.push(cell.trim()); cell = ''; continue; }
+      if (ch === '|') { cells.push(strip(cell)); cell = ''; continue; }
       cell += ch;
     }
-    cells.push(cell.trim());
+    cells.push(strip(cell));
     return cells;
   }
   function startsBlock(line) {
@@ -242,7 +247,7 @@
     while (i < lines.length) {
       var line = lines[i];
       var m;
-      if (!line.trim()) { flush(); i++; continue; }
+      if (blank(line)) { flush(); i++; continue; }
       if (para.length && /^ {0,3}(?:=+|-+)[ \t]*$/.test(line)) {
         blocks.push({ type: 'h', level: line.indexOf('=') >= 0 ? 1 : 2, text: para.join('\n') });
         para = [];
@@ -295,15 +300,15 @@
             continue;
           }
           /* an indented line, or a plain line right after an item (lazy continuation), continues it */
-          if (l.trim() && items.length && (/^\s{2,}/.test(l) || (lines[i - 1].trim() && !startsBlock(l)))) {
-            items[items.length - 1].text += '\n' + l.trim();
+          if (!blank(l) && items.length && (/^[ \t]{2,}/.test(l) || (!blank(lines[i - 1]) && !startsBlock(l)))) {
+            items[items.length - 1].text += '\n' + strip(l);
             i++;
             continue;
           }
-          if (!l.trim()) {
+          if (blank(l)) {
             var n = i + 1;
-            while (n < lines.length && !lines[n].trim()) n++;
-            if (n < lines.length && (LIST_ITEM.test(lines[n]) || /^\s{2,}\S/.test(lines[n])) && !RULE.test(lines[n])) { i = n; continue; }
+            while (n < lines.length && blank(lines[n])) n++;
+            if (n < lines.length && (LIST_ITEM.test(lines[n]) || /^[ \t]{2,}[^ \t]/.test(lines[n])) && !RULE.test(lines[n])) { i = n; continue; }
           }
           break;
         }
@@ -321,7 +326,7 @@
           flush();
           var rows = [];
           i += 2;
-          while (i < lines.length && lines[i].trim() && lines[i].indexOf('|') >= 0 && !startsBlock(lines[i])) {
+          while (i < lines.length && !blank(lines[i]) && lines[i].indexOf('|') >= 0 && !startsBlock(lines[i])) {
             rows.push(splitRow(lines[i]));
             i++;
           }
@@ -340,7 +345,7 @@
 
   /** The text of each reply section (top-level ## or ###), in order. */
   function sections(src) {
-    return parse(src).filter(isSection).map(function (b) { return b.text.trim(); });
+    return parse(src).filter(isSection).map(function (b) { return strip(b.text); });
   }
 
   /** {done, text} for a task list item ("[x] text"), else null. */
@@ -475,7 +480,7 @@
         if (top && isSection(b)) {
           var n = section++;
           h.setAttribute('data-rs-section', String(n));
-          return opts.section ? opts.section(h, n, b.text.trim()) : h;
+          return opts.section ? opts.section(h, n, strip(b.text)) : h;
         }
         return h;
       }

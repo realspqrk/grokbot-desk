@@ -1,6 +1,7 @@
 """Block media: every x-rs-media field of blocks.schema.json, registered under
 the configured media roots, kept across a reload, never from a template."""
 import json
+import os
 
 import pytest
 
@@ -126,3 +127,23 @@ def test_run_detail_says_which_media_is_a_video(media_root, tmp_path):
     assert store.detail(detail["run_id"])["media_types"] == {
         video["path"]: "video/webm", video["poster"]: "image/jpeg", picture["path"]: "image/png",
     }
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows device paths")
+@pytest.mark.parametrize("prefix", [r"\\?" "\\", r"\\." "\\", "//?/"])
+def test_a_drive_path_with_a_device_prefix_is_a_drive_path(media_root, prefix):
+    entry = register_media(prefix + str(media_root / "a.png"), [media_root])
+    assert entry.path == (media_root / "a.png").resolve()
+
+
+@pytest.mark.parametrize("value", [
+    r"\\server\share\a.png",
+    "//server/share/a.png",
+    r"\\?\UNC\server\share\a.png",
+    r"\\.\UNC\server\share\a.png",
+    r"\\?\Volume{00000000-0000-0000-0000-000000000000}\a.png",
+    r"\\?\D:relative.png",
+])
+def test_network_and_volume_paths_stay_refused(media_root, value):
+    with pytest.raises(MediaError, match="UNC"):
+        register_media(value, [media_root])
