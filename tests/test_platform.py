@@ -407,7 +407,6 @@ def test_report_server_stops_and_restarts_on_same_port(tmp_path):
     from core.server import Handler, ReportHTTPServer
 
     data = ensure_layout(tmp_path / "data")
-    registry = scan_registry(ROOT / "templates")
     first = ReportHTTPServer(
         ("127.0.0.1", 0), Handler, data, load_config(data)
     )
