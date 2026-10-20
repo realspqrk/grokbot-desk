@@ -332,6 +332,33 @@ describe('pop-up: inbox, auto-advance, done state, keyboard (served, headless Ed
     } finally { await ctx.close(); }
   });
 
+  test('rail to tabs: narrowing the window keeps the current report in view', async () => {
+    const runs = showRuns(5);
+    const { ctx, page } = await open(runs[4].run_id);
+    try {
+      await rowsAre(page, 5);
+      await page.focus('#rs-note').catch(() => {});
+      const before = await page.evaluate(() => document.activeElement && (document.activeElement.id || document.activeElement.tagName));
+      await page.setViewportSize({ width: 600, height: 720 });
+      await page.waitForFunction(() => {
+        const list = document.getElementById('rs-inbox-list');
+        const row = list.querySelector('a[aria-current]');
+        const l = list.getBoundingClientRect(), r = row.getBoundingClientRect();
+        return r.left >= l.left - 0.5 && r.right <= l.right + 0.5;
+      }, null, { timeout: 3000 });
+      const after = await page.evaluate(() => document.activeElement && (document.activeElement.id || document.activeElement.tagName));
+      assert.equal(after, before, 'the reveal does not move focus');
+      // and back to the rail: still in view
+      await page.setViewportSize({ width: 880, height: 300 });
+      await page.waitForFunction(() => {
+        const list = document.getElementById('rs-inbox-list');
+        const row = list.querySelector('a[aria-current]');
+        const l = list.getBoundingClientRect(), r = row.getBoundingClientRect();
+        return r.top >= l.top - 0.5 && r.bottom <= l.bottom + 0.5;
+      }, null, { timeout: 3000 });
+    } finally { await ctx.close(); }
+  });
+
   test('twelve open: the rail scrolls on its own and long titles stay in their row', async () => {
     const long = 'Sicherung der Dateiserver an allen drei Standorten nach dem Umzug prüfen';
     const runs = showRuns(11);

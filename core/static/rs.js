@@ -2329,6 +2329,14 @@
 
     document.addEventListener('keydown', onKey);
     el.inboxList.addEventListener('keydown', onInboxKey);
+    /* a new size or layout (rail <-> tabs at 720 px) keeps the current row
+       in view; focus stays where it is */
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(function () {
+        var row = el.inbox.hidden ? null : el.inboxList.querySelector('a[aria-current]');
+        if (row) revealRow(row);
+      }).observe(el.inboxList);
+    }
     window.addEventListener('focus', maybeMarkRead);
     document.addEventListener('pointerdown', maybeMarkRead, true);
     document.addEventListener('keydown', maybeMarkRead, true);
