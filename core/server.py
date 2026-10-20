@@ -278,18 +278,17 @@ class ReportHTTPServer(ThreadingHTTPServer):
         self.port = address[1]
         self.token = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
-        # This run of the desk: its page carries it in a cookie, so a page an
-        # earlier desk served (stale csrf, older scripts) is told to reload
-        # when its event stream reconnects here (Handler._stale_page).
+        # This run of the desk (not a secret): its page names it on /events,
+        # so a page an earlier desk served (stale csrf, older scripts) is told
+        # to reload when its event stream reconnects here (Handler._stale_page).
         self.instance = secrets.token_hex(16)
-        self.page_served = False
         # display names of the shipped registry (runs carry their resolved identity)
         self.bots = display_names(load_registry(SHIPPED_REGISTRY, "shipped")[0])
         self.action_log = ActionLog(data_dir)
         self.runs = RunStore(data_dir, config, self.action_log)
         self.hub = SSEHub()
         self.window_title = None
-        self.page = build_page(self.csrf, self.port).encode("utf-8")
+        self.page = build_page(self.csrf, self.port, self.instance).encode("utf-8")
         self.static_dir = Path(__file__).parent / "static"
         # relative posix names ("rs.js", "icons/icon.svg"): a request can only
         # reach a file listed here
@@ -472,10 +471,7 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path = parsed.path
         if path == "/":
-            self.server.page_served = True
-            self._headers(200, "text/html; charset=utf-8", len(self.server.page), extra={
-                "Set-Cookie": f"{self._desk_cookie()}={self.server.instance}; Path=/; HttpOnly; SameSite=Strict",
-            })
+            self._headers(200, "text/html; charset=utf-8", len(self.server.page))
             self.wfile.write(self.server.page)
         elif path == "/hello":
             self._json(200, {
@@ -491,10 +487,10 @@ class Handler(BaseHTTPRequestHandler):
                 "window_title": self.server.window_title,
             })
         elif path == "/events":
-            if self._stale_page():
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            if self._stale_page(query.get("desk", [None])[-1]):
                 self._send_reload()
                 return
-            query = parse_qs(parsed.query, keep_blank_values=True)
             self._events(
                 "test" in query.get("client", []),
                 query.get("sid", [None])[-1],
@@ -588,31 +584,19 @@ class Handler(BaseHTTPRequestHandler):
             # the player moved on (seek, pause): not an error
             self.close_connection = True
 
-    def _desk_cookie(self):
-        # cookies ignore the port: two desks on one host keep their own
-        return f"rs_desk_{self.server.port}"
-
-    def _stale_page(self):
+    def _stale_page(self, desk):
         """A page an earlier desk on this port served, reconnecting its
         event stream here. Its csrf token is that desk's, its scripts may be
         older; it cannot work against this desk.
 
-        A browser names the page (Referer) or the fetch (Sec-Fetch-Mode); a
-        script sends neither and is never a page. A page with this port's
-        cookie from another run is stale. One without the cookie is stale
-        only before this desk served its page once (it cannot be ours then);
-        later it may be a browser that refuses cookies, and it stays."""
+        Every page names the desk run that served it (boot.desk, ?desk= on
+        /events), so the answer is about the page that owns this stream, not
+        whatever the browser loaded last. A page from before the id existed
+        names none and is stale too. A browser names the page (Referer) or
+        the fetch (Sec-Fetch-Mode); a script sends neither and is never a page."""
         if not (self.headers.get("Referer") or self.headers.get("Sec-Fetch-Mode")):
             return False
-        name = self._desk_cookie()
-        value = None
-        for part in (self.headers.get("Cookie") or "").split(";"):
-            key, sep, found = part.strip().partition("=")
-            if sep and key == name:
-                value = found
-        if value is None:
-            return not self.server.page_served
-        return value != self.server.instance
+        return desk != self.server.instance
 
     def _send_reload(self):
         """Tell a stale page to load this desk's page and end its stream; it

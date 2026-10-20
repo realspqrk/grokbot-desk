@@ -263,7 +263,7 @@ describe('pop-up: inbox, auto-advance, done state, keyboard (served, headless Ed
       assert.deepEqual(s.rows.map((x) => x.title), BOTS.map((b) => b.title));
       assert.deepEqual(s.rows.map((x) => x.current), [null, 'page', null]);
       assert.deepEqual(s.rows.map((x) => x.shape), BOTS.map((b) => b.identity.avatar_shape));
-      assert.deepEqual(s.rows.map((x) => x.keys), ['Control+1', 'Control+2', 'Control+3']);
+      assert.deepEqual(s.rows.map((x) => x.keys), ['Control+1 Meta+1', 'Control+2 Meta+2', 'Control+3 Meta+3']);
       // bot · hint: the kind of task, or urgent (marked) before it
       assert.equal(s.rows[0].meta, `${BOTS[0].identity.name} ${de.sep} ${de.ask_kind_approve}`);
       assert.equal(s.rows[2].meta, `${BOTS[2].identity.name} ${de.sep} ${de.ask_urgent}`);

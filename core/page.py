@@ -28,7 +28,7 @@ def _json_script(value):
     return encoded
 
 
-def build_page(csrf_token, port):
+def build_page(csrf_token, port, desk=""):
     table = string_table()
     strings = loads(table.read_text(encoding="utf-8"))
     strings["app_name"] = DISPLAY_NAME
@@ -38,6 +38,9 @@ def build_page(csrf_token, port):
     platforms = loads(platforms_path.read_text(encoding="utf-8")) if platforms_path.exists() else {}
     boot = {
         "csrf": csrf_token,
+        # the desk run that served this page (not a secret): /events names it
+        # so a desk started later tells this page to reload
+        "desk": desk,
         "port": port,
         "lang": table.stem,
         "tz": effective_zone_name(),

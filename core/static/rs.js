@@ -2118,7 +2118,8 @@
 
   // -------------------------------------------------------- events ----
   function connectEvents() {
-    var url = '/events?sid=' + sid + (query.get('client') === 'test' ? '&client=test' : '')
+    var url = '/events?sid=' + sid + '&desk=' + encodeURIComponent(boot.desk || '')
+      + (query.get('client') === 'test' ? '&client=test' : '')
       + (appToken ? '&app=' + appToken : '') + (appPrevious ? '&prev=' + appPrevious : '');
     var es = new EventSource(url);
     var lost = false;

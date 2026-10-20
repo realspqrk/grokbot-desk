@@ -49,12 +49,14 @@
 
   function cleanRef(ref) {
     if (!ref || ref.block == null || ref.item == null) return null;
-    var label = String(ref.label == null ? '' : ref.label).replace(/\s+/g, ' ').trim();
+    /* half an emoji (an unpaired surrogate, high or low, anywhere, e.g. from
+       a cut elsewhere) never reaches the bot; the cut below goes by code
+       point, so it never splits a pair itself */
+    var label = String(ref.label == null ? '' : ref.label)
+      .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+      .replace(/\s+/g, ' ').trim();
     if (!label) label = String(ref.item);
     if (Array.from(label).length > MAX_LABEL) label = Array.from(label).slice(0, MAX_LABEL - 1).join('') + '…';
-    /* half an emoji (a lone surrogate from a cut elsewhere) never reaches the bot */
-    label = label.replace(/[\uD800-\uDBFF](…?)$/, '$1');
-    if (!label) label = String(ref.item);
     return { block: String(ref.block), item: String(ref.item), label: label };
   }
 
@@ -252,5 +254,5 @@
     };
   }
 
-  root.RSComposer = { create: create };
+  root.RSComposer = { create: create, cleanRef: cleanRef };
 })(typeof self !== 'undefined' ? self : this);

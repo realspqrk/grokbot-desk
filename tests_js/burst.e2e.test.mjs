@@ -115,7 +115,7 @@ describe('multi-bot burst (served, headless browser)', { skip }, () => {
       assert.deepEqual(s.rows.map((r) => r.current), ['page', null, null, null, null, null]);
       assert.deepEqual(s.rows.map((r) => r.unread), [false, true, true, true, true, true]);
       assert.deepEqual(s.rows.map((r) => r.tabIndex), [0, -1, -1, -1, -1, -1], 'one Tab stop');
-      assert.deepEqual(s.rows.map((r) => r.keys), [1, 2, 3, 4, 5, 6].map((n) => `Control+${n}`));
+      assert.deepEqual(s.rows.map((r) => r.keys), [1, 2, 3, 4, 5, 6].map((n) => `Control+${n} Meta+${n}`));
 
       // another report: the order stays, the dot goes
       await page.click(`#rs-inbox a[data-run-id="${rest[2].run_id}"]`);

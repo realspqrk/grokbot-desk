@@ -300,13 +300,14 @@ def _serve(data_dir):
     return server, close
 
 
-def _events(port, headers):
+def _events(port, headers, desk=None):
     """What /events sends first: the text up to the runs event, or all of it
-    when the desk ends the stream at once."""
+    when the desk ends the stream at once. desk: the run id the page names."""
     import http.client
 
+    query = "sid=" + "a" * 32 + (f"&desk={desk}" if desk is not None else "")
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    connection.request("GET", "/events?sid=" + "a" * 32, headers={"Host": f"127.0.0.1:{port}", **headers})
+    connection.request("GET", "/events?" + query, headers={"Host": f"127.0.0.1:{port}", **headers})
     response = connection.getresponse()
     text = ""
     while True:
@@ -322,39 +323,49 @@ def _events(port, headers):
     return text, ended
 
 
-def test_a_page_from_an_earlier_desk_is_told_to_reload_and_is_no_window(data_dir):
+def _boot(port):
     import http.client
+    import re
 
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    connection.request("GET", "/", headers={"Host": f"127.0.0.1:{port}"})
+    response = connection.getresponse()
+    page = response.read().decode("utf-8")
+    cookie = response.getheader("Set-Cookie")
+    connection.close()
+    assert cookie is None
+    return json.loads(re.search(r'<script id="rs-boot" type="application/json">(.*?)</script>', page, re.S).group(1))
+
+
+def test_a_page_from_an_earlier_desk_is_told_to_reload_and_is_no_window(data_dir):
+    """A page names the desk run that served it on /events (boot.desk). One
+    from an earlier run, or from before the id existed, reloads; it never
+    counts as the window. A script (no browser headers) is never a page."""
+    earlier, close_earlier = _serve(data_dir)
+    old = _boot(earlier.port)["desk"]
+    close_earlier()
     server, close = _serve(data_dir)
     port = server.port
-    page = {"Referer": f"http://127.0.0.1:{port}/?run=x", "Sec-Fetch-Mode": "cors"}
-    name = f"rs_desk_{port}"
+    browser = {"Referer": f"http://127.0.0.1:{port}/?run=x", "Sec-Fetch-Mode": "cors"}
     try:
-        # before this desk served its page, any page on the port is an earlier desk's
-        text, ended = _events(port, page)
+        current = _boot(port)["desk"]
+        assert isinstance(current, str) and len(current) == 32 and current != old
+        # another tab loaded the new page first; the old page reconnects with its own id
+        text, ended = _events(port, browser, desk=old)
+        assert "event: reload" in text and ended
+        # a page from before the id existed (beta.5) names none, even after a root fetch
+        text, ended = _events(port, browser)
+        assert "event: reload" in text and ended
+        text, ended = _events(port, {"Sec-Fetch-Mode": "cors"}, desk="")
         assert "event: reload" in text and ended
         assert not server.hub.has_subscribers()
         assert server.hub.probe_window() is False
-        # a script (no page) still gets the stream
-        text, ended = _events(port, {})
+        # the current page stays
+        text, ended = _events(port, browser, desk=current)
         assert "event: runs" in text and "event: reload" not in text and not ended
-
-        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        connection.request("GET", "/", headers={"Host": f"127.0.0.1:{port}"})
-        response = connection.getresponse()
-        response.read()
-        cookie = response.getheader("Set-Cookie")
-        connection.close()
-        assert cookie.startswith(f"{name}=") and "HttpOnly" in cookie and "SameSite=Strict" in cookie
-        current = cookie.split(";", 1)[0]
-
-        # a page this desk served stays; one an earlier run of the desk served reloads
-        text, ended = _events(port, {**page, "Cookie": f"other=1; {current}"})
-        assert "event: runs" in text and "event: reload" not in text and not ended
-        text, ended = _events(port, {**page, "Cookie": f"{name}=0123"})
-        assert "event: reload" in text and ended
-        # without any cookie (a browser that refuses cookies) a page is never sent away
-        text, ended = _events(port, page)
-        assert "event: runs" in text and "event: reload" not in text
+        # a script gets the stream with or without an id
+        for desk in (None, old):
+            text, ended = _events(port, {}, desk=desk)
+            assert "event: runs" in text and "event: reload" not in text and not ended
     finally:
         close()
