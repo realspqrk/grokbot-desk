@@ -355,10 +355,12 @@ try {
       await page.waitForSelector('#rs-task[data-state="decided"]');
       await page.waitForFunction(() => !document.querySelector('.rs-toast'), null, { timeout: 5000 });
     },
-    // tight: the header, the title and the decided line ("what happened")
+    // tight: the header, the title, the decided line and the done banner
     clip: (page) => page.evaluate((width) => {
       const task = document.getElementById('rs-task').getBoundingClientRect();
-      return { x: 0, y: 0, width, height: Math.ceil(task.bottom + 16) };
+      const parts = document.querySelectorAll('[data-rs-done-text], .rs-banner__keep');
+      const bottom = Math.max(task.bottom, ...[...parts].map((el) => el.getBoundingClientRect().bottom));
+      return { x: 0, y: 0, width, height: Math.ceil(bottom + 16) };
     }, TILE_WIDTH),
   });
 } finally {
