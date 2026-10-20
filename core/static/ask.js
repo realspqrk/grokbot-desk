@@ -10,11 +10,12 @@
  *   approve + post (auto)   handle's label            Reject, Request changes approve reject revise
  *   do                      Done/Sent/Posted ✓        Skip, Request changes   done skipped revise
  *   do + decide             Done                      Request changes         submit revise
- *   do + post (manual)      Posted ✓                  Request changes         submit revise
+ *   do + post (manual)      Done                      Request changes         submit revise
  *   choose + pick           handle's label            None of these           choose revise
  *
  * Request changes and None of these switch the footer to a mode where the
  * composer note is required and the primary sends revise; Cancel returns.
+ * The note's placeholder is the one instruction there (no status line).
  * Reject and Skip send at once. An input block reports through its handle:
  * {answer() -> object|null, progress() -> {done, total}, primaryLabel(),
  * hint?() -> {key, vars}|null}; a hint replaces the progress status while
@@ -114,7 +115,8 @@
         alts: [{ label: t('ask_reject'), decision: 'reject', needsNote: false }, requestAlt()]
       };
     }
-    if (kind.type === 'post') return { primary: { key: 'ask_posted', decision: 'submit', answers: true }, alts: [requestAlt()] };
+    /* posting by hand: the person reports what they did, as for do + decide */
+    if (kind.type === 'post') return { primary: { key: 'ask_done_items', decision: 'submit', answers: true }, alts: [requestAlt()] };
     if (kind.type === 'pick') {
       var alts = kind.block.allow_none === false ? [] : [{ label: t('ask_none_of_these'), decision: null, needsNote: false, mode: 'none-of-these' }];
       return { primary: { key: 'ask_choose', text: label, decision: 'choose', answers: true }, alts: alts };
@@ -136,7 +138,7 @@
     if ((mode === 'request' || mode === 'none-of-these') && canRequest) {
       var none = mode === 'none-of-these';
       return {
-        status: opts.note ? '' : t(none ? 'ask_none_hint' : 'ask_request_hint'),
+        status: '',
         primary: { label: t(none ? 'ask_send_none' : 'ask_send_request'), decision: 'revise', enabled: !!opts.note, needsNote: true, answers: false },
         alts: [cancelAlt()]
       };
@@ -245,6 +247,8 @@
     if (decision === 'approve') return t('ask_done_approve_' + verbOf(run), { bot: bot });
     if (decision === 'done') return t(run.action === 'send' ? 'ask_done_sent' : run.action === 'post' ? 'ask_done_posted' : 'ask_done_done', { bot: bot });
     if (decision === 'revise' && run.ask === 'choose') return t('ask_done_none', { bot: bot });
+    /* do: the person did the work, the bot only notes it */
+    if (decision === 'submit' && run.ask === 'do') return t('ask_done_submit_do', { bot: bot });
     return has(DONE, decision) ? t(DONE[decision], { bot: bot }) : t('ask_done_unknown', { bot: bot });
   }
 

@@ -41,10 +41,11 @@
 .rs-md__h--4 { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
 .rs-md > .rs-md__h, .rs-md > .rs-md__head { margin-top: var(--space-3); }
 .rs-md > :first-child { margin-top: 0; }
-.rs-md__head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.rs-md__head { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
 .rs-md__head > .rs-md__h { min-width: 0; }
 
-/* the reply action of a section: visible, quiet, next to its heading */
+/* the reply action: a quote mark (it quotes its target in the note),
+   visible and quiet, attached to its heading, row or card */
 .rs-reply {
   flex: none;
   display: inline-grid;
@@ -146,7 +147,18 @@
   background: var(--rs-card);
 }
 .rs-stat__label { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
-.rs-stat__row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; min-height: 28px; }
+/* the delta and the trend share a line while both fit; the trend shrinks
+   first (never below 64 px), then moves under the delta: it never leaves
+   its tile */
+.rs-stat__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  min-height: 28px;
+}
 .rs-stat__value {
   min-width: 0;
   font-size: var(--rs-fs-lg);
@@ -161,7 +173,7 @@
 [data-tone="good"]:is(.rs-stat__delta, .rs-delta) { color: var(--rs-status-ok-text); }
 [data-tone="bad"]:is(.rs-stat__delta, .rs-delta) { color: var(--rs-status-danger-text); }
 [data-tone="neutral"].rs-stat__delta { color: var(--rs-muted); }
-.rs-spark { flex: none; display: block; overflow: visible; }
+.rs-spark { flex: 1 1 64px; display: block; min-width: 64px; max-width: 96px; height: auto; overflow: visible; }
 .rs-spark__line { fill: none; stroke: var(--rs-cat-1); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 .rs-spark__dot { fill: var(--rs-cat-1); }
 
@@ -259,23 +271,32 @@
 .rs-facts dd { margin: 0; overflow-wrap: anywhere; }
 
 /* -------------------------------------------------------------- checks -- */
-.rs-checks { margin: 0; padding: 0; list-style: none; display: grid; max-width: var(--rs-measure); }
-.rs-check-item {
+/* rows and their separators span the column; the text inside keeps the
+   reading width. One status per row, mark and word together, in a column
+   of its own (subgrid), so the states scan down one edge */
+.rs-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: grid;
-  grid-template-columns: 1.25em minmax(0, 1fr) auto;
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+.rs-checks > .rs-check-item {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: baseline;
-  gap: var(--space-2) var(--space-3);
+  column-gap: var(--space-4);
+  max-width: none;
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--rs-line);
 }
 .rs-check-item:last-child { border-bottom: 0; }
-.rs-check-item__body { display: grid; min-width: 0; }
+.rs-check-item__status { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
+.rs-check-item__body { display: grid; min-width: 0; max-width: var(--rs-measure); }
 .rs-check-item__detail { font-size: var(--rs-fs-sm); color: var(--rs-muted); }
-.rs-check-item__state { font-size: var(--rs-fs-sm); color: var(--rs-muted); white-space: nowrap; }
-.rs-check-item[data-state="ok"] .rs-check-item__mark { color: var(--rs-status-ok-text); }
-.rs-check-item[data-state="warn"] :is(.rs-check-item__mark, .rs-check-item__state) { color: var(--rs-status-warn-text); }
-.rs-check-item[data-state="fail"] :is(.rs-check-item__mark, .rs-check-item__state) { color: var(--rs-status-danger-text); }
-.rs-check-item[data-state="open"] .rs-check-item__mark { color: var(--rs-muted); }
+.rs-check-item[data-state="warn"] .rs-check-item__status { color: var(--rs-status-warn-text); }
+.rs-check-item[data-state="fail"] .rs-check-item__status { color: var(--rs-status-danger-text); }
 
 /* --------------------------------------------------------------- media -- */
 .rs-media { margin: 0; display: grid; justify-items: start; gap: var(--space-2); }
@@ -409,7 +430,16 @@ rs-segmented.rs-pick {
 .rs-pick[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .rs-pick[data-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .rs-pick > .rs-pick__card { grid-row: 1; }
-.rs-pick > .rs-pick__reply { grid-row: 2; justify-self: start; }
+/* the reply sits in its card's top corner; the head leaves it room */
+.rs-pick > .rs-pick__reply {
+  grid-row: 1;
+  position: relative;
+  z-index: 1;
+  align-self: start;
+  justify-self: end;
+  margin: var(--space-3) var(--space-3) 0 0;
+}
+.rs-pick:has(> .rs-pick__reply) .rs-pick__head { padding-right: var(--space-6); }
 .rs-pick > [data-i="0"] { grid-column: 1; }
 .rs-pick > [data-i="1"] { grid-column: 2; }
 .rs-pick > [data-i="2"] { grid-column: 3; }
@@ -463,7 +493,10 @@ rs-segmented.rs-pick {
 .rs-pick__value { font-variant-numeric: tabular-nums; text-align: right; }
 @container (max-width: 520px) {
   rs-segmented.rs-pick, .rs-pick[data-count] { grid-template-columns: minmax(0, 1fr); }
-  .rs-pick > .rs-pick__card, .rs-pick > .rs-pick__reply { grid-row: auto; grid-column: 1; }
+  .rs-pick > .rs-pick__card, .rs-pick > .rs-pick__reply { grid-column: 1; }
+  .rs-pick > [data-i="1"] { grid-row: 2; }
+  .rs-pick > [data-i="2"] { grid-row: 3; }
+  .rs-pick > [data-i="3"] { grid-row: 4; }
 }
 
 /* ----------------------------------------------------------------- post -- */
@@ -497,7 +530,7 @@ rs-segmented.rs-pick {
 .rs-post__tab[data-state="left-out"] .rs-post__tabname,
 .rs-post__tab[data-state="skipped"] .rs-post__tabname { text-decoration: line-through; text-decoration-color: var(--rs-muted); }
 .rs-post__mark[data-rs-status="danger"] { color: var(--rs-status-danger-text); }
-.rs-post__tab[data-state="included"] .rs-post__mark,
+/* a tick only for done work: a platform posted by hand */
 .rs-post__tab[data-state="posted"] .rs-post__mark { color: var(--rs-status-ok-text); }
 
 .rs-post__panel {
@@ -512,12 +545,51 @@ rs-segmented.rs-pick {
 .rs-post__panel[data-state="blocked"] rs-post-frame { opacity: 0.55; }
 .rs-post__side { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; padding-top: var(--space-1); }
 .rs-post__decide { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
-.rs-post__state { display: flex; align-items: baseline; gap: var(--space-2); }
-.rs-post__state[hidden] { display: none; }
+.rs-post__state { display: flex; align-items: baseline; gap: var(--space-2); color: var(--rs-muted); }
 .rs-post__glyph { min-width: 1ch; font-weight: var(--rs-fw-strong); }
-.rs-post__panel[data-state="included"] .rs-post__glyph { color: var(--rs-status-ok-text); }
-.rs-post__panel:is([data-state="left-out"], [data-state="blocked"]) .rs-post__state { color: var(--rs-muted); }
-.rs-post__toggle, .rs-post__reveal { padding: 0; }
+.rs-post__reveal { padding: 0; }
+
+/* the inclusion switch: one labelled control, on = the platform goes out.
+   Ink, not the accent (the accent fill is the primary's alone) */
+.rs-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--rs-control-h);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rs-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.rs-switch[hidden] { display: none; }
+.rs-switch__track {
+  flex: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border: 1px solid var(--rs-line-strong);
+  border-radius: var(--rs-r-pill);
+  background: var(--rs-card);
+  transition: background-color var(--rs-dur) var(--rs-ease), border-color var(--rs-dur) var(--rs-ease);
+}
+.rs-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--rs-muted);
+  transition: transform var(--rs-dur) var(--rs-ease), background-color var(--rs-dur) var(--rs-ease);
+}
+.rs-switch:hover:not(:disabled) .rs-switch__track { border-color: var(--rs-muted); }
+.rs-switch[aria-checked="true"] .rs-switch__track { border-color: var(--rs-ink); background: var(--rs-ink); }
+.rs-switch[aria-checked="true"] .rs-switch__track::after { background: var(--rs-paper); transform: translateX(14px); }
+.rs-switch:disabled { cursor: default; color: var(--rs-muted); }
+.rs-switch:disabled .rs-switch__track { opacity: 0.6; }
 /* posting by hand: the copies come first, then Posted */
 .rs-post__panel[data-mode="manual"] .rs-post__copies { order: -1; }
 .rs-post__reason { display: flex; align-items: center; gap: var(--space-2); font-size: var(--rs-fs-sm); color: var(--rs-ink); }

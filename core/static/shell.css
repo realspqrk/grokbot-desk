@@ -156,7 +156,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-task__more > summary:focus-visible { outline-color: var(--rs-ink); }
 .rs-task__more > p { padding-top: var(--space-0-5); }
 .rs-task[data-state="decided"] .rs-task__what { color: var(--rs-muted); font-weight: var(--rs-fw-normal); }
-.rs-task[data-state="decided"] .rs-task__why { color: var(--rs-muted); }
+/* decided: the line says what happened; the why asked for an action that is over */
+.rs-task[data-state="decided"] :is(.rs-task__why, .rs-task__more) { display: none; }
 
 /* urgent: the primary, emphasised by a ring in the accent it already has
    (no second colour) */
@@ -577,6 +578,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
   display: block;
   width: 100%;
   min-height: 0;
+  /* six lines (composer.js), fewer in a very short window */
+  max-height: 28vh;
   padding: var(--space-1) 0;
   border: 0;
   background: transparent;
@@ -592,8 +595,18 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-composer:has(> .rs-composer__input[readonly]) { border-color: var(--rs-line); background: transparent; cursor: default; }
 .rs-composer__input[readonly] { color: var(--rs-muted); }
 
-/* reply chips: what the note refers to, quoted, each removable */
-.rs-refs { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+/* reply chips: what the note refers to, quoted, each removable. Many
+   chips scroll in their own area (about three rows), so the note and the
+   footer buttons always stay in the window */
+.rs-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-height: min(calc(3 * var(--rs-icon-btn) + 2 * var(--space-1) + 2 * var(--space-0-5)), 18vh);
+  padding: var(--space-0-5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .rs-refs[hidden] { display: none; }
 .rs-ref {
   display: inline-flex;

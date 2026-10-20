@@ -26,7 +26,7 @@
     if (text !== undefined) node.textContent = text;
     return node;
   }
-  function svgIcon(d) {
+  function svgIcon(d, filled) {
     var svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
@@ -34,10 +34,16 @@
     svg.setAttribute('class', 'rs-ico');
     var p = document.createElementNS(SVG_NS, 'path');
     p.setAttribute('d', d);
+    if (filled) {
+      p.setAttribute('class', 'rs-ico-fill');
+      /* an opening pair of quote marks, filling the icon box */
+      p.setAttribute('transform', 'translate(12 12) scale(1.4) rotate(180) translate(-12 -13)');
+    }
     svg.appendChild(p);
     return svg;
   }
-  var ICON_REPLY = 'M9.5 7 4.5 12l5 5M5 12h9a5.5 5.5 0 0 1 5.5 5.5V19';
+  /* a quote mark, filled: what the note refers to */
+  var ICON_QUOTE = 'M4.9 10.5a2.6 2.6 0 0 1 5.2 0c0 3.2-1.7 5.6-4.4 6.6l-.5-1.1c1.2-.6 2-1.5 2.4-2.9a2.6 2.6 0 0 1-2.7-2.6zM13.9 10.5a2.6 2.6 0 0 1 5.2 0c0 3.2-1.7 5.6-4.4 6.6l-.5-1.1c1.2-.6 2-1.5 2.4-2.9a2.6 2.6 0 0 1-2.7-2.6z';
   var ICON_CLOSE = 'M7 7l10 10M17 7 7 17';
   var ICON_PLUS = 'M12 5v14M5 12h14';
 
@@ -46,6 +52,9 @@
     var label = String(ref.label == null ? '' : ref.label).replace(/\s+/g, ' ').trim();
     if (!label) label = String(ref.item);
     if (Array.from(label).length > MAX_LABEL) label = Array.from(label).slice(0, MAX_LABEL - 1).join('') + '…';
+    /* half an emoji (a lone surrogate from a cut elsewhere) never reaches the bot */
+    label = label.replace(/[\uD800-\uDBFF](…?)$/, '$1');
+    if (!label) label = String(ref.item);
     return { block: String(ref.block), item: String(ref.item), label: label };
   }
 
@@ -92,6 +101,9 @@
       var pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
       var border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
       var max = line * MAX_LINES + pad + border;
+      /* a short window caps the note lower (shell.css max-height) */
+      var cap = parseFloat(style.maxHeight);
+      if (cap > 0 && cap < max) max = cap;
       input.style.height = 'auto';
       var want = input.scrollHeight + border;
       input.style.height = Math.min(want, max) + 'px';
@@ -121,7 +133,7 @@
         chip.title = ref.label;
         var mark = make('span', 'rs-ref__mark');
         mark.setAttribute('aria-hidden', 'true');
-        mark.appendChild(svgIcon(ICON_REPLY));
+        mark.appendChild(svgIcon(ICON_QUOTE, true));
         chip.appendChild(mark);
         chip.appendChild(make('span', 'rs-ref__label', ref.label));
         if (!state.locked) {

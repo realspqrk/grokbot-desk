@@ -193,6 +193,63 @@ describe('content blocks (served, headless browser)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
+  test('table cells read only the row\'s own values, never inherited names like constructor', async () => {
+    const run = show({
+      schema: 'grokbot-desk/payload@2', bot: 'ops-bot', title: 'Odd keys', ask: 'read',
+      blocks: [{
+        type: 'table', id: 'odd', columns: [
+          { key: 'name', label: 'Item' }, { key: 'constructor', label: 'Maker' }, { key: '__proto__', label: 'Note' },
+        ], rows: [{ name: 'Desk' }, { name: 'Lamp', constructor: 'Acme' }],
+        total: { name: 'Total' },
+      }],
+    });
+    const { ctx, page, log } = await open(run);
+    try {
+      const rows = await page.$$eval('[data-rs-block="odd"] tbody tr, [data-rs-block="odd"] tfoot tr',
+        (trs) => trs.map((tr) => [...tr.cells].map((c) => c.textContent)));
+      assert.deepEqual(rows, [['Desk', '', ''], ['Lamp', 'Acme', ''], ['Total', '', '']]);
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('checks: one status per row, a mark next to its word, no hollow circle; rows span the column', async () => {
+    const run = show({
+      schema: 'grokbot-desk/payload@2', bot: 'ops-bot', title: 'Nightly', ask: 'read',
+      blocks: [
+        { type: 'text', md: 'A paragraph long enough to reach the reading width of the column, so the edges can be compared with the list below it in this test.' },
+        {
+          type: 'checks', id: 'nightly', items: [
+            { label: 'Backups', state: 'ok', detail: '7 of 7 nights' }, { label: 'Certificates', state: 'warn' },
+            { label: 'Disk', state: 'fail' }, { label: 'Restore test', state: 'open' },
+          ],
+        },
+      ],
+    });
+    const { ctx, page, log } = await open(run, { width: 1280 });
+    try {
+      const words = { ok: de.blk_state_ok, warn: de.blk_state_warn, fail: de.blk_state_fail, open: de.blk_state_open };
+      const rows = await page.$$eval('[data-rs-block="nightly"] .rs-check-item', (items) => items.map((li) => {
+        const status = li.querySelector('.rs-check-item__status');
+        return { state: li.dataset.state, text: li.textContent, status: status ? status.textContent : null };
+      }));
+      for (const row of rows) {
+        const word = words[row.state];
+        assert.equal(row.text.split(word).length - 1, 1, 'the word once: ' + row.text);
+        assert.ok(row.status && row.status.includes(word), 'the mark sits with its word: ' + JSON.stringify(row));
+        assert.ok(!/[○◯◦⚪]/.test(row.text), 'no hollow circle: ' + row.text);
+      }
+      assert.equal(await page.locator('#rs-mount [role="checkbox"], #rs-mount [role="radio"], #rs-mount input').count(), 0);
+      const edges = await page.evaluate(() => {
+        const list = document.querySelector('[data-rs-block="nightly"] .rs-checks').getBoundingClientRect();
+        const row = document.querySelector('[data-rs-block="nightly"] .rs-check-item').getBoundingClientRect();
+        const column = document.querySelector('[data-rs-block="nightly"]').getBoundingClientRect();
+        return { list: Math.round(list.right), row: Math.round(row.right), column: Math.round(column.right) };
+      });
+      assert.deepEqual([edges.list, edges.row], [edges.column, edges.column], JSON.stringify(edges));
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
   test('chart has accessible name and a data table', async () => {
     const run = show(withMedia(load('report-long')));
     const { ctx, page, log } = await open(run);

@@ -16,10 +16,12 @@
  * pick: 2-4 option cards as one radiogroup; the suggestion is marked, never
  *   preselected; the primary names the picked option.
  * post: one preview per platform tab (rs-post-frame, count.js limits).
- *   Auto (ask approve): every platform included, a quiet "Leave out" per
- *   platform; an over-limit or unpostable platform (Instagram without
- *   media) is left out with its reason. Manual (ask do): an unset
- *   Posted | Skip per platform; limits are advice and never block.
+ *   The tabs only navigate: an unsent draft shows no tick (ticks are for
+ *   done work, a manual platform marked Posted). Auto (ask approve): one
+ *   labelled switch per platform, "Post to X", on by default; an
+ *   over-limit or unpostable platform (Instagram without media) is left
+ *   out with its reason. Manual (ask do): an unset Posted | Skip per
+ *   platform; limits are advice and never block.
  *
  * A decided report shows what was sent (run.result.blocks), read-only. No
  * literal UI strings: every word is ctx.t or payload.
@@ -43,9 +45,12 @@
     later: 'M12 7v5l3.2 2M12 3.8a8.2 8.2 0 1 0 0 16.4 8.2 8.2 0 0 0 0-16.4z',
     skip: 'M4.5 12h11M12 7.5l4.5 4.5-4.5 4.5M19.5 6v12',
     ring: 'M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15z',
-    reply: 'M9.5 7 4.5 12l5 5M5 12h9a5.5 5.5 0 0 1 5.5 5.5V19',
+    quote: 'M4.9 10.5a2.6 2.6 0 0 1 5.2 0c0 3.2-1.7 5.6-4.4 6.6l-.5-1.1c1.2-.6 2-1.5 2.4-2.9a2.6 2.6 0 0 1-2.7-2.6zM13.9 10.5a2.6 2.6 0 0 1 5.2 0c0 3.2-1.7 5.6-4.4 6.6l-.5-1.1c1.2-.6 2-1.5 2.4-2.9a2.6 2.6 0 0 1-2.7-2.6z',
     folder: 'M3.5 6.5a1.5 1.5 0 0 1 1.5-1.5h4l2 2h8a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z'
   };
+  var FILLED = { quote: true };
+  /* the quote marks as an opening pair, filling the icon box */
+  var QUOTE_TRANSFORM = 'translate(12 12) scale(1.4) rotate(180) translate(-12 -13)';
   var CHOICE_ICON = { approve: 'check', done: 'check', posted: 'check', reject: 'cross', skipped: 'skip', later: 'later' };
   var PLATFORMS = ['x', 'linkedin', 'instagram', 'facebook'];
 
@@ -63,11 +68,16 @@
     s.setAttribute('class', 'rs-ico' + (cls ? ' ' + cls : ''));
     var p = document.createElementNS(SVG_NS, 'path');
     p.setAttribute('d', ICONS[name]);
+    if (FILLED[name]) {
+      p.setAttribute('class', 'rs-ico-fill');
+      p.setAttribute('transform', QUOTE_TRANSFORM);
+    }
     s.appendChild(p);
     return s;
   }
   function has(table, key) { return Object.prototype.hasOwnProperty.call(table, key); }
-  function clip(text) { return String(text).replace(/\s+/g, ' ').trim().slice(0, REF_LABEL_MAX); }
+  /* by characters (code points), so a cut never splits an emoji in two */
+  function clip(text) { return Array.from(String(text).replace(/\s+/g, ' ').trim()).slice(0, REF_LABEL_MAX).join(''); }
   function idPart(text) { return String(text).replace(/[^a-z0-9_-]/gi, '-'); }
 
   function section(block) {
@@ -85,7 +95,7 @@
     b.setAttribute('data-rs-reply-item', ref.item);
     b.setAttribute('aria-label', ctx.t('blk_reply_to', { what: what }));
     b.title = ctx.t('blk_reply');
-    b.appendChild(svg('reply'));
+    b.appendChild(svg('quote'));
     b.addEventListener('click', function () { ctx.addRef(ref); });
     return b;
   }
@@ -591,20 +601,23 @@
         reason.appendChild(document.createTextNode(blocked[p]));
         decideBox.appendChild(reason);
       } else if (auto) {
-        stateLine = make('p', 'rs-post__state');
-        decideBox.appendChild(stateLine);
-        if (!locked) {
-          toggle = make('button', 'rs-link rs-post__toggle');
-          toggle.type = 'button';
-          toggle.id = base + '-toggle-' + p;
-          toggle.setAttribute('data-rs-leave-out', p);
-          toggle.addEventListener('click', function () {
-            state[p] = !state[p];
-            renderPlatform(p);
-            ctx.changed();
-          });
-          decideBox.appendChild(toggle);
-        }
+        /* the one inclusion control: a labelled switch, on = goes out */
+        toggle = make('button', 'rs-switch rs-post__toggle');
+        toggle.type = 'button';
+        toggle.id = base + '-toggle-' + p;
+        toggle.setAttribute('role', 'switch');
+        toggle.setAttribute('data-rs-leave-out', p);
+        var track = make('span', 'rs-switch__track');
+        track.setAttribute('aria-hidden', 'true');
+        toggle.appendChild(track);
+        toggle.appendChild(make('span', 'rs-switch__label', t('inp_post_switch', { platform: name })));
+        toggle.addEventListener('click', function () {
+          if (locked) return;
+          state[p] = !state[p];
+          renderPlatform(p);
+          ctx.changed();
+        });
+        decideBox.appendChild(toggle);
       } else {
         group = document.createElement('rs-segmented');
         group.setAttribute('data-item', p);
@@ -708,7 +721,8 @@
       }
       return state[p] || 'open';
     }
-    var GLYPH = { included: '✓', posted: '✓', blocked: '!', 'left-out': '–', skipped: '–', open: '', none: '' };
+    /* no tick while nothing is sent: only a platform posted by hand has one */
+    var GLYPH = { included: '', posted: '✓', blocked: '!', 'left-out': '–', skipped: '–', open: '', none: '' };
     var SPOKEN = {
       included: 'inp_post_included', 'left-out': 'inp_post_left_out', blocked: 'inp_post_blocked',
       posted: 'inp_post_posted', skipped: 'inp_post_skipped', open: 'inp_post_open', none: null
@@ -720,24 +734,23 @@
       tab.mark.textContent = GLYPH[s];
       /* a status colour on a small mark only (calm K6) */
       if (s === 'blocked') tab.mark.setAttribute('data-rs-status', 'danger');
-      else if (s === 'included' || s === 'posted') tab.mark.setAttribute('data-rs-status', 'ok');
+      else if (s === 'posted') tab.mark.setAttribute('data-rs-status', 'ok');
       else tab.mark.removeAttribute('data-rs-status');
       tab.spoken.textContent = SPOKEN[s] ? ', ' + t(SPOKEN[s]) : '';
       panels[p].setAttribute('data-state', s);
       var c = controls[p];
+      /* a platform that cannot go out says so; the others have their switch */
       if (c.stateLine) {
         c.stateLine.textContent = '';
-        c.stateLine.hidden = s === 'none';
-        if (s !== 'none') {
-          var glyph = make('span', 'rs-post__glyph', GLYPH[s]);
-          glyph.setAttribute('aria-hidden', 'true');
-          if (s === 'included') glyph.setAttribute('data-rs-status', 'ok');
-          c.stateLine.appendChild(glyph);
-          c.stateLine.appendChild(document.createTextNode(t(s === 'included' ? 'inp_post_goes_out' : 'inp_post_left_out_line', { platform: names[p] })));
-          glyph.textContent = s === 'blocked' ? GLYPH['left-out'] : GLYPH[s];
-        }
+        var glyph = make('span', 'rs-post__glyph', GLYPH['left-out']);
+        glyph.setAttribute('aria-hidden', 'true');
+        c.stateLine.appendChild(glyph);
+        c.stateLine.appendChild(document.createTextNode(t('inp_post_left_out_line', { platform: names[p] })));
       }
-      if (c.toggle) c.toggle.textContent = t(state[p] ? 'inp_leave_out' : 'inp_include', { platform: names[p] });
+      if (c.toggle) {
+        c.toggle.setAttribute('aria-checked', state[p] === true ? 'true' : 'false');
+        c.toggle.hidden = s === 'none';
+      }
       if (c.group && c.group.value !== (state[p] || '')) c.group.value = state[p] || '';
     }
 
@@ -809,9 +822,21 @@
       restore(sentAnswer(block, run));
       platforms.forEach(renderPlatform);
     }
+    /* decided: the switch shows what was sent and no longer changes; with
+       nothing sent (rejected, changes requested) it goes */
+    function lockControls() {
+      platforms.forEach(function (p) {
+        var c = controls[p];
+        if (c.toggle && stateOf(p) === 'none') { c.toggle.remove(); c.toggle = null; }
+        if (c.toggle) c.toggle.disabled = true;
+        if (c.group) c.group.disabled = true;
+        var reply = panels[p].querySelector('.rs-reply');
+        if (reply) reply.remove();
+      });
+    }
     platforms.forEach(renderPlatform);
     select(selected, false);
-    if (locked) reconcile();
+    if (locked) { reconcile(); lockControls(); }
 
     function answer() {
       if (auto) {
@@ -852,13 +877,7 @@
       lock: function () {
         locked = true;
         reconcile();
-        platforms.forEach(function (p) {
-          var c = controls[p];
-          if (c.toggle) { c.toggle.remove(); c.toggle = null; }
-          if (c.group) c.group.disabled = true;
-          var reply = panels[p].querySelector('.rs-reply');
-          if (reply) reply.remove();
-        });
+        lockControls();
       }
     };
   }

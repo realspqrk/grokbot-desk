@@ -256,7 +256,8 @@ describe('footer: composer, chips, ask contract, request state (served, headless
     try {
       await page.getByRole('button', { name: de.ask_request_changes, exact: true }).click();
       let f = await footer(page);
-      assert.deepEqual([f.primary, f.primaryEnabled, f.status], [de.ask_send_request, false, de.ask_request_hint]);
+      /* one visible instruction (the placeholder), no second one in the status line */
+      assert.deepEqual([f.primary, f.primaryEnabled, f.status, f.placeholder], [de.ask_send_request, false, '', de.cmp_placeholder_request]);
       await page.keyboard.type('   ');
       assert.equal((await footer(page)).primaryEnabled, false, 'blank is not a request');
       await page.keyboard.type('Shorter, please.');
@@ -287,6 +288,67 @@ describe('footer: composer, chips, ask contract, request state (served, headless
         refs: [{ block: 'guide', item: 'section:1', label: 'First week' }],
       });
     } finally { await ctx.close(); }
+  });
+
+  test('a reply label cut at its limit never splits a character: a decide item and a heading both send', async () => {
+    /* 119 letters, then an emoji (two UTF-16 units) at the 120th character */
+    const long = 'a'.repeat(119) + '\u{1F600}' + ' and more';
+    const label = 'a'.repeat(119) + '\u{1F600}';
+    const item = show({
+      schema: 'grokbot-desk/payload@2', bot: 'office-bot', title: 'One item', ask: 'approve',
+      blocks: [{ type: 'decide', id: 'd', items: [{ id: 'i1', title: long }] }],
+    });
+    let o = await open(item);
+    try {
+      await o.page.click('.rs-reply[data-rs-reply-item="i1"]');
+      await o.page.click('#inp-d-r0-approve');
+      await o.page.click('#rs-submit');
+      const data = await submitted(item);
+      assert.deepEqual([data.decision, data.refs], ['submit', [{ block: 'd', item: 'i1', label }]]);
+    } finally { await o.ctx.close(); }
+    const heading = show({
+      schema: 'grokbot-desk/payload@2', bot: 'writer-bot', title: 'One section', ask: 'review',
+      blocks: [{ type: 'text', id: 'doc', md: '## ' + long + '\n\nBody.' }],
+    });
+    o = await open(heading);
+    try {
+      await o.page.click('[data-rs-block="doc"] [data-rs-reply-section="0"]');
+      await o.page.click('#rs-submit');
+      const data = await submitted(heading);
+      assert.deepEqual([data.decision, data.refs], ['accept', [{ block: 'doc', item: 'section:0', label }]]);
+    } finally { await o.ctx.close(); }
+  });
+
+  test('twenty long chips and a six-line note keep every footer button in view at 600 and 700 px', async () => {
+    const words = 'with a heading long enough to fill most of a reply chip on its own';
+    const md = Array.from({ length: 20 }, (_, i) => `## Section ${i + 1} ${words}\n\nText ${i + 1}.`).join('\n\n');
+    const run = show({
+      schema: 'grokbot-desk/payload@2', bot: 'writer-bot', title: 'Twenty sections', ask: 'review',
+      why: 'Please read every section before it goes out.', blocks: [{ type: 'text', id: 'doc', md }],
+    });
+    for (const height of [600, 700]) {
+      const { ctx, page } = await open(run, { height });
+      try {
+        for (let n = 0; n < 20; n++) await page.click(`[data-rs-block="doc"] [data-rs-reply-section="${n}"]`);
+        assert.equal(await page.locator('#rs-submitbar [data-rs-ref]').count(), 20);
+        await page.fill('#rs-note', ['one', 'two', 'three', 'four', 'five', 'six'].join('\n'));
+        for (const mode of ['decide', 'request']) {
+          if (mode === 'request') await page.getByRole('button', { name: de.ask_request_changes, exact: true }).click();
+          const seen = await page.evaluate(() => [...document.querySelectorAll('#rs-actions button')]
+            .filter((b) => !b.hidden && b.getClientRects().length)
+            .map((b) => {
+              const r = b.getBoundingClientRect();
+              const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+              return { id: b.id, inside: r.top >= 0 && r.bottom <= innerHeight, hit: !!hit && b.contains(hit) };
+            }));
+          assert.ok(seen.some((b) => b.id === 'rs-submit'), `${height} ${mode}: the primary is shown`);
+          for (const b of seen) assert.deepEqual([b.id, b.inside, b.hit], [b.id, true, true], `${height} ${mode}`);
+          /* the chips scroll inside their own area */
+          const refs = await page.$eval('#rs-refs', (n) => ({ scrolls: n.scrollHeight > n.clientHeight + 1, overflow: getComputedStyle(n).overflowY }));
+          assert.deepEqual([refs.scrolls, refs.overflow], [true, 'auto'], `${height} ${mode}`);
+        }
+      } finally { await ctx.close(); }
+    }
   });
 
   test('the composer grows from one line to six, then scrolls', async () => {
@@ -395,6 +457,8 @@ describe('footer: composer, chips, ask contract, request state (served, headless
       await submitted(run);
       await page.waitForFunction(() => document.getElementById('rs-task').getAttribute('data-state') === 'decided');
       assert.equal(await page.textContent('#rs-task .rs-task__what'), fill('ask_done_revise', { bot: de.task_the_bot }));
+      /* the imperative why belongs to the open report */
+      assert.equal(await page.isVisible('#rs-task .rs-task__why'), false);
       await page.reload();
       await ready(page);
       assert.equal(await page.inputValue('#rs-note'), 'Add a map.');
@@ -403,6 +467,7 @@ describe('footer: composer, chips, ask contract, request state (served, headless
       assert.equal(await page.locator('#rs-submitbar [data-rs-ref] button').count(), 0, 'chips cannot be removed');
       assert.equal(await page.isVisible('#rs-submit'), false);
       assert.equal(await page.textContent('#rs-task .rs-task__what'), fill('ask_done_revise', { bot: de.task_the_bot }));
+      assert.equal(await page.isVisible('#rs-task .rs-task__why'), false);
     } finally { await ctx.close(); }
   });
 

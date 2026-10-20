@@ -153,7 +153,7 @@ One report has one `ask` and at most one input block (`decide`, `pick`, or `post
 
 The footer is one status line, the reply chips, one composer, up to two quiet buttons, and one primary. There is one note. It covers every reply chip. `read` has no Discard. Discard is in the `…` menu and asks first.
 
-Request changes focuses the composer and requires a note. The primary becomes "Send request". Cancel returns to the decision. None of these works the same way. Its primary becomes "Ask for new options". Ctrl+Enter or Cmd+Enter sends the current primary. It cannot send an approval while a request is being written.
+Request changes focuses the composer and requires a note. The primary becomes "Send change request". Cancel returns to the decision. None of these works the same way. Its primary becomes "Ask for new options". Ctrl+Enter or Cmd+Enter sends the current primary. It cannot send an approval while a request is being written.
 
 A note is optional on every decision except `revise`. `revise` needs a note that says what should change. The note is at most 4,000 characters. Reject and Skip send at once. A note already typed rides along. It is not required.
 
@@ -170,7 +170,7 @@ Quoted labels below are the English ones. The window shows German unless `RS_LAN
 | `approve` | `post`, every platform auto | Approve & post to the included platforms | Reject, Request changes | `approve`, `reject`, or `revise` | `revise` needs a note. `approve` lists each platform's `included` flag. At least one must be true, or send `reject`. |
 | `do` | none | Done ✓. Sent ✓ when `action` is `send`. Posted ✓ when `action` is `post`. | Skip, Request changes | `done`, `skipped`, or `revise` | `revise` needs a note. Skip does not. |
 | `do` | `decide` | Done | Request changes | `submit` or `revise` | `revise` needs a note. `submit` needs every row. |
-| `do` | `post`, every platform manual | Posted ✓ | Request changes | `submit` or `revise` | `revise` needs a note. `submit` needs every platform `posted` or `skipped`. |
+| `do` | `post`, every platform manual | Done | Request changes | `submit` or `revise` | `revise` needs a note. `submit` needs every platform `posted` or `skipped`. |
 | `choose` | `pick` (required) | Choose, then the option name | None of these, unless `allow_none` is false | `choose`, or `revise` when None of these is offered | `revise` needs a note. With `allow_none` false the only decision is `choose`. |
 
 With an input block, the report-level decision does not approve a row or a platform by itself.

@@ -60,7 +60,7 @@ test('request state: Send request sends revise and needs a note; Cancel returns;
   for (const r of [run('review'), run('approve', { action: 'post', label: 'Ship it' }), run('do', { action: 'send' })]) {
     const blank = RSAsk.footer(r, null, 'request', { note: false });
     assert.deepEqual(shape(blank), {
-      status: de.ask_request_hint, primary: [de.ask_send_request, 'revise', false], alts: [[de.cancel, null, 'decide']],
+      status: '', primary: [de.ask_send_request, 'revise', false], alts: [[de.cancel, null, 'decide']],
     }, r.ask);
     assert.equal(blank.primary.needsNote, true);
     const written = RSAsk.footer(r, null, 'request', { note: true });
@@ -108,7 +108,8 @@ test('input rows: the primary waits for a complete answer; the status counts wha
     alts: [[de.ask_reject, 'reject', null], [de.ask_request_changes, null, 'request']],
   });
   const manual = RSAsk.footer(withInput('do', { type: 'post' }), handle({ answer: null, done: 0, total: 1 }), 'decide');
-  assert.deepEqual(shape(manual).primary, [de.ask_posted, 'submit', false]);
+  /* posting by hand reads Done, as doing items does: the person reports what they did */
+  assert.deepEqual(shape(manual).primary, [de.ask_done_items, 'submit', false]);
 
   const pick = withInput('choose', { type: 'pick', options: [] });
   assert.deepEqual(shape(RSAsk.footer(pick, handle({ answer: null, done: 0, total: 1 }), 'decide')), {
@@ -118,7 +119,7 @@ test('input rows: the primary waits for a complete answer; the status counts wha
     ['Choose Thursday', 'choose', true]);
   const none = RSAsk.footer(pick, handle(), 'none-of-these', { note: false });
   assert.deepEqual(shape(none), {
-    status: de.ask_none_hint, primary: [de.ask_send_none, 'revise', false], alts: [[de.cancel, null, 'decide']],
+    status: '', primary: [de.ask_send_none, 'revise', false], alts: [[de.cancel, null, 'decide']],
   });
   /* allow_none false: no way out but a pick */
   assert.deepEqual(RSAsk.footer(withInput('choose', { type: 'pick', allow_none: false }), handle(), 'decide').alts, []);
@@ -162,6 +163,9 @@ test('decided line: what happened, by decision', () => {
   assert.equal(line(run('do', { action: 'post' }), { decision: 'done' }), t('ask_done_posted'));
   assert.equal(line(run('do'), { decision: 'skipped' }), t('ask_done_skipped', { bot: 'Office Bot' }));
   assert.equal(line(withInput('approve', { type: 'decide', items: [] }), { decision: 'submit' }), t('ask_done_submit', { bot: 'Office Bot' }));
+  /* under do the person did the work: the bot only notes it */
+  assert.equal(line(withInput('do', { type: 'decide', items: [] }), { decision: 'submit' }), t('ask_done_submit_do', { bot: 'Office Bot' }));
+  assert.equal(line(withInput('do', { type: 'post' }), { decision: 'submit' }), t('ask_done_submit_do', { bot: 'Office Bot' }));
   assert.equal(line(withInput('choose', { type: 'pick' }), { decision: 'choose' }), t('ask_done_choose', { bot: 'Office Bot' }));
   assert.equal(line(withInput('choose', { type: 'pick' }), { decision: 'revise' }), t('ask_done_none', { bot: 'Office Bot' }));
   assert.equal(line(run('do'), null, 'cancelled'), t('ask_done_cancelled', { bot: 'Office Bot' }));

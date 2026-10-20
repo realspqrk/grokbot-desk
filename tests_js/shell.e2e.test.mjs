@@ -974,7 +974,8 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.waitForSelector(`${row(c.run_id)} .rs-inbox__dot[data-new]`);
       assert.equal(await activeId(page), a.run_id);
       const order = await page.$$eval('#rs-inbox a[data-run-id]', (x) => x.map((e) => [e.dataset.runId, e.getAttribute('aria-keyshortcuts')]));
-      assert.deepEqual(order, [[a.run_id, 'Control+1'], [b.run_id, 'Control+2'], [c.run_id, 'Control+3']]);
+      /* Ctrl on Windows, Cmd on macOS: both announced, as on the primary */
+      assert.deepEqual(order, [[a.run_id, 'Control+1 Meta+1'], [b.run_id, 'Control+2 Meta+2'], [c.run_id, 'Control+3 Meta+3']]);
 
       // Ctrl+3 -> C (read: the dot goes)
       const read = page.waitForRequest((r) => r.url() === ORIGIN + '/read');
@@ -1339,6 +1340,28 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.waitForFunction(() => !document.getElementById('rs-mount').hasAttribute('data-rs-more'));
       assert.deepEqual(await fold(page), { more: false, fade: null, scrolls: true }, 'decided, at the end');
       assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('a reload event (a page from an earlier desk run) loads the page again', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1100, height: 800 }, reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    try {
+      /* the first event stream answers as the desk does to a stale page */
+      let streams = 0;
+      await page.route(/\/events\?/, (route) => {
+        streams += 1;
+        if (streams > 1) return route.continue();
+        return route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: 'retry: 3600000\n\nevent: reload\ndata: {}\n\n' });
+      });
+      let loads = 0;
+      page.on('load', () => { loads += 1; });
+      await page.goto(server.url('?client=test'));
+      await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
+      const deadline = Date.now() + 5000;
+      while ((loads < 2 || streams < 2) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+      assert.equal(loads, 2, 'the page loaded once more');
+      assert.ok(streams >= 2, 'the reloaded page connects again');
     } finally { await ctx.close(); }
   });
 

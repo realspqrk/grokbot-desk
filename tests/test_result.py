@@ -18,7 +18,7 @@ def stored(name, **changes):
     name = "choose" if allow_none else name
     payload = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
     if allow_none:
-        del payload["blocks"][1]["allow_none"]
+        del next(block for block in payload["blocks"] if block["type"] == "pick")["allow_none"]
     for key, value in changes.items():
         if value is None:
             payload.pop(key, None)

@@ -124,6 +124,10 @@ describe('post block: auto and manual platforms (served, headless browser)', { s
       try {
         assert.deepEqual(await tabState(page), [['x', 'included'], ['linkedin', 'included']]);
         assert.equal(await page.getAttribute(tab('x'), 'aria-selected'), 'true');
+        /* an unsent draft shows no tick: the tabs only navigate, the switch says what goes out */
+        assert.equal(await page.$$eval('[role="tab"][data-platform]', (els) => els.some((t) => /✓/.test(t.textContent))), false);
+        assert.equal(await page.locator('#rs-mount').evaluate((m) => /✓/.test(m.innerText)), false);
+        assert.equal(await page.getAttribute('[data-rs-leave-out="x"]', 'aria-checked'), 'true');
         /* one preview at a time, as wide as a real post */
         const frames = await page.$$eval('#rs-mount rs-post-frame', (els) => els.map((e) => [e.getAttribute('skin'), Math.round(e.getBoundingClientRect().width)]));
         assert.equal(frames.length, 1);
@@ -156,7 +160,9 @@ describe('post block: auto and manual platforms (served, headless browser)', { s
       await o.page.click('[data-rs-leave-out]');
       assert.deepEqual(await tabState(o.page), [['x', 'included'], ['linkedin', 'left-out']]);
       assert.equal((await footer(o.page)).primary, fill('inp_approve_post_to', { platforms: 'X' }));
-      assert.equal(await o.page.textContent('[data-rs-leave-out]'), fill('inp_include', { platform: 'LinkedIn' }));
+      /* one labelled switch per platform: off now, its name unchanged */
+      assert.deepEqual(await o.page.$eval('[data-rs-leave-out]', (b) => [b.getAttribute('role'), b.getAttribute('aria-checked'), b.textContent]),
+        ['switch', 'false', fill('inp_post_switch', { platform: 'LinkedIn' })]);
       await o.page.click('[data-rs-leave-out]');
       assert.equal((await footer(o.page)).primary, fill('inp_approve_post_to', { platforms: list(['X', 'LinkedIn']) }));
       await o.page.click('[data-rs-leave-out]');
@@ -244,7 +250,7 @@ describe('post block: auto and manual platforms (served, headless browser)', { s
       assert.deepEqual(await tabState(o.page), [['x', 'open'], ['facebook', 'open']]);
       assert.match(await o.page.textContent('.rs-post__reason'), new RegExp(fill('manual_over_limit', { limit: '25.000', platform: 'X' }).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       let f = await footer(o.page);
-      assert.equal(f.primary, de.ask_posted);
+      assert.equal(f.primary, de.ask_done_items);
       assert.equal(f.primaryEnabled, false);
       assert.equal(f.status, fill('ask_progress', { done: 0, total: 2 }));
       const segs = await o.page.$$eval('rs-segmented[data-item="x"] > button', (els) => els.map((b) => [b.value, b.getAttribute('aria-checked')]));

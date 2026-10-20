@@ -19,7 +19,7 @@
     "refs": []
   },
   "copies": {
-    "b2-1": "Heating repair, flat 4",
-    "b2-2": "Dear Sir or Madam, the heating repair promised for October 5 has not happened yet. Please name a date this week. Kind regards"
+    "b1-1": "Heating repair, flat 4",
+    "b1-2": "Dear Sir or Madam,\n\nthe heating repair promised for October 5 has not happened yet. Please name a date this week.\n\nKind regards"
   }
 }

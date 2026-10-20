@@ -493,7 +493,7 @@ def test_api_run_serves_the_payload_without_its_internals(live):
     for gone in ("schema", "dedupe_key", "dedupe_hours", "expires_minutes", "template", "data", "task"):
         assert gone not in detail, gone
     assert detail["run_id"] == pushed["run_id"] and detail["ask"] == "approve"
-    assert detail["title"] == "Two invoices this week" and detail["why"] == "Hosting is due Friday."
+    assert detail["title"] == "Three payments this week" and detail["why"] == "Hosting is due Friday."
     assert detail["urgent"] is True and detail["due"] == "2026-10-23"
     assert [block["id"] for block in detail["blocks"]] == ["b1", "invoices"]
     assert detail["state"] == "open" and detail["expires"]
@@ -519,7 +519,7 @@ def test_submit_over_http_checks_the_answer_against_the_report(live):
     assert status == 400
     assert json.loads(body)["pointer"] == "/data/blocks/invoices/items"
     full = {"decision": "submit", "note": "Toner: ask for a cheaper vendor first.",
-            "refs": [{"block": "invoices", "item": "toner", "label": "Toner, 132.90 EUR"}],
+            "refs": [{"block": "invoices", "item": "toner", "label": "Toner"}],
             "blocks": {"invoices": {"items": [
                 {"id": "hosting", "choice": "approve"}, {"id": "toner", "choice": "later"},
                 {"id": "parking", "choice": "reject"}]}}}

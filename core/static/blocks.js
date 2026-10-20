@@ -11,8 +11,8 @@
  * locked}. Reply targets here are the ## and ### headings of a text block
  * (item section:<n>, numbered as core/payload.py does).
  *
- * Read-only never looks like input: checks and markdown task lists are a
- * glyph (✓ ! ✕ ○) and a word, never a box. Status is never colour alone.
+ * Read-only never looks like input: checks and table status cells are a
+ * glyph (✓ ! ✕ –) next to a word, never a box or a hollow circle. Status is never colour alone.
  * Numbers are right-aligned with tabular figures; deltas carry ▲ / ▼ and a
  * sign, coloured by `good` (stats tiles; table columns have no `good`). Long tables fold at 10 rows. Every chart has a
  * "Show data" table. No literal UI strings: every word is ctx.t or payload.
@@ -22,7 +22,9 @@
 
   var FOLD_ROWS = 10;
   var REF_LABEL_MAX = 120;
-  var GLYPHS = { ok: '✓', warn: '!', fail: '✕', open: '○' };
+  /* status marks; open is a dash, not a hollow circle (circles are for
+     options a person picks) */
+  var GLYPHS = { ok: '✓', warn: '!', fail: '✕', open: '–' };
   var STATE_KEYS = { ok: 'blk_state_ok', warn: 'blk_state_warn', fail: 'blk_state_fail', open: 'blk_state_open' };
   /* the status a state shows in colour (data-rs-status, calm K6) */
   var STATUS_TONES = { ok: 'ok', warn: 'warn', fail: 'danger' };
@@ -37,6 +39,8 @@
     if (text !== undefined && text !== null) n.textContent = text;
     return n;
   }
+  /* a row's own value only: a key such as constructor never reads the prototype */
+  function own(row, key) { return row && Object.prototype.hasOwnProperty.call(row, key) ? row[key] : undefined; }
   function locale(ctx) { return ctx.lang === 'en' ? 'en-US' : 'de-DE'; }
   function vh(text) { return make('span', 'rs-vh', text); }
 
@@ -106,7 +110,8 @@
         if (ctx.locked) return heading;
         var head = make('div', 'rs-md__head');
         head.appendChild(heading);
-        var label = (title || ctx.t('blk_section_n', { n: n + 1 })).replace(/\s+/g, ' ').slice(0, REF_LABEL_MAX);
+        /* cut by characters (code points): never half an emoji */
+        var label = Array.from((title || ctx.t('blk_section_n', { n: n + 1 })).replace(/\s+/g, ' ').trim()).slice(0, REF_LABEL_MAX).join('');
         var reply = make('button', 'rs-reply');
         reply.type = 'button';
         reply.setAttribute('data-rs-reply-section', String(n));
@@ -129,8 +134,11 @@
     svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('focusable', 'false');
     svg.setAttribute('class', 'rs-ico');
+    /* a quote mark: reply quotes this part in the note (never an undo arrow) */
     var p = document.createElementNS(NS, 'path');
-    p.setAttribute('d', 'M9.5 7 4.5 12l5 5M5 12h9a5.5 5.5 0 0 1 5.5 5.5V19');
+    p.setAttribute('d', 'M4.9 10.5a2.6 2.6 0 0 1 5.2 0c0 3.2-1.7 5.6-4.4 6.6l-.5-1.1c1.2-.6 2-1.5 2.4-2.9a2.6 2.6 0 0 1-2.7-2.6zM13.9 10.5a2.6 2.6 0 0 1 5.2 0c0 3.2-1.7 5.6-4.4 6.6l-.5-1.1c1.2-.6 2-1.5 2.4-2.9a2.6 2.6 0 0 1-2.7-2.6z');
+    p.setAttribute('class', 'rs-ico-fill');
+    p.setAttribute('transform', 'translate(12 12) scale(1.4) rotate(180) translate(-12 -13)');
     svg.appendChild(p);
     return svg;
   }
@@ -233,7 +241,7 @@
     var rows = block.rows || [];
     rows.forEach(function (row, i) {
       var tr = document.createElement('tr');
-      block.columns.forEach(function (column) { tr.appendChild(cell(ctx, column, row[column.key])); });
+      block.columns.forEach(function (column) { tr.appendChild(cell(ctx, column, own(row, column.key))); });
       if (rows.length > FOLD_ROWS && i >= FOLD_ROWS) tr.hidden = true;
       tbody.appendChild(tr);
     });
@@ -241,7 +249,7 @@
     if (block.total && typeof block.total === 'object') {
       var tfoot = document.createElement('tfoot');
       var fr = document.createElement('tr');
-      block.columns.forEach(function (column) { fr.appendChild(cell(ctx, column, block.total[column.key])); });
+      block.columns.forEach(function (column) { fr.appendChild(cell(ctx, column, own(block.total, column.key))); });
       tfoot.appendChild(fr);
       t.appendChild(tfoot);
     }
@@ -338,22 +346,21 @@
     return dl;
   }
 
+  /* one status per row: the mark and its word side by side in the first
+     column (as a table status cell), then what was checked */
   function checks(block, ctx) {
     var list = make('ul', 'rs-checks');
     block.items.forEach(function (item) {
       var li = make('li', 'rs-check-item');
       li.setAttribute('data-state', item.state);
-      var mark = make('span', 'rs-check-item__mark rs-glyph', GLYPHS[item.state]);
-      mark.setAttribute('aria-hidden', 'true');
-      if (STATUS_TONES[item.state]) mark.setAttribute('data-rs-status', STATUS_TONES[item.state]);
-      li.appendChild(mark);
+      var state = status(ctx, item.state, 'rs-status rs-check-item__status');
+      /* a warning or a failure colours its word too (a short word, calm K6) */
+      if (item.state === 'warn' || item.state === 'fail') state.setAttribute('data-rs-status', STATUS_TONES[item.state]);
+      li.appendChild(state);
       var body = make('span', 'rs-check-item__body');
       body.appendChild(make('span', 'rs-check-item__label', item.label));
       if (item.detail) body.appendChild(make('span', 'rs-check-item__detail', item.detail));
       li.appendChild(body);
-      var word = make('span', 'rs-check-item__state', ctx.t(STATE_KEYS[item.state]));
-      if (item.state === 'warn' || item.state === 'fail') word.setAttribute('data-rs-status', STATUS_TONES[item.state]);
-      li.appendChild(word);
       list.appendChild(li);
     });
     return list;

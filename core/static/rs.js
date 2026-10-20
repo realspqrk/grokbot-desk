@@ -838,7 +838,8 @@
     a.setAttribute('data-run-id', run.run_id);
     a.setAttribute('data-ask', run.ask || '');
     if (current) a.setAttribute('aria-current', 'page');
-    if (i < 9) a.setAttribute('aria-keyshortcuts', 'Control+' + (i + 1));
+    /* Ctrl on Windows, Cmd on macOS, as the primary announces */
+    if (i < 9) a.setAttribute('aria-keyshortcuts', 'Control+' + (i + 1) + ' Meta+' + (i + 1));
     a.title = run.title;
     a.appendChild(avatarBox(who));
     var text = document.createElement('span');
@@ -2119,6 +2120,8 @@
       + (appToken ? '&app=' + appToken : '') + (appPrevious ? '&prev=' + appPrevious : '');
     var es = new EventSource(url);
     var lost = false;
+    /* a page left over from an earlier desk run: load the current one */
+    es.addEventListener('reload', function () { location.reload(); });
     es.addEventListener('window', function (ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
@@ -2306,7 +2309,7 @@
     el.discard.addEventListener('click', discard);
     el.discardDialog.addEventListener('close', onDiscardClose);
 
-    // touched tracking + choice log + onChange listeners
+    // touched tracking + onChange listeners
     el.mount.addEventListener('input', notifyChange);
     ['focusin', 'input', 'select', 'keyup', 'mouseup'].forEach(function (name) {
       el.mount.addEventListener(name, function (ev) { rememberTemplateFocus(ev.target); });
@@ -2314,14 +2317,7 @@
       el.composerSlot.addEventListener(name, function (ev) { rememberTemplateFocus(ev.target); });
     });
     window.addEventListener('pagehide', function () { rememberTemplateFocus(document.activeElement); });
-    el.mount.addEventListener('change', function (ev) {
-      notifyChange(ev);
-      var row = ev.target;
-      if (row && row.tagName === 'RS-ACTION-ROW' && state.activeId) {
-        var item = row.getAttribute('data-item') || row.id || null;
-        post('/log', { run_id: state.activeId, event: 'choice', detail: { item: item, choice: row.value } }).catch(function () {});
-      }
-    });
+    el.mount.addEventListener('change', notifyChange);
     el.mount.addEventListener('rs-copy', notifyChange);
     el.mount.addEventListener('scroll', updateFold, { passive: true });
     if (typeof ResizeObserver === 'function') {

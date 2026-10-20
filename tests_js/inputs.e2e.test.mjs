@@ -174,14 +174,14 @@ describe('input blocks: decide and pick (served, headless browser)', { skip }, (
       /* R quotes the row as a chip and moves to the note */
       await page.focus(seg('toner', 'later'));
       await page.keyboard.press('r');
-      assert.deepEqual(await page.locator('#rs-submitbar [data-rs-ref]').allTextContents(), ['Toner, 132.90 EUR']);
+      assert.deepEqual(await page.locator('#rs-submitbar [data-rs-ref]').allTextContents(), ['Toner']);
       assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-note');
       /* typing in the note never decides: a, x, l are letters there */
       await page.keyboard.type('alx');
       assert.equal(await page.getAttribute(seg('toner', 'later'), 'aria-checked'), 'true');
       await page.keyboard.press('Control+Enter');
       const data = await submitted(run);
-      assert.deepEqual(data.refs, [{ block: 'invoices', item: 'toner', label: 'Toner, 132.90 EUR' }]);
+      assert.deepEqual(data.refs, [{ block: 'invoices', item: 'toner', label: 'Toner' }]);
       assert.equal(data.note, 'alx');
       assert.deepEqual(data.blocks.invoices.items.map((i) => i.choice), ['reject', 'later', 'reject']);
     } finally { await ctx.close(); }
@@ -277,7 +277,7 @@ describe('input blocks: decide and pick (served, headless browser)', { skip }, (
 
   test('pick: primary names the option; none-of-these needs note → revise', async () => {
     const payload = load('choose');
-    delete payload.blocks[1].allow_none;
+    delete payload.blocks.find((b) => b.type === 'pick').allow_none;
     const run = show(payload);
     const { ctx, page, log } = await open(run);
     try {
@@ -432,7 +432,7 @@ describe('input blocks: decide and pick (served, headless browser)', { skip }, (
     } finally { await a.ctx.close(); }
     /* pick: a card chosen, then None of these */
     const payload = load('choose');
-    delete payload.blocks[1].allow_none;
+    delete payload.blocks.find((b) => b.type === 'pick').allow_none;
     const pickRun = show(payload);
     const b = await open(pickRun);
     try {
@@ -535,7 +535,7 @@ describe('input blocks: decide and pick (served, headless browser)', { skip }, (
       await ready(page);
       assert.equal(await page.getAttribute(seg('hosting', 'approve'), 'aria-checked'), 'true');
       assert.equal(await page.getAttribute('[data-item-id="toner"]', 'data-state'), 'open');
-      assert.deepEqual(await page.locator('#rs-submitbar [data-rs-ref]').allTextContents(), ['Toner, 132.90 EUR']);
+      assert.deepEqual(await page.locator('#rs-submitbar [data-rs-ref]').allTextContents(), ['Toner']);
       assert.equal(await page.inputValue('#rs-note'), 'Ask for a cheaper vendor first.');
       assert.equal((await footer(page)).status, fill('ask_progress', { done: 1, total: 3 }));
       await page.click(seg('toner', 'later'));
@@ -543,7 +543,7 @@ describe('input blocks: decide and pick (served, headless browser)', { skip }, (
       await page.click('#rs-submit');
       assert.deepEqual(await submitted(run), {
         decision: 'submit', note: 'Ask for a cheaper vendor first.',
-        refs: [{ block: 'invoices', item: 'toner', label: 'Toner, 132.90 EUR' }],
+        refs: [{ block: 'invoices', item: 'toner', label: 'Toner' }],
         blocks: { invoices: { items: [
           { id: 'hosting', choice: 'approve' }, { id: 'toner', choice: 'later' }, { id: 'parking', choice: 'approve' },
         ] } },
@@ -556,7 +556,7 @@ describe('input blocks: decide and pick (served, headless browser)', { skip }, (
       assert.deepEqual(await o.page.$$eval('[data-item-id]', (rows) => rows.map((r) => r.getAttribute('data-state'))), ['approve', 'later', 'approve']);
       assert.equal(await o.page.isDisabled(seg('toner', 'reject')), true);
       assert.equal(await o.page.locator('#rs-mount .rs-reply').count(), 0, 'no reply on a decided report');
-      assert.deepEqual(await o.page.locator('#rs-submitbar [data-rs-ref]').allTextContents(), ['Toner, 132.90 EUR']);
+      assert.deepEqual(await o.page.locator('#rs-submitbar [data-rs-ref]').allTextContents(), ['Toner']);
       assert.equal(await o.page.isVisible('#rs-submit'), false);
       /* keys do nothing on a decided report */
       await o.page.focus('[data-item-id="toner"] a, [data-item-id="toner"] rs-copy button, [data-item-id="toner"]').catch(() => {});

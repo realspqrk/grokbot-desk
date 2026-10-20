@@ -7,10 +7,9 @@
   "ask": "do",
   "action": "send",
   "blocks": [
-    {"type": "text", "md": "Dear Sir or Madam,\n\nthe heating repair promised for October 5 has not happened yet. Please name a date this week.\n\nKind regards"},
     {"type": "copy", "items": [
       {"label": "Copy subject", "text": "Heating repair, flat 4"},
-      {"label": "Copy text", "text": "Dear Sir or Madam, the heating repair promised for October 5 has not happened yet. Please name a date this week. Kind regards"}
+      {"label": "Copy text", "text": "Dear Sir or Madam,\n\nthe heating repair promised for October 5 has not happened yet. Please name a date this week.\n\nKind regards"}
     ]}
   ]
 }
