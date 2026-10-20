@@ -66,7 +66,7 @@ A block without `id` is `b1`, `b2`, from the top. `b1` is the first block. Ids m
 | `data` | Present only when `status` is `submitted`. `{decision, note, refs, blocks?}`. |
 | `identity` | Present when the page could not use the accent, or when identity warnings were recorded. `name`, `accent_fallback` (themes that fell back), and `warnings`. |
 
-`data.decision` is legal for that ask and its input block. `data.note` is the composer text, `""` when empty. `revise` needs a non-blank note. `data.refs` are the reply chips: `{block, item, label}`. `item` is a decide item id, a pick option id, a post platform id, or `section:<n>` for the n-th `##` or `###` heading in that text block. One note covers every chip. `data.blocks` is present only on the decision that answers the input block, and then it holds exactly that block. The shapes are in the [skill](../skills/grokbot-desk/SKILL.md).
+`data.decision` is legal for that ask and its input block. `data.note` is the composer text, `""` when empty, and at most 4,000 characters. `revise` needs a non-blank note. `data.refs` are the reply chips: `{block, item, label}`. `item` is a decide item id, a pick option id, a post platform id, or `section:<n>` for the n-th level-2 or level-3 heading in that text block. An ATX `##` or `###` counts, and so does a level-2 Setext heading (a paragraph line with a line of dashes directly under it). They share one zero-based sequence. A line of equals, a `#` or `####` heading, and a line of three or more dashes after a blank line do not count. One note covers every chip. `data.blocks` is present only on the decision that answers the input block, and then it holds exactly that block. The shapes are in the [skill](../skills/grokbot-desk/SKILL.md).
 
 `python report_shell.py result` adds `data_dir` to this object on stdout. The file does not contain `data_dir`.
 
@@ -79,6 +79,42 @@ What the bot does with `status`:
 | `expired` | `expires_minutes` ran out, or an older open report expired on upgrade | does nothing with the decision. Records it in chat. No topic + OK. Asks in chat only when the work still needs an answer. |
 
 On upgrade, every open report from before this payload expires once, with reason `upgrade`. The result `status` is `expired` and there is no `data`. The result's `log` field is the action-log path. That file is JSON lines. The matching line has `"event": "expire"` and `"detail": {"reason": "upgrade"}`. Ask again if the work still needs an answer.
+
+## Input limits
+
+These bounds are hard. A payload or a result outside them is rejected. Platform character counts in the [skill](../skills/grokbot-desk/SKILL.md) are advice from the page and are not in this table. Lengths count characters. Every number in a block must be finite.
+
+| Field | Bound |
+| --- | --- |
+| Report `blocks` | 1 to 40. At most one input block. |
+| Block `id` | `^[a-z0-9-]{1,40}$`, unique. Missing id is `b1`, `b2`, from the top. |
+| Block `title` | 1–80. |
+| `text.md` | 1–60,000. |
+| `text.images` | At most 8, unique `key`. `key` matches `^[a-z0-9][a-z0-9_-]{0,31}$`. `path` 1–1,000. `alt` 1–200. |
+| `stats.items` | 1 to 4. `label` 1–32. `value` 1–40. `delta` text 1–24, or a finite number. `note` 1–80. `spark` 2 to 60 finite numbers. |
+| `table.columns` | 1 to 12, unique `key` matching `^[a-z0-9_-]{1,32}$`. `label` 1–40. |
+| `table.rows` | 1 to 200. A text cell is at most 500 characters. A number, money, percent, or delta cell is a finite number or null. |
+| `chart.labels` | 1 to 60 strings, each 1–40. |
+| `chart.series` | 1 to 4. `name` 1–40. `values` 1 to 60 finite numbers, one per label. `unit` 1–12. `target` is a finite number. `orientation` only on a bar chart. |
+| `facts.items` | 1 to 8. `label` 1–32. `value` 1–120. |
+| `checks.items` | 1 to 20. `label` 1–80. `detail` 1–120. |
+| `media.path` | 1–1,000. `alt` 1–300. `poster` 1–1,000, and only on a `.mp4` or `.webm` path. |
+| `copy.items` | 1 to 8. `label` 1–24. `text` 1–5,000. |
+| `decide` labels | 1–24, one line, no space at either end. |
+| `decide.items` | 1 to 12. `id` matches `^[a-z0-9-]{1,40}$`, unique in the block. `title` 1–140. `meta` 1–80. `md` 1–600. `choices` 1 to 3. `due` is a real `YYYY-MM-DD` day. `url` 8–2,048. `copy` at most 4, `label` 1–24, `text` 1–5,000. |
+| `pick.options` | 2 to 4. `id` matches `^[a-z0-9][a-z0-9_-]{0,31}$`. `name` 1–48. `md` 1–600. `facts` at most 6, `label` 1–32, `value` 1–80. `suggested` must be an option id. |
+| `post.text`, and `variants.<platform>.text` | 1–63,206. |
+| `post.hashtags`, and a variant's `hashtags` | At most 30. Each tag matches `^[^\s#]{1,100}$` (1–100 characters, no space, no `#`). |
+| `post.author.name` | 1–60. `handle` matches `^[^\s@]{1,30}$`. `headline` 1–120. `avatar` 1–400. |
+| `post.persona` | 1–40. `post_id` 1–60. |
+| `post.first_comment` | 1–1,250. `notes` 1–600. |
+| `post.flag` | At most 8 unique strings, each 1–20. |
+| `post.link` | `url` is `https://` and at most 2,000. `title` 1–120. `domain` 1–60. |
+| `post.target` | `type` is `quote` or `reply`. `url` is https and at most 2,048. `excerpt` 1–600. `author.name` 1–60. `author.handle` matches `^[^\s@]{1,30}$`. Both author fields are optional. |
+| `post.image` and `post.video` | `path` 1–400. `alt` 1–300. Video `poster` 1–400. Not both image and video. |
+| `post.platforms` | 1 to 4, no duplicate platform. |
+| Result `note` | At most 4,000. `revise` needs a non-blank note. |
+| Result `refs` | At most 20. `label` 1–120. |
 
 ## Bot identity
 

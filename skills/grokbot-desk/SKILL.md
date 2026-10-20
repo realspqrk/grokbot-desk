@@ -155,7 +155,7 @@ The footer is one status line, the reply chips, one composer, up to two quiet bu
 
 Request changes focuses the composer and requires a note. The primary becomes "Send request". Cancel returns to the decision. None of these works the same way. Its primary becomes "Ask for new options". Ctrl+Enter or Cmd+Enter sends the current primary. It cannot send an approval while a request is being written.
 
-A note is optional on every decision except `revise`. `revise` needs a note that says what should change. Reject and Skip send at once. A note already typed rides along. It is not required.
+A note is optional on every decision except `revise`. `revise` needs a note that says what should change. The note is at most 4,000 characters. Reject and Skip send at once. A note already typed rides along. It is not required.
 
 The primary stays off until the input block is complete: every row answered, one option picked, every manual platform marked posted or skipped, or at least one auto platform still included and valid. The status says what is missing. When every auto platform is left out or cannot be posted, the status points at Request changes or Reject.
 
@@ -189,13 +189,13 @@ A plain platform id, or a platform object with no `mode`, follows the ask. Under
 
 The title is the strongest line. Above it: avatar, name, and the `…` menu. Under the title: one line for the ask, then `why`. A due date and "Urgent" stay quiet. `urgent` or a due date of today or earlier is red.
 
-With two or more open reports, a side inbox lists each one: avatar, title, bot name, a hint (urgent, due, or the kind of ask), and a dot while it is unread. The list is on the left when the window is at least 720 pixels wide, and a horizontal row of tabs under the header when it is narrower. One open report has no inbox. An arrival never replaces the report on screen. Ctrl+1 through Ctrl+9 (Cmd on macOS) opens the nth report. Alt+Up and Alt+Down move to the previous and next report.
+With two or more open reports, a side inbox lists each one: avatar, title, bot name, a hint (urgent, due, or the kind of ask), and a dot while it is unread. The list is on the left when the window is at least 720 pixels wide, and a horizontal row of tabs under the header when it is narrower. One open report has no inbox. An arrival never replaces the report on screen. Ctrl+1 through Ctrl+9 (Cmd on macOS) opens the nth report from anywhere. Alt+Up and Alt+Down move to the previous and next report only when focus is not in a text field. In a text field those keys stay with the field.
 
 Blocks sit in payload order. Prose stays in a narrow column. Tables and charts may use the width. A long report scrolls inside the page. The header and the footer stay.
 
 One composer sits in the footer. It grows from one line to six. Reply chips sit in that same footer. Each chip quotes one anchor. The note applies to all of them together. Chips do not stack separate notes.
 
-Reply anchors are a `decide` item, a `pick` option, a `post` platform, and each `##` or `###` heading in a `text` block. The reply button is visible. The R key does the same on a focused anchor. A second reply to the same anchor does nothing.
+Reply anchors are a `decide` item, a `pick` option, a `post` platform, and each level-2 or level-3 heading in a `text` block. The reply button is visible on all of them. R quotes the focused `decide` row, `pick` card, or `post` tab. R does nothing on a text heading: use that heading's reply button. A second reply to the same anchor does nothing.
 
 On a focused `decide` row, A, X, and L set approve, reject, and later. Under `do` those keys set done, skipped, and later. Focus then moves to the next unanswered row.
 
@@ -207,7 +207,7 @@ Every block may set `id` (`^[a-z0-9-]{1,40}$`, unique in the report) and `title`
 
 ### Content blocks
 
-`text`. Required `md` (1–60000 characters). Optional `collapsed` (start folded behind the title) and `images` (at most 8). Markdown renders headings, lists, tables, callouts, code, and links. Raw HTML is shown as text. Callouts are `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, and `> [!CAUTION]`. An image in the markdown uses a key from `images`: `{key, path, alt}`. `key` matches `^[a-z0-9][a-z0-9_-]{0,31}$`. `path` is an absolute image path under a media root. `##` and `###` headings can be replied to. The first such heading is `section:0`, the next is `section:1`, in document order. A heading inside a code fence, a quote, a list, or a markdown table does not count. `#` and `####` do not count.
+`text`. Required `md` (1–60000 characters). Optional `collapsed` (start folded behind the title) and `images` (at most 8). Markdown renders headings, lists, tables, callouts, code, and links. Raw HTML is shown as text. Callouts are `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, and `> [!CAUTION]`. An image in the markdown uses a key from `images`: `{key, path, alt}`. `key` matches `^[a-z0-9][a-z0-9_-]{0,31}$`. `path` is an absolute image path under a media root. Level-2 and level-3 headings can be replied to. That is an ATX `##` or `###`, and a level-2 Setext heading: a paragraph line with a line of dashes (`---`) directly under it. They share one zero-based sequence. The first is `section:0`, the next is `section:1`, in document order. A heading inside a code fence, a quote, a list, or a markdown table does not count. `#`, `####`, and a level-1 Setext heading (a line of `===`) do not count. A line of three or more dashes after a blank line is a rule, not a heading.
 
 `stats`. One to four items: `{label, value, delta?, good?, note?, spark?}`. `label` is 1–32 characters. `value` is the number as shown, 1–40 characters, including the unit. `delta` is a number or a short signed text such as `+6.1 %`. `good` is `up` or `down` and says which direction is good. `spark` is 2 to 60 recent numbers, oldest first.
 
@@ -235,21 +235,29 @@ Nothing is preselected. The result lists every item, in payload order.
 
 `pick`. Required under `choose`. Two to four options: `{id, name, md?, facts?}`. `id` matches `^[a-z0-9][a-z0-9_-]{0,31}$` and is unique. `name` is 1–48 characters. `md` is 1–600. `facts` is up to six `{label, value}` pairs (`label` 1–32, `value` 1–80). Repeat the same fact labels in the same order. `suggested` is an option id. It is only a mark, never preselected. `allow_none` defaults to true and offers "None of these". `false` hides it, and the result then cannot be `revise`.
 
-`post`. A preview of one post. Required: `author` `{name, handle}` (`handle` has no `@` and no space), `text`, `hashtags` (stored without `#`; `[]` is allowed), and `platforms` (1 to 4).
+`post`. A preview of one post. Required: `author`, `text`, `hashtags`, and `platforms` (1 to 4).
+
+`author` is `{name, handle, headline?, avatar?}`. `name` and `handle` are required. `handle` has no `@` and no space. `headline` is the line under the name on LinkedIn. `avatar` is an absolute image path under a media root.
+
+`hashtags` is an array. Each tag is stored without `#` and without a space. `[]` is allowed. A duplicate tag is allowed. `flag` is different: it is an array of unique strings, words or characters to avoid. A match is one quiet line and never blocks approval.
 
 Platforms are `x`, `linkedin`, `instagram`, and `facebook`. Use one form for the whole list: plain ids, or objects `{platform, mode?}`. Mixing the two forms is rejected. A duplicate platform is rejected. A plain id takes the ask's mode, as the table above says.
 
-Optional: `persona`, `post_id`, `hashtag_mode` (`append` by default, or `none`), `first_comment`, `link` `{url, title, domain}` (https, shown only when there is no image; nothing is fetched), `notes` (your note above the previews), `flag` (words to avoid; a match is one quiet line and never blocks approval), `target` (`quote` or `reply`, with an https `url`, optional `excerpt` and `author`). `target.url` is not part of the composed text.
+Optional: `persona`, `post_id`, `hashtag_mode` (`append` by default, or `none`), `first_comment`, `link` `{url, title, domain}` (https, shown only when there is no image; nothing is fetched), `notes` (your note above the previews).
+
+`target` is `{type, url, excerpt?, author?}`. `type` is `quote` or `reply`. `url` is https. `excerpt` is optional. `author` is optional and is `{name?, handle?}`. Both of those fields are optional, and `handle` has no `@` and no space. `target.url` is not part of the composed text.
+
+Character counts for these fields are hard bounds. The table is [Input limits](../../docs/REFERENCE.md#input-limits).
 
 `image` and `video` cannot both be set. Each needs `path`, `alt`, and `ratio`. `video` also needs `poster`. Ratios: `1:1`, `4:5`, `3:4`, `9:16`, `1.91:1`, `16:9`. Paths are absolute and sit under a media root.
 
 `variants.<platform>` is `{text?, hashtags?}` with at least one of the two. It replaces the shared text or hashtags for that platform only.
 
-Limits, counted on the composed text:
+The page also counts the composed text. Those platform counts are advice. The schema bounds in [Input limits](../../docs/REFERENCE.md#input-limits) are hard: a payload outside them is rejected. The note on a result is at most 4,000 characters.
 
 - X: 25,000 weighted characters. The preview folds at 280 and adds "Long post (X Premium)". A URL that X recognizes weighs 23. A recognized emoji weighs 2. `target.url` is not counted.
 - LinkedIn 3,000. Instagram 2,200. Facebook 63,206.
-- A limit never blocks a manual platform. An over-limit auto platform cannot be included. The page leaves it out and says why.
+- An advice limit never blocks a manual platform. An over-limit auto platform cannot be included. The page leaves it out and says why.
 - Auto Instagram allows five hashtags and needs an image or a video. Without them it cannot be included.
 - A listed tag counts toward those five even when `hashtag_mode` is `none`, unless the text already contains that hashtag.
 - A tag needs a letter or an underscore, so `#1` does not count.
@@ -437,7 +445,7 @@ Rows the person handles. No `labels`. Choices are `done`, `skipped`, and `later`
 
 - `decision` is one of the values in the table above.
 - `note` is the composer text. It is `""` when they typed nothing. On `revise` it is required and non-blank. It is one note for the whole report, including every reply chip.
-- `refs` is the chips at send time. Each is `{block, item, label}`. `block` is the block id. `item` is a `decide` item id, a `pick` option id, a `post` platform id, or `section:<n>` for the n-th `##` or `###` heading in that text block (`section:0` is the first). `label` is the quoted text, 1–120 characters. At most 20 refs. No duplicates. A target that is not in the payload is rejected.
+- `refs` is the chips at send time. Each is `{block, item, label}`. `block` is the block id. `item` is a `decide` item id, a `pick` option id, a `post` platform id, or `section:<n>` for the n-th level-2 or level-3 heading in that text block (`section:0` is the first). A level-2 Setext heading, a paragraph line with `---` directly under it, counts in that same sequence. `label` is the quoted text, 1–120 characters. At most 20 refs. No duplicates. A target that is not in the payload is rejected.
 - `blocks` is present only on the decision that answers the input block, and then it holds exactly that block's id.
 
 Which decision carries `blocks`:
@@ -481,7 +489,7 @@ Act on `hosting` / `approve` only. Do not pay the toner. The note applies to the
 
 An auto post they approved for X and left LinkedIn out:
 
-```json
+```jsonc
 {
   "decision": "approve",
   "note": "",
@@ -499,7 +507,7 @@ Post to X only.
 
 A manual post they marked themselves:
 
-```json
+```jsonc
 {
   "decision": "submit",
   "note": "",
@@ -517,7 +525,7 @@ They posted X. Do not post either platform yourself.
 
 A pick:
 
-```json
+```jsonc
 {"decision": "choose", "note": "", "refs": [], "blocks": {"date": {"choice": "thu"}}}
 ```
 
@@ -527,7 +535,7 @@ None of these:
 {"decision": "revise", "note": "Neither day works. Offer Wednesday.", "refs": []}
 ```
 
-A section reply on a review. `section:1` is the second `##` or `###` heading:
+A section reply on a review. `section:1` is the second level-2 or level-3 heading, counting a Setext heading of dashes in the same sequence:
 
 ```json
 {
