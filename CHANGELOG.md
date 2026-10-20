@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta.6] - 2026-10-20
+
+**Breaking.** A report is a list of blocks. The previous payload and the templates are gone.
+
+### Changed
+
+- **Breaking:** payload@2. A report is an envelope plus blocks (`text`, `stats`, `table`, `chart`, `facts`, `checks`, `media`, `copy`, and at most one of `decide`, `pick`, or `post`). `ask` is `read`, `review`, `approve`, `do`, or `choose`. payload@1 is removed, and so are templates.
+- One footer: one composer and reply chips. The note covers every chip.
+- Open reports sit in a side inbox. On a narrow window the same list is a row of tabs.
+- A chart has a "Show data" table. Tables use row lines, aligned numbers, and a folded long list.
+- New colours, with better contrast in dark mode.
+- **Breaking:** an open report from before this version expires when the desk starts. The result status is `expired`. The result's `log` field is the path of the action log.
+- **Breaking:** `show` takes `--data` only. `check FILE` validates a payload file.
+
+### Removed
+
+- **Breaking:** the commands `templates`, `new`, and `list`.
+
 ## [1.0.0-beta.5] - 2026-10-14
 
 The Desk Doorbell template now sets up the desk by itself. Add it, and its first chat installs and connects everything.
@@ -26,7 +44,7 @@ Bots wake up after a decision. One Desk Doorbell bot per computer relays each de
 ### Added
 
 - Desk Doorbell. One bot per computer, installed from the [Desk Doorbell template](https://x.ai/bot/Q_-PLlmHrV1l2h3Tk1ejJ) (steps in [doorbell/README.md](doorbell/README.md)). The desk rings when a report is submitted, cancelled by the person (discarded on the page), or expired. It POSTs `{bot, bot_name, run_id, status, title}` to that bot's webhook. `bot_name` is the payload `identity.name` when the report gives one, otherwise the bot id. A name in the bot registry does not count. The doorbell messages that bot: `Desk: <title> is <status>. Read the result with report_shell.py result <run_id>.` A bot's own `cancel` never rings, even when the person asked the bot to cancel. Retries run for about 4 minutes on rate limits, server errors, and a failed connection. A ring can be lost when the desk stops, or when Grok Bot stays busy for minutes. Nothing wakes the bot then. At the start of every turn, doorbell on or off, the bot catches up with `results --since`. If a decision got no reaction, message the bot. The key is in `doorbell.json` in the data folder and is never printed.
-- `doorbell` prints `doorbell` (`on` or `off`) and `host`. `on` means the address and key are saved. `doorbell setup` opens the setup page. Save writes the file and sends a test ring. When the save worked and the test failed, the page says `Saved. The test did not reach Grok Bot: …`. `doorbell setup --url URL --key-stdin` writes the file from stdin and does not ring. `doorbell test` rings once. `doorbell test --to NAME` sends that exact Grok Bot name (`{"status": "test", "bot_name": NAME}`). Without `--to` the body is `{"status": "test"}`. A plain test writes `Desk: doorbell test received.` in the doorbell's own chat. An addressed test sends `Desk: doorbell test.` to that bot. Exit 0 means accepted, 4 means failed, 2 means the doorbell is off. A failure includes `category`: `unreachable`, `refused` (check the address and the key), `busy` (a rate limit or a server error; try again in a minute), or `other`. `doorbell off` deletes the file. `status` and `doctor` print `doorbell` as `on` or `off`. Details: [guide](docs/GUIDE.md#doorbell).
+- `doorbell` prints `doorbell` (`on` or `off`) and `host`. `on` means the address and key are saved. `doorbell setup` opens the setup page. Save writes the file and sends a test ring. When the save worked and the test failed, the page says `Saved. The test did not reach Grok Bot: …`. `doorbell setup --url URL --key-stdin` writes the file from stdin and does not ring. `doorbell test` rings once. `doorbell test --to NAME` sends that exact Grok Bot name (`{"status": "test", "bot_name": NAME}`). Without `--to` the body is `{"status": "test"}`. A plain test writes `Desk: doorbell test received.` in the doorbell's own chat. An addressed test sends `Desk: doorbell test.` to that bot. Exit 0 means accepted, 4 means failed, 2 means the doorbell is off. A failure includes `category`: `unreachable`, `refused` (check the address and the key), `busy` (a rate limit or a server error; try again in a minute), or `other`. `doorbell off` deletes the file. `status` and `doctor` print `doorbell` as `on` or `off`. Details: [reference](docs/REFERENCE.md#doorbell).
 
 ### Changed
 
@@ -47,10 +65,10 @@ The last planned beta before 1.0. The desk is calmer, and you decide in one clic
 
 ### Added
 
-- `update` fast-forwards this clone on its current branch and prints `updated`, `from`, `to`, `branch`, and `next`. It exits 7 when the folder is not a git clone, the checkout is a fixed tag, there are local changes, git is missing, or a git step does not answer within 120 seconds. A pull that fails or times out can still have fetched objects. Details: [guide](docs/GUIDE.md#update).
+- `update` fast-forwards this clone on its current branch and prints `updated`, `from`, `to`, `branch`, and `next`. It exits 7 when the folder is not a git clone, the checkout is a fixed tag, there are local changes, git is missing, or a git step does not answer within 120 seconds. A pull that fails or times out can still have fetched objects. Details: [reference](docs/REFERENCE.md#update).
 - `--help` lists every command, the root flags, and a typical flow. `<command> --help` lists that command's flags and does not repeat the flow.
 - `status` prints `version`: the version of the desk that is running, or `null` when it is down.
-- `migrate` (Windows) moves the older data folder to `%LOCALAPPDATA%\grokbot-desk`. Run `stop` first, with no report open. macOS has nothing to migrate. `RS_DATA_DIR` is never moved. Details: [guide](docs/GUIDE.md#migrate).
+- `migrate` (Windows) moves the older data folder to `%LOCALAPPDATA%\grokbot-desk`. Run `stop` first, with no report open. macOS has nothing to migrate. `RS_DATA_DIR` is never moved. Details: [reference](docs/REFERENCE.md#migrate).
 - `variants.<platform>` may set `text`, `hashtags`, or both. Image and video ratios add `3:4` and `9:16`.
 
 ### Changed
@@ -58,26 +76,26 @@ The last planned beta before 1.0. The desk is calmer, and you decide in one clic
 - After an update, the next `show` or `open` restarts an idle desk whose `version` is not this clone's, including a missing version. An equal version string keeps running. A desk with open reports keeps running until they are decided.
 - Text such as `templates` and error messages is printed as written when the stream encoding is UTF-8 (macOS, a Windows console, or Python in UTF-8 mode). A stream that is not UTF-8, including a usual Windows pipe, stays ASCII. JSON output stays ASCII-escaped.
 - **Breaking:** `check --all` prints `"templates"` (the ids it checked). It used to print `"template": "--all"`. A single check prints `"template"`.
-- The report title is the strongest line. Above it: the bot's name, a small avatar, the open count while several reports wait, and the `…` menu. The task banner sits under the title. Long lists and documents scroll inside the report. The header and footer stay. Details: [task banner](docs/GUIDE.md#task-banner).
-- The banner is one task line plus the why. Steps show only when they add a step of their own. Choice labels such as `Pay` stay on the buttons. Details: [task banner](docs/GUIDE.md#task-banner).
-- A template `summary`, `intro`, `context`, or `notes` becomes the why only when the whole text fits and has no link. The cut prefers a word boundary. An unbroken run is split, and the ellipsis is not part of the 360 characters. Details: [task banner](docs/GUIDE.md#task-banner).
+- The report title is the strongest line. Above it: the bot's name, a small avatar, the open count while several reports wait, and the `…` menu. The task banner sits under the title. Long lists and documents scroll inside the report. The header and footer stay.
+- The banner is one task line plus the why. Steps show only when they add a step of their own. Choice labels such as `Pay` stay on the buttons.
+- A template `summary`, `intro`, `context`, or `notes` becomes the why only when the whole text fits and has no link. The cut prefers a word boundary. An unbroken run is split, and the ellipsis is not part of the 360 characters.
 - Discard is in the `…` menu, behind a confirmation. An information-only report has no Discard. The footer is a status, up to two quiet alternatives, and one primary.
 - German uses one approval verb, `Freigeben`. The default primary names the bot when the display name is at most 24 characters and is not the raw id.
 - Times, due dates, and "today" use the machine's time zone. `RS_TZ` pins an IANA zone when zone data is available. Without it, Central European names and UTC names still work. Any other name falls back to the machine's zone, and the page is not pinned.
-- **Breaking:** `approve-one` has no segmented choice. The footer is the decision, one click each. `Reject` sends at once and needs no reason. Details: [approve-one](templates/builtin/approve-one/README.md).
+- **Breaking:** `approve-one` has no segmented choice. The footer is the decision, one click each. `Reject` sends at once and needs no reason.
 - `summary` is optional. A blank `summary` is still rejected. With `checks`, one line before the facts names warnings and failures.
 - A person who acts sees `Posted ✓`, `Sent ✓`, or `Done ✓`, plus `Skip`. An explicit `post_yourself` says `Posted ✓` even when `action` is `send`. Without that explicit kind, `send` says `Sent ✓`. Information only is `Got it`.
 - `pick-option` shows the question as the heading and leaves it out when it repeats the title. Nothing is preselected. The primary names the option and stays off until one is picked.
 - `None of these` is on unless `allow_none` is false. It requires a note and sends `request_changes` with no `choice`. A pick is still `choice` and `note`.
-- **Breaking:** a `decide-list` with any bot item uses `Send decisions` (`Send decision` for one item). The button sends the choices and approves nothing by itself. When every item is the person's, the footer is `Done`. Details: [decide-list](templates/builtin/decide-list/README.md).
+- **Breaking:** a `decide-list` with any bot item uses `Send decisions` (`Send decision` for one item). The button sends the choices and approves nothing by itself. When every item is the person's, the footer is `Done`.
 - A list holds 1 to 12 items. Results stay `approve`, `reject`, and `defer`, or `done`, `skipped`, and `later` on a user item.
 - **Breaking:** `show` rejects a label that repeats another choice of the same item, including a default such as `Reject` or `Ablehnen`. A user item cannot carry `labels`. `due` is `YYYY-MM-DD` and must be a real calendar day.
 - The list heading reads `Items` (`Einträge`). When nothing was already handled, the list has no visible heading.
-- `review-doc` can send `Request changes` from the section comments alone. Details: [review-doc](templates/builtin/review-doc/README.md).
+- `review-doc` can send `Request changes` from the section comments alone.
 - **Breaking:** the `review-doc` result is stricter. `approve` keeps `comment` empty and may still carry section comments. `request_changes` needs a non-blank overall comment, or at least one section comment.
 - **Breaking:** an auto Instagram post allows 5 hashtags (the limit was 30). A manual post only advises. A listed tag still counts when `hashtag_mode` is `none`, unless the text already contains that hashtag.
 - X allows 25,000 weighted characters and folds after 280, with a `Long post (X Premium)` note. A recognized emoji weighs 2. A URL that X recognizes weighs 23. `target.url` is not part of the text.
-- **Breaking:** when every platform is manual there is no `Skip`. The primary stays off until one platform is marked posted, then reads `Posted ✓`. Post only auto platforms whose `per_platform` decision is `approved`. Details: [preview-post](templates/builtin/preview-post/README.md).
+- **Breaking:** when every platform is manual there is no `Skip`. The primary stays off until one platform is marked posted, then reads `Posted ✓`. Post only auto platforms whose `per_platform` decision is `approved`.
 - A manual post is never blocked by a length limit. The line is advice. A blocked auto platform shows one recovery line.
 - `review-doc` renders `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, and `[!CAUTION]` as a quiet note with a title. A callout copies nothing.
 - **Breaking:** on Windows the older data folder stays in use until you run `migrate`. `paths` and `show` say so.
@@ -156,6 +174,7 @@ First public beta of grokbot-desk.
 - `python report_shell.py --version` prints the version (`grokbot-desk 1.0.0-beta.1`).
 - Windows is supported. macOS is in beta.
 
+[1.0.0-beta.6]: https://github.com/realspqrk/grokbot-desk/compare/v1.0.0-beta.5...v1.0.0-beta.6
 [1.0.0-beta.5]: https://github.com/realspqrk/grokbot-desk/compare/v1.0.0-beta.4...v1.0.0-beta.5
 [1.0.0-beta.4]: https://github.com/realspqrk/grokbot-desk/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/realspqrk/grokbot-desk/compare/v1.0.0-beta.2...v1.0.0-beta.3

@@ -4,7 +4,7 @@
  * checks reach every node. Styles live in shell.css. Components talk to the
  * core only through window.RS: RS.t, RS.copy, RS.toast, RS.count.
  * Elements: rs-card, rs-segmented, rs-copy, rs-badge, rs-counter,
- * rs-post-frame, rs-confirm. API reference: see docs/GUIDE.md.
+ * rs-post-frame, rs-confirm.
  * Calm UI semantics set here where the core owns the markup: copy controls
  * are icon-only (28 px) with an aria-label and stay visible (each is its own
  * tab stop). Status badges and the over-limit counter dot carry

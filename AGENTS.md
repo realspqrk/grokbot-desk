@@ -1,15 +1,16 @@
 # AGENTS.md
 
 Instructions for coding agents working in this repository. Human contributor
-rules live in [CONTRIBUTING.md](CONTRIBUTING.md); the template author guide is
-[docs/GUIDE.md](docs/GUIDE.md). Setup, the test commands, and the hard rules
-are repeated here on purpose, so an agent can act without opening those files.
-Read them when a task touches their area. This file does not copy the rest.
+rules live in [CONTRIBUTING.md](CONTRIBUTING.md). Commands and envelopes are
+in [docs/REFERENCE.md](docs/REFERENCE.md). Setup, the test commands, and the
+hard rules are repeated here on purpose, so an agent can act without opening
+those files. Read them when the work touches their area. This file does not
+copy the rest.
 
 ## What this is
 
 grokbot-desk is a local desk: a window where a person decides and reads what
-bots send. A bot runs `show` with a JSON payload for a template, the person
+bots send. A bot runs `show` with a JSON payload of blocks, the person
 decides in one Edge or Chrome app window, and the bot reads the result JSON
 (`wait`, `result`, `results`). Python 3.11+ standard library only at runtime;
 Windows and macOS.
@@ -21,19 +22,19 @@ launcher that finds a Python 3.11+), `report-shell.cmd` (Windows, `py -3`).
 
 | Path | What |
 |---|---|
-| `core/cli.py` | CLI: `show wait result results paths status open cancel list templates doctor check new serve stop migrate update` |
+| `core/cli.py` | CLI: `show wait result results paths status open cancel doorbell doctor check serve stop migrate update` |
 | `core/server.py` | `ThreadingHTTPServer` on `127.0.0.1` (product port 18742), API + event stream |
-| `core/runs.py`, `core/results.py`, `core/envelope.py` | report store (`runs/`), result files, payload and result envelopes |
-| `core/registry.py`, `core/schema.py`, `core/check.py`, `core/lint.py` | template registry, restricted JSON Schema, `check`, template lint |
-| `core/static/ask.js` + `core/static/composer.js` | the decision contract per ask (footer buttons, banner, decided line) and the one composer (note + reply chips) |
+| `core/runs.py`, `core/results.py`, `core/envelope.py` | report store (`runs/`), result files, payload@2 and result@2 envelopes |
+| `core/payload.py`, `core/blocks.schema.json`, `core/schema.py` | blocks, the ask rules, and restricted JSON Schema |
+| `core/static/ask.js` + `core/static/composer.js` | footer buttons, the banner, the decided line, and the one composer (note + reply chips) |
 | `core/static/inputs.js` | input blocks (decide, pick, post): the segmented control or card is the answer; the footer reads its handle |
+| `core/static/blocks.js`, `core/static/md.js`, `core/static/charts.js` | block renderers, markdown, charts |
 | `core/identity.py`, `core/launcher.py`, `core/launch_coordination.py` | bot identity/avatars, browser app-window launch, burst coordination |
-| `core/platform*.py` | OS layer (`platform_windows.py`, `platform_darwin.py`) |
+| `core/platform_windows.py`, `core/platform_darwin.py` | OS layer |
 | `core/paths.py` | data dir (`%LOCALAPPDATA%\grokbot-desk`, `~/Library/Application Support/grokbot-desk`, `RS_DATA_DIR`) |
 | `core/migrate.py` | `migrate` (older Windows data folder) and the server lock that keeps it apart from a starting desk |
-| `core/static/` | shell UI: `shell.html`, `rs.js` (RS template API), `components.js`, `tokens.css`, `shell.css`, `count.js` (platform char counting) |
-| `core/i18n/{de,en}.json` | UI strings; German is default, `RS_LANG=en` |
-| `templates/builtin/<id>/` | built-ins: `approve-one decide-list pick-option preview-post review-doc` + `_starter` |
+| `core/static/` | shell UI: `shell.html`, `rs.js`, `components.js`, `tokens.css`, `shell.css`, `blocks.css`, `count.js` (platform char counting) |
+| `core/i18n/de.json`, `core/i18n/en.json` | UI strings; German is default, `RS_LANG=en` |
 | `skills/grokbot-desk/SKILL.md` | the skill shipped to bots (public contract, keep in sync with CLI behavior) |
 | `tests/` | pytest |
 | `tests_js/` | Node tests; `*.e2e.test.mjs` start a headless browser |
@@ -56,7 +57,7 @@ python -m pytest -q
 $env:RS_E2E_PORT=18921; node tools/node-tests.mjs gate
 $env:RS_E2E_PORT=18921; node tools/node-tests.mjs all
 python tools/lint_src.py
-python report_shell.py check <template> # --visual compares screenshots
+python report_shell.py check payload.json
 ```
 
 macOS:
@@ -66,7 +67,7 @@ python -m pytest -q                                  # Python suite
 RS_E2E_PORT=18921 node tools/node-tests.mjs gate     # CI blocking: unit + browser smoke
 RS_E2E_PORT=18921 node tools/node-tests.mjs all      # full suite (release gate)
 python tools/lint_src.py                             # source policy lint
-python report_shell.py check <template> [--visual]   # one template
+python report_shell.py check payload.json          # one payload file
 ```
 
 Run the narrowest test first, and the full set before you call the work done.
@@ -85,13 +86,13 @@ What CI blocks on, and what stays advisory, is in [CONTRIBUTING.md](CONTRIBUTING
   Never use 18742 and never touch a real data directory.
 - **Calm UI.** CSS uses `var(--rs-*)` tokens; spacing only `var(--space-*)`,
   `0` or `1px`. C16-K7a is the lint that rejects any other spacing length.
-  Template rules: [docs/GUIDE.md](docs/GUIDE.md). Checker limits:
-  [docs/calm-checker-limits.md](docs/calm-checker-limits.md).
-- **No literal UI strings** in templates; strings go through `core/i18n`.
+  Checker limits: [docs/calm-checker-limits.md](docs/calm-checker-limits.md).
+- **No literal UI strings** in the page; strings go through `core/i18n`.
 - **Golden screenshots** are re-recorded (`node tools/visual.mjs --update`)
   only after a person approved the new screenshots. Never to make a test pass.
-- **Fixtures** per template: `golden.json`, 2+ `edge-*.json`, 2+
-  `invalid-*.json`, `fixtures/expect/golden.json`.
+- **Fixtures** are payload files in `tests/fixtures/payloads/` with the
+  expected answer flow in `tests/fixtures/payloads/expect/`. Invalid
+  payloads live in `tests/fixtures/payloads/invalid/`.
 - **Version** lives in `core/__init__.py`, `pyproject.toml`, the README
   badge and the README Status line; `CHANGELOG.md` names it.
 

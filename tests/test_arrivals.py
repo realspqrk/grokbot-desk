@@ -438,11 +438,11 @@ def test_wait_parser_rejects_until_expiry_with_any_timeout(argv):
 
 
 def test_docs_teach_the_same_wait_flow():
-    """GUIDE and SKILL give a bot one flow: a short foreground wait, the
+    """REFERENCE and SKILL give a bot one flow: a short foreground wait, the
     doorbell when it is on, catch-up with results --since, never --timeout 0,
     and an acknowledgement. The README points at the skill and does not
     teach that flow."""
-    for name in ("docs/GUIDE.md", "skills/grokbot-desk/SKILL.md"):
+    for name in ("docs/REFERENCE.md", "skills/grokbot-desk/SKILL.md"):
         text = (ROOT / name).read_text(encoding="utf-8")
         for needle in ("--timeout 60", "`--timeout 0`", "results --since",
                        "topic + OK", "Desk:", "doorbell"):

@@ -172,7 +172,7 @@ def test_round_2_finding_7_prior_clipboard_text_never_reaches_measurement_output
 
 
 def test_publish_guide_opening_is_self_contained():
-    opening = (Path(__file__).resolve().parents[1] / "docs" / "GUIDE.md").read_text(
+    opening = (Path(__file__).resolve().parents[1] / "docs" / "REFERENCE.md").read_text(
         encoding="utf-8"
     ).split("Entry point", 1)[0]
 
