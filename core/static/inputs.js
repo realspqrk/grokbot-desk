@@ -201,8 +201,11 @@
         var before = rows.filter(function (r) { return r !== row && !r.group.value; }).length;
         render(row);
         ctx.changed();
-        /* an arrow that answers the last undecided row: on to the primary */
-        if (e.detail && e.detail.key && !before && !row.wasSet) ctx.focusPrimary();
+        /* keyboard completion goes on to the primary: Enter or Space like
+           A / X / L (nothing left undecided), an arrow only when it answers
+           the last undecided row (so arrows can still walk a row) */
+        var via = e.detail && e.detail.via;
+        if (!before && (via === 'activate' || (via === 'arrow' && !row.wasSet))) ctx.focusPrimary();
         row.wasSet = true;
       });
     });

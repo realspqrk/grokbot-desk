@@ -162,7 +162,8 @@
   // checkbox. Children: <button value="...">. Other children (no value
   // attribute) are left alone. Attributes: label (accessible name), value
   // (selected value), disabled. Property: value. Event: change
-  // {detail:{value, key}} (key: true when an arrow key chose). The WAI-ARIA
+  // {detail:{value, via, key, same}} (via: pointer | activate | arrow; key:
+  // the keyboard chose). The WAI-ARIA
   // radio group pattern: Tab enters on the chosen segment (else the first);
   // the arrow keys, Home and End move to a segment and choose it; click,
   // Enter or Space choose the focused one. Answers stay reversible until
@@ -203,12 +204,20 @@
     set value(v) { this._set(v === null || v === undefined ? '' : String(v), false); }
     get disabled() { return this.hasAttribute('disabled'); }
     set disabled(v) { if (v) this.setAttribute('disabled', ''); else this.removeAttribute('disabled'); }
-    _set(v, emit, key) {
-      if (v === this._value) return;
+    /* via: 'pointer' (a click), 'activate' (Enter or Space), 'arrow'.
+       A keyboard activation of the chosen segment still reports, so a
+       block can move on from it; a click on it does nothing. */
+    _set(v, emit, via) {
+      if (v === this._value && via !== 'activate') return;
+      var same = v === this._value;
       this._value = v;
       if (v) this.setAttribute('value', v); else this.removeAttribute('value');
-      this._sync();
-      if (emit) this.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { value: v, key: !!key } }));
+      if (!same) this._sync();
+      if (emit) {
+        this.dispatchEvent(new CustomEvent('change', {
+          bubbles: true, detail: { value: v, via: via || 'pointer', key: via === 'arrow' || via === 'activate', same: same }
+        }));
+      }
     }
     /* the segment that takes Tab: the chosen one, else the first */
     get current() {
@@ -236,7 +245,8 @@
     _onClick(e) {
       var b = e.target.closest('button');
       if (!b || b.parentNode !== this || !b.hasAttribute('value') || this.disabled || b.disabled) return;
-      this._set(b.value, true);
+      /* Enter and Space click with detail 0; a pointer click counts >= 1 */
+      this._set(b.value, true, e.detail === 0 ? 'activate' : 'pointer');
     }
     _onKey(e) {
       var b = e.target.closest('button');
@@ -255,7 +265,7 @@
       }
       e.preventDefault();
       btns[j].focus();
-      this._set(btns[j].value, true, true);
+      this._set(btns[j].value, true, 'arrow');
     }
   }
 

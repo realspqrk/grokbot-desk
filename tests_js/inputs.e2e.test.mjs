@@ -361,6 +361,42 @@ describe('input blocks: decide and pick (served, headless browser)', { skip }, (
     } finally { await ctx.close(); }
   });
 
+  test('decide Space and Enter on the last undecided row go to the primary; a click stays', async () => {
+    for (const key of ['Space', 'Enter']) {
+      const run = show(load('approve-decide'));
+      const { ctx, page } = await open(run);
+      try {
+        await page.click(seg('hosting', 'approve'));
+        /* a click never moves focus, not even on completion */
+        await page.click(seg('toner', 'later'));
+        assert.equal(await focusedItem(page), 'toner');
+        await page.focus(seg('parking', 'reject'));
+        await page.keyboard.press(key);
+        assert.equal(await page.getAttribute(seg('parking', 'reject'), 'aria-checked'), 'true', key);
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-submit', key);
+        /* the chosen segment activated again by key, nothing undecided: the primary again */
+        await page.focus(seg('parking', 'reject'));
+        await page.keyboard.press(key);
+        assert.equal(await page.getAttribute(seg('parking', 'reject'), 'aria-checked'), 'true', key);
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-submit', key + ' again');
+        await server.clearRuns();
+      } finally { await ctx.close(); }
+    }
+    const run = show(load('approve-decide'));
+    const { ctx, page } = await open(run);
+    try {
+      /* with rows still open, Enter keeps focus on the chosen segment */
+      await page.focus(seg('hosting', 'reject'));
+      await page.keyboard.press('Enter');
+      assert.equal(await page.getAttribute(seg('hosting', 'reject'), 'aria-checked'), 'true');
+      assert.equal(await page.evaluate(() => document.activeElement.value), 'reject');
+      /* a mouse click that answers the last row leaves focus where it is */
+      await page.click(seg('toner', 'approve'));
+      await page.click(seg('parking', 'approve'));
+      assert.notEqual(await page.evaluate(() => document.activeElement.id), 'rs-submit');
+    } finally { await ctx.close(); }
+  });
+
   /* what a decided report shows, right after sending and after a reload */
   const decidedView = (page) => page.evaluate(() => ({
     rows: [...document.querySelectorAll('[data-item-id]')].map((r) => r.getAttribute('data-state')),
