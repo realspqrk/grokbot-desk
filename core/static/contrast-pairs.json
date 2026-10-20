@@ -607,6 +607,24 @@
       "use": "danger status word in the card"
     },
     {
+      "fg": "--rs-status-danger-text",
+      "bg": "--rs-rail-bg",
+      "min": 4.5,
+      "use": "urgent hint of an inbox row"
+    },
+    {
+      "fg": "--rs-status-danger-text",
+      "bg": "--rs-selected",
+      "min": 4.5,
+      "use": "urgent hint of the current inbox row"
+    },
+    {
+      "fg": "--rs-status-danger-text",
+      "bg": "--rs-hover",
+      "min": 4.5,
+      "use": "urgent hint of a hovered inbox row"
+    },
+    {
       "fg": "--rs-ink",
       "bg": "--rs-status-danger-tint",
       "min": 4.5,

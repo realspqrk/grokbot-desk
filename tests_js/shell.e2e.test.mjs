@@ -3,23 +3,25 @@
 // playwright-core loaded by absolute path. The server is stopped in after().
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, ROOT, PYTHON } from '../tools/dev/rs-server.mjs';
 import round5Corpus from './fixtures/twitter-text-round5.mjs';
 
 // RS_E2E_PORT: another worktree may run this suite at the same time
 const PORT = Number(process.env.RS_E2E_PORT || 18900);
 if (PORT === 18742) throw new Error('refusing the product port');
 const ORIGIN = `http://127.0.0.1:${PORT}`;
-// the strip has one entry per bot, so a test that switches between
-// two reports by their strip entries gives the second one its own bot
+// the old _starter template fixtures (tests that still use them wait for
+// their rework); the inbox tests below register payload@2 reports instead
 const SECOND_BOT = 'example-second-bot';
 const STARTER = path.join(ROOT, 'templates/builtin/_starter');
-const golden = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/golden.json'), 'utf8'));
-const expect = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/expect/golden.json'), 'utf8'));
+const starter = (file) => (existsSync(path.join(STARTER, file)) ? JSON.parse(readFileSync(path.join(STARTER, file), 'utf8')) : null);
+const golden = starter('fixtures/golden.json');
+const expect = starter('fixtures/expect/golden.json');
 const de = JSON.parse(readFileSync(path.join(ROOT, 'core/i18n/de.json'), 'utf8'));
 const AXE = path.join(ROOT, 'vendor/axe.min.js');
 const round4Corpus = JSON.parse(
@@ -88,6 +90,25 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     await page.fill('#starter-note', text);
   }
   const activeId = (page) => page.evaluate(() => window.RS.activeRun);
+  const row = (id) => `#rs-inbox a[data-run-id="${id}"]`;
+  /** Registers a payload@2 report through the CLI (`show --data`), as a bot does. */
+  let showSeq = 0;
+  function showReport(extra = {}) {
+    showSeq += 1;
+    const file = path.join(server.dataDir, `shell-${process.pid}-${showSeq}.json`);
+    const created = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    writeFileSync(file, JSON.stringify({
+      schema: 'grokbot-desk/payload@2', bot: 'operations-agent', title: 'Bericht ' + showSeq, created,
+      ask: 'approve', action: 'file', why: 'The check finished.',
+      blocks: [{ type: 'facts', items: [{ label: 'Duration', value: '42 min' }] }],
+      ...extra,
+    }), 'utf8');
+    const out = spawnSync(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(PORT), 'show', '--data', file, '--no-window'], {
+      cwd: ROOT, env: server.env, encoding: 'utf8', windowsHide: true, shell: false, timeout: 30000,
+    });
+    if (out.status !== 0) throw new Error(`show failed (${out.status}): ${out.stderr}`);
+    return JSON.parse(out.stdout.trim().split('\n').pop());
+  }
 
   test('renders the starter golden: strings, copy text, CSP, same-origin only, no console errors', async () => {
     const run = server.show(golden, { title: 'Sicherung prüfen' });
@@ -402,11 +423,11 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
           if (api.run.title === 'Scoped A') api.draft.set({ choice: 'spaeter', note: 'keep A' });
         });
       });
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await ready(page);
-      await page.click(`.rs-strip__run[data-run-id="${a.run_id}"]`);
+      await page.click(row(a.run_id));
       await ready(page);
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await ready(page);
       const before = await page.evaluate((id) => ({
         touched: window.RS.touched,
@@ -537,7 +558,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       }
       const order = seen.filter((f) => f.tag !== 'BODY').map((f) => f.id || f.cls.split(' ')[0] || f.tag);
       // the disabled submit button is not a tab stop until a choice is made
-      // calm UI: one run = no strip; theme and Discard report live behind the
+      // calm UI: one run = no inbox; theme and Discard report live behind the
       // overflow button, the copy is an icon button and the note opens from a
       // text button
       assert.deepEqual(order, ['rs-more-btn', 'rs-icon-btn', 'rs-choice', 'rs-link']);
@@ -639,7 +660,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     try {
       await page.click('#rs-more-btn'); await page.click('#rs-discard'); // A untouched, confirmation open
       const b = server.show(golden, { bot: SECOND_BOT, title: 'Neu B', created: isoAt(Date.now()) });
-      await page.waitForSelector(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.waitForSelector(row(b.run_id));
       await page.waitForTimeout(300); // a switch would have started by now
       assert.equal(await activeId(page), a.run_id, 'no automatic switch under the confirmation');
       assert.equal(await page.textContent('#rs-title'), 'Ziel A');
@@ -711,7 +732,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await page.isDisabled('rs-action-row button[value="erledigt"]'), true);
       assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
       assert.equal(await page.isEnabled('[data-copy-id="starter-copy"] .rs-copy__btn'), true);
-      assert.equal(await page.isEnabled(`.rs-strip__run[data-run-id="${run.run_id}"]`), true);
+      assert.equal(await page.isEnabled(row(run.run_id)), true);
       await held.abort('connectionfailed');
       await page.waitForFunction((msg) => [...document.querySelectorAll('#rs-toasts .rs-toast')].some((x) => x.textContent === msg), de.discard_failed, { timeout: 3000 });
       assert.equal(await page.isDisabled('#rs-submit'), false, 'An Bot senden usable again');
@@ -743,7 +764,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       const requestA = page.waitForRequest((r) => r.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       await requestA;
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await ready(page);
       await page.click('rs-action-row button[value="erledigt"]');
       await fillNote(page, 'B remains pending');
@@ -776,7 +797,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       const requestA = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await requestA;
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await ready(page);
       await page.click('#rs-more-btn'); await page.click('#rs-discard');
       const requestB = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
@@ -844,7 +865,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.click('rs-action-row button[value="erledigt"]');
       await fillNote(page, 'old note');
       await page.route(`**/api/run/${b.run_id}`, (route) => route.abort('connectionfailed'));
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await page.waitForFunction((message) => [...document.querySelectorAll('#rs-toasts .rs-toast')]
         .some((item) => item.textContent === message), de.run_load_failed);
 
@@ -884,7 +905,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.route(`**/api/run/${b.run_id}`, (route) => route.fulfill({
         status: 500, contentType: 'application/json', body: '{"error":"injected"}',
       }));
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await page.waitForFunction((message) => [...document.querySelectorAll('#rs-toasts .rs-toast')]
         .some((item) => item.textContent === message), de.run_load_failed);
       assert.equal(await activeId(page), a.run_id);
@@ -905,7 +926,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await fillNote(page, 'A before request');
       await page.route(`**/api/run/${b.run_id}`, (route) => { held = route; });
       const requested = page.waitForRequest((request) => request.url().endsWith('/api/run/' + b.run_id));
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await requested;
 
       await page.click('rs-action-row button[value="spaeter"]');
@@ -947,7 +968,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     const b = server.show(golden, { bot: SECOND_BOT, title: 'URL B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     try {
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await ready(page);
       await page.click('rs-action-row button[value="spaeter"]');
       await fillNote(page, 'Entwurf in B');
@@ -1064,51 +1085,48 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await kit.goto(pathToFileURL(path.join(ROOT, 'tools/dev/kit-preview.html')).href);
       const visible = await kit.locator('body').innerText();
       assert.match(visible, /Inbox Agent/);
-      // The waiting report is an avatar in the strip, named by bot and title
-      assert.match(await kit.getAttribute('.rs-strip__run:not([aria-current])', 'aria-label'), /^Social Agent · /);
       assert.match(visible, /Northwind/);
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
-  test('switching rule, new dot, ● title prefix and Ctrl+1..3', async () => {
+  test('switching rule, unread dot, ● title prefix and Ctrl+1..3', async () => {
     await server.clearRuns();
-    const t0 = Date.now() - 30 * 60000;
-    const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
-    const a = server.show(golden, { title: 'Bericht A', created: iso(t0) });
+    const a = showReport({ title: 'Bericht A', identity: { name: 'Operations Agent' } });
     const { ctx, page, log } = await open();
     try {
       assert.equal(await activeId(page), a.run_id);
       await page.waitForFunction(() => document.title === 'Bericht A · Operations Agent', null, { timeout: 3000 });
 
-      // A stays even untouched; B waits in the strip with its "new"
-      // dot, the title gets "● "
-      const b = server.show(golden, { bot: SECOND_BOT, identity: { name: 'Second Agent' }, title: 'Bericht B', created: iso(t0 + 60000) });
-      await page.waitForSelector(`.rs-strip__run[data-run-id="${b.run_id}"] .rs-strip__dot[data-new]`);
+      // A stays even untouched; B waits in the inbox with its unread dot,
+      // the title gets "● "
+      const b = showReport({ bot: 'example-second-bot', identity: { name: 'Second Agent' }, title: 'Bericht B' });
+      await page.waitForSelector(`${row(b.run_id)} .rs-inbox__dot[data-new]`);
       await page.waitForTimeout(300); // a switch would have started by now
       assert.equal(await activeId(page), a.run_id, 'an untouched report is not replaced');
       assert.equal(await page.title(), '● Bericht A · Operations Agent');
       assert.equal(
-        await page.getAttribute(`.rs-strip__run[data-run-id="${b.run_id}"]`, 'aria-label'),
-        `Second Agent ${de.sep} Bericht B ${de.sep} ${de.new}`,
+        (await page.textContent(row(b.run_id))).replace(/\s+/g, ' ').trim(),
+        `Bericht B Second Agent ${de.sep} ${de.ask_kind_approve} ${de.sep} ${de.new}`,
       );
 
-      // touched A, C arrives: arrivals append, nothing jumps
-      await page.click('rs-action-row button[value="erledigt"]');
-      const c = server.show(golden, { bot: 'example-third-bot', identity: { name: 'Third Agent' }, title: 'Bericht C', created: iso(t0 + 120000) });
-      await page.waitForSelector(`.rs-strip__run[data-run-id="${c.run_id}"] .rs-strip__dot[data-new]`);
+      // a note on A, C arrives: arrivals append, nothing jumps
+      if (await page.locator('[data-rs-note-open]').isVisible()) await page.locator('[data-rs-note-open]').click();
+      await page.fill('#rs-note', 'erst morgen');
+      const c = showReport({ bot: 'example-third-bot', identity: { name: 'Third Agent' }, title: 'Bericht C' });
+      await page.waitForSelector(`${row(c.run_id)} .rs-inbox__dot[data-new]`);
       assert.equal(await activeId(page), a.run_id);
-      const order = await page.$$eval('.rs-strip__run', (x) => x.map((e) => [e.dataset.runId, e.getAttribute('aria-keyshortcuts')]));
+      const order = await page.$$eval('#rs-inbox a[data-run-id]', (x) => x.map((e) => [e.dataset.runId, e.getAttribute('aria-keyshortcuts')]));
       assert.deepEqual(order, [[a.run_id, 'Control+1'], [b.run_id, 'Control+2'], [c.run_id, 'Control+3']]);
 
-      // Ctrl+3 -> C (read: the dot turns to a ring)
+      // Ctrl+3 -> C (read: the dot goes)
       const read = page.waitForRequest((r) => r.url() === ORIGIN + '/read');
       await page.keyboard.press('Control+3');
       await read;
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', c.run_id);
       await page.waitForFunction(() => document.title.includes('Bericht C'), null, { timeout: 3000 });
-      assert.equal(await page.$(`.rs-strip__run[data-run-id="${c.run_id}"] .rs-strip__dot[data-new]`), null);
-      assert.equal(await page.getAttribute(`.rs-strip__run[data-run-id="${c.run_id}"]`, 'aria-current'), 'page');
+      await page.waitForFunction((sel) => !document.querySelector(sel), `${row(c.run_id)} .rs-inbox__dot[data-new]`, { timeout: 3000 });
+      assert.equal(await page.getAttribute(row(c.run_id), 'aria-current'), 'page');
 
       // Ctrl+2 -> B; then the "● " prefix goes away (nothing unread)
       await page.keyboard.press('Control+2');
@@ -1119,8 +1137,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.keyboard.press('Control+1');
       await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', a.run_id);
       await page.waitForFunction(() => document.title === 'Bericht A · Operations Agent', null, { timeout: 3000 });
-      assert.equal(await page.getAttribute('rs-action-row button[value="erledigt"]', 'aria-checked'), 'true');
-      assert.equal(await page.isDisabled('#rs-submit'), false);
+      assert.equal(await page.inputValue('#rs-note'), 'erst morgen');
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
     await server.clearRuns();
@@ -1137,8 +1154,8 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await page.textContent('.rs-banner[data-banner="expired"]'), de.run_expired_msg);
       assert.equal(await page.isDisabled('#rs-submit'), true);
       assert.equal(await page.isDisabled('#rs-discard'), true);
-      // A decided report is not in the strip of open reports
-      assert.equal(await page.$(`.rs-strip__run[data-run-id="${run.run_id}"]`), null);
+      // A decided report is not in the inbox of open reports
+      assert.equal(await page.$(row(run.run_id)), null);
     } finally { await ctx.close(); }
   });
 
@@ -1160,7 +1177,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
           ]);
         });
       });
-      await page.click(`.rs-strip__run[data-run-id="${b.run_id}"]`);
+      await page.click(row(b.run_id));
       await ready(page);
       const footer = () => page.$$eval('#rs-submitbar button', (buttons) => buttons
         .filter((button) => button.getClientRects().length > 0)

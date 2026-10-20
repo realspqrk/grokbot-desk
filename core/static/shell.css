@@ -1,11 +1,12 @@
 /* report-shell chrome + core component styles (calm UI addendum).
  * Only var(--rs-*) colours (literals live in tokens.css) and only
  * var(--space-*) spacing (0 and 1px hairlines allowed).
- * Layout (pop-up): an optional avatar strip on top (2+ open reports),
- * then one centred column shared by the header (a quiet byline: the bot's
- * avatar and name, the open count and one overflow control; under it the
- * report title, the strongest line), the task banner, the template and the
- * footer (status + up to two quiet alternatives + the one primary action).
+ * Layout (pop-up): with 2+ open reports an inbox lists them (a side rail
+ * from 720 px, a tab row under the header below that), then one centred
+ * column shared by the header (a quiet byline: the bot's avatar and name
+ * and one overflow control; under it the report title, the strongest
+ * line), the task banner, the template and the footer (status + up to two
+ * quiet alternatives + the one primary action).
  * The footer follows short content and stays at the bottom once the
  * report scrolls.
  */
@@ -59,8 +60,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
   overflow: hidden;
 }
 
-/* strip, header, task banner, report, footer: fixed rows, so a hidden strip
-   leaves an empty first row and the fold fade below keeps its row. The
+/* header, inbox tabs, task banner, report, footer: fixed rows, so a hidden
+   inbox leaves an empty row and the fold fade below keeps its row. The
    report row is as tall as its content and never taller than the space
    left, so a short report keeps its footer right under it and a long one
    scrolls inside the row with the footer at the window bottom. */
@@ -72,8 +73,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
   grid-template-rows: auto auto auto minmax(0, auto) auto;
   align-content: start;
 }
-.rs-strip { grid-row: 1; }
-.rs-header { grid-row: 2; }
+.rs-header { grid-row: 1; }
+.rs-inbox { grid-row: 2; }
 .rs-task { grid-row: 3; }
 .rs-mount { grid-row: 4; }
 .rs-submitbar { grid-row: 5; }
@@ -95,8 +96,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
-/* strip, banner, header, mount and footer centre one column track (no auto margins, K7a) */
-.rs-strip,
+/* tabs, banner, header, mount and footer centre one column track (no auto margins, K7a) */
+.rs-inbox,
 .rs-task,
 .rs-header,
 .rs-mount,
@@ -164,15 +165,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
 /* ------------------------------------------------------------- header -- */
 
 .rs-header { padding: var(--space-3) var(--space-6) var(--space-3); }
-.rs-app[data-strip="on"] .rs-header { padding-top: var(--space-2); }
 
 .rs-header__inner {
   display: grid;
   gap: var(--space-1);
 }
 
-/* who asks, as a quiet byline: a small avatar, the bot's name, the open
-   count while several reports wait, and the one overflow control */
+/* who asks, as a quiet byline: a small avatar, the bot's name and the one
+   overflow control */
 .rs-byline {
   display: flex;
   align-items: center;
@@ -196,9 +196,6 @@ button, input, textarea, select { font: inherit; color: inherit; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.rs-byline__count { flex: none; white-space: nowrap; }
-.rs-bot:not([hidden]) + .rs-byline__count::before { content: "\00B7" / ""; padding-right: var(--space-2); }
-.rs-byline__count:empty { display: none; }
 .rs-byline::after { content: ""; flex: 1 1 0; order: 1; }
 .rs-byline > .rs-more { order: 2; }
 
@@ -215,7 +212,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-header__title:empty { display: none; }
 
 /* avatar: a fixed circle; the image covers it, or neutral initials (no bot
-   colour on the initials, so the strip stays calm) */
+   colour on the initials, so the inbox stays calm) */
 .rs-avatar {
   flex: none;
   display: inline-grid;
@@ -235,7 +232,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rs-avatar > img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 /* Shape avatar: the core-drawn shape in its named fill, no disc behind
-   it; the eyes are holes, so they show the surface (strip, header, menu) */
+   it; the eyes are holes, so they show the surface (inbox, header, menu) */
 .rs-avatar[data-shape] {
   --rs-avatar-fill: var(--rs-avatar-default);
   overflow: visible;
@@ -304,108 +301,137 @@ button, input, textarea, select { font: inherit; color: inherit; }
   background: var(--rs-ink);
 }
 
-/* -------------------------------------------------------------- strip -- */
+/* -------------------------------------------------------------- inbox -- */
 
-/* 2+ open reports. One slim row above the header: each report's
-   avatar with its waiting dot on the lower right corner, like the bot
-   app's status dot (a ring once seen, filled while new), the active one
-   underlined in ink (never the accent, C16), the count at the end. No box,
-   no motion. */
-.rs-strip {
-  padding: var(--space-3) var(--space-6) 0;
-  border-bottom: var(--rs-border) solid var(--rs-line);
-}
-
-.rs-strip__inner {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.rs-strip__list {
-  flex: 1;
+/* 2+ open reports: every one of them, one row per report in arrival order.
+   A row: the bot's avatar, the title, "bot · hint" and a dot while unread
+   (ink, never the accent: C16/K1); an unread title is strong. The current
+   row sits on the selected surface. No motion.
+   Below 720 px: a tab row under the header that scrolls sideways. From
+   720 px: a rail on the left, the full window height, scrolling on its own
+   (the media query below). */
+.rs-inbox {
   min-width: 0;
+  padding: 0 var(--space-6) var(--space-3);
+}
+.rs-inbox__inner { min-width: 0; }
+.rs-inbox__heading {
+  color: var(--rs-muted);
+  font-size: var(--rs-fs-sm);
+  line-height: var(--rs-lh-tight);
+}
+.rs-inbox__list {
   display: flex;
-  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.rs-inbox__list > li { flex: none; min-width: 0; }
+.rs-inbox__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) var(--rs-dot);
+  align-items: start;
   gap: var(--space-2);
-}
-
-.rs-strip__run {
-  position: relative;
-  display: inline-flex;
-  padding: var(--space-1) var(--space-1) var(--space-3);
-  border: 0;
-  border-radius: var(--rs-r-sm);
-  background: transparent;
+  width: var(--rs-inbox-tab-w);
+  padding: var(--space-2);
+  border-radius: var(--rs-r-md);
   color: var(--rs-ink);
-  cursor: pointer;
+  text-decoration: none;
+  line-height: var(--rs-lh-tight);
 }
-.rs-strip__run[aria-current] { cursor: default; }
-.rs-strip__run[aria-current]::after {
-  content: "";
-  position: absolute;
-  inset-inline: var(--space-1);
-  bottom: 0;
-  height: var(--space-0-5);
-  border-radius: var(--space-0-5);
-  background: var(--rs-ink);
+/* inside a scrolling list the ring sits inside the row, so it is never cut */
+.rs-inbox__row:focus-visible { outline-offset: calc(0px - var(--rs-focus-width)); }
+.rs-inbox__row:hover { background: var(--rs-hover); }
+.rs-inbox__row[aria-current] { background: var(--rs-selected); }
+.rs-inbox__text {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-0-5);
 }
-
-.rs-strip__dot {
-  position: absolute;
-  right: 0;
-  bottom: var(--space-3);
+.rs-inbox__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rs-inbox__row:has(> .rs-inbox__dot[data-new]) .rs-inbox__title { font-weight: var(--rs-fw-strong); }
+.rs-inbox__meta {
+  overflow: hidden;
+  color: var(--rs-muted);
+  font-size: var(--rs-fs-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rs-inbox__hint[data-tone="urgent"] { color: var(--rs-status-danger-text); }
+.rs-inbox__dot {
+  align-self: center;
   width: var(--rs-dot);
   height: var(--rs-dot);
-  border: var(--rs-border) solid var(--rs-ink);
   border-radius: 50%;
-  background: var(--rs-paper);
-  /* a paper ring keeps the dot apart from the avatar under it */
-  box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper);
 }
-.rs-strip__dot[data-new] { background: var(--rs-ink); }
-/* one avatar per bot; with more than one open report a quiet count
-   (ink on paper, never the accent: C16/K1) sits at its top right */
-.rs-strip__badge {
-  position: absolute;
-  top: 0;
-  right: 0;
-  min-width: var(--space-4);
-  height: var(--space-4);
-  padding: 0 var(--space-1);
-  border: 1px solid var(--rs-ink);
-  border-radius: var(--space-2);
-  background: var(--rs-paper);
-  color: var(--rs-ink);
-  font-size: var(--rs-fs-sm);
-  font-variant-numeric: tabular-nums;
-  line-height: calc(var(--space-4) - 2px);
-  text-align: center;
-  box-shadow: 0 0 0 var(--space-0-5) var(--rs-paper);
+.rs-inbox__dot[data-new] { background: var(--rs-ink); }
+.rs-inbox .rs-avatar { margin-top: var(--space-0-5); }
+
+/* narrow: tabs need no heading; the unread dot sits in the tab's corner
+   (beside the tab it would read as a separator); a hairline closes the row */
+@media (max-width: 719.98px) {
+  .rs-inbox__heading { display: none; }
+  .rs-inbox__row { position: relative; grid-template-columns: auto minmax(0, 1fr); }
+  .rs-inbox__dot { position: absolute; top: var(--space-2); right: var(--space-2); }
+  .rs-inbox__row:has(> .rs-inbox__dot[data-new]) .rs-inbox__title { padding-right: var(--space-3); }
+  .rs-inbox__inner {
+    padding-bottom: var(--space-2);
+    border-bottom: var(--rs-border) solid var(--rs-line);
+  }
 }
 
-
-/* Badge sits beside the avatar, not over it. The unread dot stays on the
-   avatar's edge. The current underline is the avatar width (32px). */
-.rs-strip__run {
-  column-gap: var(--space-1);
-}
-.rs-strip__run[aria-current] {
-  cursor: pointer;
-}
-.rs-strip__badge {
-  position: relative;
-  top: calc(0px - var(--space-1));
-  right: auto;
-  align-self: flex-start;
-}
-.rs-strip__dot {
-  right: auto;
-  left: calc(var(--space-1) + var(--rs-avatar-md) - var(--rs-dot) / 2);
-}
-.rs-strip__run[aria-current]::after {
-  right: auto;
-  width: var(--rs-avatar-md);
+/* wide: the rail. The report keeps the right-hand column; the rail spans
+   every row (a last 1fr row takes the space under a short report), and its
+   content is out of flow, so a long inbox never makes a row taller. */
+@media (min-width: 720px) {
+  .rs-app[data-inbox="on"] .rs-main {
+    grid-template-columns: var(--rs-inbox-w) minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, auto) auto 1fr;
+  }
+  .rs-app[data-inbox="on"] .rs-main > :not(.rs-inbox),
+  .rs-app[data-inbox="on"] .rs-main::after { grid-column: 2; }
+  .rs-inbox {
+    position: relative;
+    grid-column: 1;
+    grid-row: 1 / -1;
+    display: block;
+    padding: 0;
+    border-right: var(--rs-border) solid var(--rs-line);
+    background: var(--rs-rail-bg);
+  }
+  .rs-inbox__inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .rs-inbox__heading { padding: var(--space-4) var(--space-4) var(--space-2); }
+  .rs-inbox__list {
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    padding: 0 var(--space-2) var(--space-4);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .rs-inbox__row { width: auto; }
+  /* the rail has room for two lines of title */
+  .rs-inbox__title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* --------------------------------------------------------------- main -- */

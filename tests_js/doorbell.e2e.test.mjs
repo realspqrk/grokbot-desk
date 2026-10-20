@@ -106,8 +106,8 @@ describe('doorbell setup page (served, headless Edge)', { skip }, () => {
       assert.equal(response.status, 200);
       await page.waitForSelector('[data-rs-doorbell]');
       assert.equal(await page.textContent('#rs-title'), de.doorbell_title);
-      // the strip groups by bot: its button leads with the oldest open report of that bot
-      await page.waitForSelector('#rs-strip [data-run-id]', { state: 'attached' });
+      // the open report keeps its inbox row
+      await page.waitForSelector('#rs-inbox [data-run-id]', { state: 'attached' });
       assert.equal(server.result(run.run_id), null, 'the report is still open');
     } finally {
       await ctx.close();

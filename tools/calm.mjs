@@ -1013,8 +1013,8 @@ export function calmEvaluator(options) {
       };
     });
 
-  // The avatar strip of open reports (older pages and fixtures: a rail)
-  const strip = document.getElementById('rs-strip-nav') || [...document.querySelectorAll(
+  // The inbox of open reports (older pages and fixtures: a strip or a rail)
+  const strip = document.getElementById('rs-inbox') || document.getElementById('rs-strip-nav') || [...document.querySelectorAll(
     '.rs-strip,[data-rs-strip],.rs-rail,[data-rs-rail],nav[aria-label*="run" i]',
   )].find((element) => !element.closest('#rs-mount')) || null;
   const stripFocusable = strip

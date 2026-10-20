@@ -70,7 +70,9 @@
   --rs-icon-btn: 28px;
   --rs-dot: 8px;
   --rs-avatar-sm: 24px;  /* "…" menu */
-  --rs-avatar-md: 32px;  /* strip, header */
+  --rs-avatar-md: 32px;
+  --rs-inbox-w: 248px;      /* the inbox rail (720 px and wider) */
+  --rs-inbox-tab-w: 200px;  /* one inbox tab (narrower windows) */
   --rs-header-h: 72px;
   --rs-column: 760px;
   --rs-fade-h: var(--space-5);  /* fold fade above the submit bar */

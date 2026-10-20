@@ -24,11 +24,12 @@
   <script src="/static/components.js"></script>
 </head>
 <body>
-  <div class="rs-app" id="rs-app" data-strip="off">
+  <div class="rs-app" id="rs-app" data-inbox="off">
     <main class="rs-main">
-      <nav class="rs-strip" id="rs-strip-nav" data-rs-strip data-rs-t-aria-label="strip_label" hidden>
-        <div class="rs-column rs-strip__inner">
-          <div class="rs-strip__list" id="rs-strip" role="toolbar" aria-orientation="horizontal" data-rs-t-aria-label="strip_label"></div>
+      <nav class="rs-inbox" id="rs-inbox" data-rs-inbox data-rs-t-aria-label="inbox_label" hidden>
+        <div class="rs-inbox__inner">
+          <p class="rs-inbox__heading" id="rs-inbox-heading"></p>
+          <ol class="rs-inbox__list" id="rs-inbox-list"></ol>
         </div>
       </nav>
 
@@ -39,7 +40,6 @@
               <span class="rs-avatar" id="rs-bot-avatar" data-rs-avatar aria-hidden="true"></span>
               <p class="rs-bot__name" id="rs-bot-name"></p>
             </div>
-            <p class="rs-byline__count" id="rs-strip-count"></p>
             <div class="rs-more" id="rs-more">
               <button type="button" class="rs-icon-btn" id="rs-more-btn" aria-expanded="false" aria-controls="rs-more-panel" data-rs-t-aria-label="more" data-rs-t-title="more" data-rs-icon="more"></button>
               <div class="rs-more__panel" id="rs-more-panel" hidden>

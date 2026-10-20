@@ -32,7 +32,7 @@ export const SMOKE = {
     'no open runs: empty state and title',
   ],
   'popup.e2e.test.mjs': [
-    '1 open: compact pop-up without a strip; header = quiet byline, strong report title',
+    '1 open: compact pop-up without an inbox; header = quiet byline, strong report title',
     'a decision auto-advances to the next open report; the last one ends in a calm done state',
   ],
   'inputs.e2e.test.mjs': [

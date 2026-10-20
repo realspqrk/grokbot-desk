@@ -23,15 +23,11 @@ def test_default_window_is_the_compact_popup(tmp_path):
     assert platform_darwin._geometry({"window": {"width": "x", "height": -1}})[2:] == (880, 920)
 
 
-def test_strip_and_done_strings_in_both_tables():
+def test_inbox_and_done_strings_in_both_tables():
     keys = {
-        "strip_label": set(),
-        "strip_count": {"n", "m"},
-        "strip_count_all": {"m"},
-        "strip_item": {"bot", "title"},
-        # one strip entry per bot, one announcement per burst
-        "strip_group": {"bot", "n"},
-        "strip_cycle": {"bot", "n"},
+        "inbox_label": set(),
+        "inbox_heading": {"n"},
+        # one announcement per burst
         "burst_arrived": {"n", "k"},
         "burst_arrived_bot": {"n", "bot"},
         "done_title": set(),
@@ -43,9 +39,10 @@ def test_strip_and_done_strings_in_both_tables():
         for key, params in keys.items():
             assert table.get(key), (lang, key)
             assert set(re.findall(r"\{([a-z_]+)\}", table[key])) == params, (lang, key)
-        assert not [k for k in table if k.startswith("rail_")], lang
-    assert tables["en"]["strip_count"] == "{n} of {m} open"
-    assert tables["de"]["strip_count"] == "{n} von {m} offen"
+        # the avatar strip and its per-bot cycling are gone
+        assert not [k for k in table if k.startswith(("rail_", "strip_"))], lang
+    assert tables["en"]["inbox_heading"] == "Waiting ({n})"
+    assert tables["de"]["inbox_heading"] == "Wartet ({n})"
 
 
 class _Tree(HTMLParser):
@@ -58,30 +55,31 @@ class _Tree(HTMLParser):
         self.order.append((tag, a.get("id"), a.get("class") or "", a))
 
 
-def test_shell_strip_sits_above_the_header_and_the_title_is_the_quiet_line():
+def test_shell_inbox_is_a_hidden_navigation_list_and_the_title_is_the_page_heading():
     tree = _Tree()
     tree.feed((STATIC / "shell.html").read_text(encoding="utf-8"))
     ids = [item[1] for item in tree.order if item[1]]
-    assert "rs-rail" not in ids and "rs-rail-nav" not in ids
-    assert ids.index("rs-strip-nav") < ids.index("rs-bot") < ids.index("rs-more-btn") < ids.index("rs-mount")
-    nav = next(item for item in tree.order if item[1] == "rs-strip-nav")
+    assert "rs-strip" not in ids and "rs-strip-nav" not in ids and "rs-strip-count" not in ids
+    # the inbox comes first (a side rail, or tabs under the header), then the report
+    assert ids.index("rs-inbox") < ids.index("rs-inbox-list") < ids.index("rs-mount")
+    assert ids.index("rs-bot") < ids.index("rs-more-btn") < ids.index("rs-mount")
+    nav = next(item for item in tree.order if item[1] == "rs-inbox")
     assert nav[0] == "nav" and "hidden" in nav[3]
-    toolbar = next(item for item in tree.order if item[1] == "rs-strip")
-    assert toolbar[3].get("role") == "toolbar"
+    assert nav[3].get("data-rs-t-aria-label") == "inbox_label"
+    assert next(item for item in tree.order if item[1] == "rs-inbox-list")[0] == "ol"
     # header: avatar, then the name over the h1 report title
     assert ids.index("rs-bot-avatar") < ids.index("rs-bot-name") < ids.index("rs-title")
     title = next(item for item in tree.order if item[1] == "rs-title")
     assert title[0] == "h1"
 
 
-def test_shell_css_has_no_rail_and_paints_the_strip_in_ink():
+def test_shell_css_inbox_is_calm_and_switches_to_tabs_below_720px():
     css = (STATIC / "shell.css").read_text(encoding="utf-8")
-    assert "rs-rail" not in css and "--rs-rail-w" not in css
-    underline = re.search(r"\.rs-strip__run\[aria-current\]::after\s*\{([^}]*)\}", css).group(1)
-    assert "var(--rs-ink)" in underline and "accent" not in underline
-    strip = "".join(re.findall(r"\.rs-strip[^{]*\{([^}]*)\}", css))
-    assert "accent" not in strip
-    assert "transition" not in strip and "animation" not in strip
+    assert ".rs-strip" not in css and ".rs-rail" not in css
+    inbox = "".join(re.findall(r"\.rs-inbox[^{]*\{([^}]*)\}", css))
+    assert "accent" not in inbox, "the inbox never uses the accent (one accent: the primary)"
+    assert "transition" not in inbox and "animation" not in inbox
+    assert "@media (min-width: 720px)" in css
 
 
 # ------------------------------------------------ app-window ownership --

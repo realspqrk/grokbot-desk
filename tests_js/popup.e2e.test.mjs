@@ -1,24 +1,27 @@
 // Pop-up layout (served, headless Edge): one open report is a compact
-// pop-up with no strip; two or more show a slim avatar strip at the top
-// ("n of m open"), the active one underlined. A decision advances to the next
-// open report; after the last one a calm done state shows and the window
-// closes (test clients only with ?autoclose=1). Keyboard: Left/Right on the
-// strip (roving tabindex), Ctrl+1..9 anywhere; arrows in text stay text.
+// pop-up with no inbox; two or more list every open report in an inbox, one
+// row per report in arrival order: a side rail in a window 720 px or wider,
+// a horizontal scrolling tab row under the header below that. A decision
+// advances to the next open report; after the last one a calm done state
+// shows and the window closes (test clients only with ?autoclose=1).
+// Keyboard: arrows on the inbox, Ctrl+1..9 and Alt+Up/Down anywhere; arrows
+// in text stay text. An arrival never replaces the report on screen.
 // Isolated server, temp RS_DATA_DIR, public fictional bots only.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, ROOT, PYTHON } from '../tools/dev/rs-server.mjs';
+import { calmEvaluator, judgeCalmFacts, CALM_THRESHOLDS } from '../tools/calm.mjs';
 
-const PORT = Number(process.env.RS_E2E_PORT || 18900) + 13;
-if (PORT === 18742) throw new Error('refusing the product port');
-const STARTER = path.join(ROOT, 'templates/builtin/_starter');
-const golden = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/golden.json'), 'utf8'));
+// tests use 18920-18939 only (AGENTS.md); never the product port
+const PORT = Number(process.env.RS_E2E_PORT || 18921);
+if (!Number.isInteger(PORT) || PORT < 18920 || PORT > 18939) throw new Error(`RS_E2E_PORT ${PORT} is outside 18920-18939`);
 const de = JSON.parse(readFileSync(path.join(ROOT, 'core/i18n/de.json'), 'utf8'));
-const fill = (key, params) => de[key].replace(/\{([a-z_]+)\}/g, (m, name) => String(params[name]));
+const fill = (key, params = {}) => de[key].replace(/\{([a-z_]+)\}/g, (m, name) => String(params[name]));
 
 const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
@@ -29,11 +32,19 @@ const BOTS = [
   { bot: 'example-nas-bot', identity: { name: 'NAS Agent', avatar_shape: 'blob', avatar_color: 'orange' }, title: 'Sicherung Büro-NAS prüfen' },
   { bot: 'example-web-bot', identity: { name: 'Web Agent', avatar_shape: 'hex', avatar_color: 'green' }, title: 'Sicherung Webserver prüfen' },
 ];
-const isoAt = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
+// an approval with no input: the primary sends at once
+const BASE = {
+  schema: 'grokbot-desk/payload@2',
+  why: 'The nightly check finished. Approve, and the bot files the log.',
+  ask: 'approve',
+  action: 'file',
+  blocks: [{ type: 'facts', items: [{ label: 'Duration', value: '42 min' }, { label: 'Size', value: '18 GB' }] }],
+};
 
-describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Edge)', { skip }, () => {
+describe('pop-up: inbox, auto-advance, done state, keyboard (served, headless Edge)', { skip }, () => {
   let server;
   let browser;
+  let seq = 0;
 
   before(async () => {
     server = await startServer({ port: PORT });
@@ -44,15 +55,27 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
   });
   beforeEach(async () => { if (server) await server.clearRuns(); });
 
-  /** n open runs, oldest first (= arrival and strip order). */
+  /** Registers one report through the CLI (`show --data`), as a bot does. */
+  function show(extra = {}) {
+    seq += 1;
+    const file = path.join(server.dataDir, `popup-${process.pid}-${seq}.json`);
+    const created = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    writeFileSync(file, JSON.stringify({ ...BASE, bot: BOTS[0].bot, title: 'Bericht ' + seq, created, ...extra }), 'utf8');
+    const out = spawnSync(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(PORT), 'show', '--data', file, '--no-window'], {
+      cwd: ROOT, env: server.env, encoding: 'utf8', windowsHide: true, shell: false, timeout: 30000,
+    });
+    if (out.status !== 0) throw new Error(`show failed (${out.status}): ${out.stderr}`);
+    return JSON.parse(out.stdout.trim().split('\n').pop());
+  }
+  /** n open runs, oldest first (= arrival and inbox order); bots cycle. */
   function showRuns(n) {
-    const now = Date.now();
-    return BOTS.slice(0, n).map((b, i) => server.show(golden, {
-      bot: b.bot, identity: b.identity, title: b.title, created: isoAt(now - (n - 1 - i) * 60000),
-    }));
+    return Array.from({ length: n }, (_, i) => {
+      const b = BOTS[i % BOTS.length];
+      return show({ bot: b.bot, identity: b.identity, title: i < BOTS.length ? b.title : `${b.title} ${i + 1}` });
+    });
   }
 
-  async function open(runId, extra = '', viewport = { width: 1280, height: 720 }) {
+  async function open(runId, extra = '', viewport = { width: 880, height: 720 }) {
     const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1, colorScheme: 'light', reducedMotion: 'reduce' });
     const page = await ctx.newPage();
     const errors = [];
@@ -78,7 +101,6 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
         active: window.RS?.activeRun ?? null,
         ready: document.documentElement.dataset.rsReady ?? null,
         mount: document.querySelector('.rs-mount, #rs-mount')?.textContent.trim().slice(0, 80) ?? null,
-        resources: performance.getEntriesByType('resource').map((r) => `${new URL(r.name).pathname} ${Math.round(r.startTime)}+${Math.round(r.duration)}ms`).slice(-15),
       })).catch((err) => ({ evaluate: String(err) }));
       e.message += ` | page state: ${JSON.stringify(where)}`;
       throw e;
@@ -86,35 +108,50 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
   };
   const activeIs = (page, id) => page.waitForFunction((x) => window.RS.activeRun === x
     && document.documentElement.dataset.rsReady === '1', id, { timeout: 8000 });
-  const strip = (page) => page.evaluate(() => {
-    const nav = document.getElementById('rs-strip-nav');
+  const rowsAre = (page, n) => page.waitForFunction((k) => document.querySelectorAll('#rs-inbox a[data-run-id]').length === k
+    && (k < 2 ? document.getElementById('rs-inbox').getClientRects().length === 0
+      : document.getElementById('rs-inbox').getClientRects().length > 0), n, { timeout: 8000 });
+  /* the inbox as a person sees it */
+  const inbox = (page) => page.evaluate(() => {
+    const nav = document.getElementById('rs-inbox');
     const visible = (e) => !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
-    const header = document.querySelector('.rs-header').getBoundingClientRect();
+    const box = (e) => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
+    const list = nav.querySelector('ol, ul');
     return {
       shown: visible(nav),
-      bottom: nav.getBoundingClientRect().bottom,
-      headerTop: header.top,
-      count: document.getElementById('rs-strip-count').textContent,
-      focusable: [...nav.querySelectorAll('button')].filter((b) => visible(b) && b.tabIndex >= 0).length,
-      items: [...nav.querySelectorAll('.rs-strip__run')].map((b) => {
-        const under = getComputedStyle(b, '::after');
-        return {
-          id: b.dataset.runId,
-          label: b.getAttribute('aria-label'),
-          current: b.getAttribute('aria-current'),
-          tabIndex: b.tabIndex,
-          shape: b.querySelector('[data-rs-avatar]')?.getAttribute('data-shape') || null,
-          avatarSize: b.querySelector('[data-rs-avatar]')?.getBoundingClientRect().width || 0,
-          dot: !!b.querySelector('.rs-strip__dot'),
-          underline: under.content !== 'none' && parseFloat(under.height) >= 2 && under.backgroundColor !== 'rgba(0, 0, 0, 0)',
-          keys: b.getAttribute('aria-keyshortcuts'),
-        };
-      }),
+      tag: nav.tagName,
+      label: nav.getAttribute('aria-label'),
+      heading: nav.querySelector('#rs-inbox-heading')?.textContent ?? null,
+      headingShown: visible(nav.querySelector('#rs-inbox-heading')),
+      box: box(nav),
+      header: box(document.querySelector('.rs-header')),
+      task: box(document.querySelector('.rs-task')),
+      mount: box(document.querySelector('.rs-mount')),
+      list: { scrollWidth: list.scrollWidth, clientWidth: list.clientWidth, scrollHeight: list.scrollHeight, clientHeight: list.clientHeight },
+      viewport: { width: innerWidth, height: innerHeight },
+      focusable: [...nav.querySelectorAll('a, button')].filter((b) => visible(b) && b.tabIndex >= 0).length,
+      rows: [...nav.querySelectorAll('a[data-run-id]')].map((a) => ({
+        id: a.dataset.runId,
+        current: a.getAttribute('aria-current'),
+        title: a.querySelector('.rs-inbox__title').textContent,
+        meta: a.querySelector('.rs-inbox__meta').textContent,
+        hintTone: a.querySelector('.rs-inbox__hint')?.getAttribute('data-tone') ?? null,
+        unread: !!a.querySelector('.rs-inbox__dot[data-new]'),
+        keys: a.getAttribute('aria-keyshortcuts'),
+        tabIndex: a.tabIndex,
+        shape: a.querySelector('[data-rs-avatar]')?.getAttribute('data-shape') || null,
+        box: box(a),
+        titleOverflows: (() => { const t = a.querySelector('.rs-inbox__title'); return t.scrollWidth > t.clientWidth + 1 || t.scrollHeight > t.clientHeight + 1; })(),
+      })),
     };
   });
   async function decide(page) {
-    await page.click('rs-action-row button[value="erledigt"]');
     await page.click('#rs-submit');
+  }
+  async function focusNote(page) {
+    const opener = page.locator('[data-rs-note-open]');
+    if (await opener.isVisible()) await opener.click();
+    await page.focus('#rs-note');
   }
   /** Arms a pending window launch as the CLI does (same 20 s deadline as
    * LAUNCH_PENDING_SECONDS: a cold persistent Edge on a busy Windows runner
@@ -127,7 +164,7 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
   }
   /** A test window opened by script (window.close() is allowed there). */
   async function openPopup(query) {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: 'reduce' });
+    const ctx = await browser.newContext({ viewport: { width: 880, height: 720 }, reducedMotion: 'reduce' });
     try {
       const opener = await ctx.newPage();
       await opener.goto(server.url('?client=test'));
@@ -139,34 +176,28 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
     } catch (e) { await ctx.close().catch(() => {}); throw e; }
   }
 
-  test('1 open: compact pop-up without a strip; header = quiet byline, strong report title', async () => {
+  test('1 open: compact pop-up without an inbox; header = quiet byline, strong report title', async () => {
     const [run] = showRuns(1);
     const { ctx, page, errors } = await open(run.run_id);
     try {
-      const s = await strip(page);
-      assert.equal(s.shown, false, 'no strip with exactly one open report');
+      const s = await inbox(page);
+      assert.equal(s.shown, false, 'no inbox with exactly one open report');
       assert.equal(s.focusable, 0);
-      assert.equal(await page.getAttribute('#rs-app', 'data-strip'), 'off');
+      assert.equal(await page.getAttribute('#rs-app', 'data-inbox'), 'off');
       const head = await page.evaluate(() => {
         const name = document.getElementById('rs-bot-name');
         const title = document.getElementById('rs-title');
         const avatar = document.getElementById('rs-bot-avatar');
         const more = document.getElementById('rs-more-btn');
         const task = document.getElementById('rs-task');
-        const root = getComputedStyle(document.documentElement);
         const px = (el) => parseFloat(getComputedStyle(el).fontSize);
         return {
           name: name.textContent,
           title: title.textContent,
           titleTag: title.tagName,
-          count: document.getElementById('rs-strip-count').textContent,
           nameWeight: Number(getComputedStyle(name).fontWeight),
           titleWeight: Number(getComputedStyle(title).fontWeight),
-          nameColor: getComputedStyle(name).color,
-          titleColor: getComputedStyle(title).color,
           bigger: px(title) > px(name),
-          ink: root.getPropertyValue('--rs-ink').trim(),
-          muted: root.getPropertyValue('--rs-muted').trim(),
           shape: avatar.getAttribute('data-shape'),
           avatarSize: avatar.getBoundingClientRect().width,
           byline: avatar.getBoundingClientRect().right <= name.getBoundingClientRect().left
@@ -177,16 +208,12 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
           inHeader: !!title.closest('header') && !!name.closest('header'),
         };
       });
-      const hex = (rgb) => '#' + rgb.match(/\d+/g).slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join('');
       assert.equal(head.name, 'Backup Agent');
       assert.equal(head.title, BOTS[0].title);
       assert.equal(head.titleTag, 'H1', 'the report title stays the page heading');
-      assert.equal(head.count, '', 'no open count with one report');
       assert.ok(head.titleWeight >= 600, 'strong title');
       assert.ok(head.nameWeight < 600, 'quiet name');
       assert.ok(head.bigger, 'the title is larger than the byline');
-      assert.equal(hex(head.titleColor), head.ink.toLowerCase(), 'the title in ink');
-      assert.equal(hex(head.nameColor), head.muted.toLowerCase(), 'the name muted');
       assert.equal(head.shape, 'squircle');
       assert.equal(head.avatarSize, 24, 'a small byline avatar');
       assert.ok(head.byline, 'avatar, name and the "…" menu share the byline');
@@ -200,38 +227,138 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
     } finally { await ctx.close(); }
   });
 
-  test('2 and 3 open: a slim avatar strip above the header with "n of m open", active underlined', async () => {
-    const runs = showRuns(3);
+  test('one open: no inbox (calm K3)', async () => {
+    const [run] = showRuns(1);
+    const { ctx, page } = await open(run.run_id);
+    try {
+      const one = judgeCalmFacts(await page.evaluate(calmEvaluator, { thresholds: CALM_THRESHOLDS, openRuns: 1 }));
+      assert.equal(one.items.K3.pass, true, (one.items.K3.reasons || []).join('; '));
+      show({ bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
+      await rowsAre(page, 2);
+      const two = judgeCalmFacts(await page.evaluate(calmEvaluator, { thresholds: CALM_THRESHOLDS, openRuns: 2 }));
+      assert.equal(two.items.K3.pass, true, (two.items.K3.reasons || []).join('; '));
+    } finally { await ctx.close(); }
+  });
+
+  test('two open: rail lists both in arrival order, current marked', async () => {
+    const runs = showRuns(2);
+    const urgent = show({ bot: BOTS[2].bot, identity: BOTS[2].identity, title: BOTS[2].title, urgent: true });
+    const all = [...runs, urgent];
     const { ctx, page, errors } = await open(runs[1].run_id);
     try {
-      const s = await strip(page);
+      await rowsAre(page, 3);
+      const s = await inbox(page);
       assert.equal(s.shown, true);
-      assert.ok(s.bottom <= s.headerTop + 0.5, 'strip sits above the header');
-      assert.equal(s.count, fill('strip_count', { n: 2, m: 3 }));
-      assert.deepEqual(s.items.map((x) => x.id), runs.map((r) => r.run_id), 'arrival order, oldest first');
-      s.items.forEach((item, i) => {
-        // name and title; " · new" while a waiting report is still unread
-        const base = fill('strip_item', { bot: BOTS[i].identity.name, title: BOTS[i].title });
-        assert.ok([base, `${base} ${de.sep} ${de.new}`].includes(item.label), item.label);
-        assert.equal(item.shape, BOTS[i].identity.avatar_shape);
-        assert.equal(item.avatarSize, 32);
-        assert.equal(item.dot, true, 'every open report shows its waiting dot');
-        assert.equal(item.keys, 'Control+' + (i + 1));
-      });
-      assert.deepEqual(s.items.map((x) => x.current), [null, 'page', null]);
-      assert.deepEqual(s.items.map((x) => x.underline), [false, true, false]);
-      assert.deepEqual(s.items.map((x) => x.tabIndex), [-1, 0, -1], 'roving tabindex: one stop');
-      assert.equal(s.focusable, 1);
-      // decide one elsewhere: 2 open stay, the strip remains and counts again
-      await server.clearRuns();
-      const two = showRuns(2);
-      await page.waitForFunction((n) => document.querySelectorAll('#rs-strip .rs-strip__run').length === n
-        && document.getElementById('rs-strip-nav').getClientRects().length > 0, 2);
-      await page.click(`#rs-strip [data-run-id="${two[0].run_id}"]`);
-      await activeIs(page, two[0].run_id);
-      const s2 = await strip(page);
-      assert.equal(s2.count, fill('strip_count', { n: 1, m: 2 }));
+      assert.equal(s.tag, 'NAV');
+      assert.equal(s.label, de.inbox_label);
+      assert.equal(s.heading, fill('inbox_heading', { n: 3 }));
+      assert.equal(s.headingShown, true, 'the rail names what it lists');
+      // a rail on the left, the full window height; the report beside it
+      assert.equal(s.box.left, 0);
+      assert.ok(Math.abs(s.box.height - s.viewport.height) <= 1, `full height (${s.box.height})`);
+      assert.ok(s.box.width >= 200 && s.box.width <= 300, `rail width ${s.box.width}`);
+      assert.ok(s.header.left >= s.box.right - 0.5, 'the header sits beside the rail');
+      assert.ok(s.mount.left >= s.box.right - 0.5, 'the report sits beside the rail');
+      assert.deepEqual(s.rows.map((x) => x.id), all.map((r) => r.run_id), 'arrival order, oldest first');
+      assert.deepEqual(s.rows.map((x) => x.title), BOTS.map((b) => b.title));
+      assert.deepEqual(s.rows.map((x) => x.current), [null, 'page', null]);
+      assert.deepEqual(s.rows.map((x) => x.shape), BOTS.map((b) => b.identity.avatar_shape));
+      assert.deepEqual(s.rows.map((x) => x.keys), ['Control+1', 'Control+2', 'Control+3']);
+      // bot · hint: the kind of task, or urgent (marked) before it
+      assert.equal(s.rows[0].meta, `${BOTS[0].identity.name} ${de.sep} ${de.ask_kind_approve}`);
+      assert.equal(s.rows[2].meta, `${BOTS[2].identity.name} ${de.sep} ${de.ask_urgent}`);
+      assert.equal(s.rows[2].hintTone, 'urgent');
+      // the ones not looked at yet carry the unread dot; the shown one does not
+      assert.deepEqual(s.rows.map((x) => x.unread), [true, false, true]);
+      // rows stack top to bottom
+      assert.ok(s.rows[0].box.bottom <= s.rows[1].box.top + 0.5 && s.rows[1].box.bottom <= s.rows[2].box.top + 0.5);
+      assert.deepEqual(s.rows.map((x) => x.tabIndex), [-1, 0, -1], 'one Tab stop, on the current row');
+
+      // a click opens that report; it is read then
+      await page.click(`#rs-inbox a[data-run-id="${runs[0].run_id}"]`);
+      await activeIs(page, runs[0].run_id);
+      await page.waitForFunction((id) => !document.querySelector(`#rs-inbox a[data-run-id="${id}"] .rs-inbox__dot[data-new]`), runs[0].run_id);
+      const s2 = await inbox(page);
+      assert.deepEqual(s2.rows.map((x) => x.current), ['page', null, null]);
+      assert.equal(new URL(page.url()).searchParams.get('run'), runs[0].run_id);
+
+      // dark theme: the rail keeps its own surface
+      await page.emulateMedia({ colorScheme: 'dark' });
+      const bg = await page.evaluate(() => [getComputedStyle(document.getElementById('rs-inbox')).backgroundColor, getComputedStyle(document.body).backgroundColor]);
+      assert.notEqual(bg[0], bg[1], 'the rail is a surface of its own');
+      // axe: no serious or critical findings, dark and light
+      await page.addScriptTag({ content: readFileSync(path.join(ROOT, 'vendor/axe.min.js'), 'utf8') });
+      for (const scheme of ['dark', 'light']) {
+        await page.emulateMedia({ colorScheme: scheme });
+        const found = await page.evaluate(() => window.axe.run(document, { resultTypes: ['violations'] }));
+        const bad = found.violations.filter((v) => ['serious', 'critical'].includes(v.impact)).map((v) => v.id);
+        assert.deepEqual(bad, [], scheme);
+      }
       assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('narrow window shows tabs instead of rail', async () => {
+    const runs = showRuns(5);
+    const { ctx, page, errors } = await open(runs[4].run_id, '', { width: 600, height: 720 });
+    try {
+      await rowsAre(page, 5);
+      const s = await inbox(page);
+      assert.equal(s.shown, true);
+      // a row under the header, above the task banner, as wide as the window
+      assert.ok(s.box.top >= s.header.bottom - 0.5, 'under the header');
+      assert.ok(s.box.bottom <= s.task.top + 0.5, 'above the task banner');
+      assert.ok(s.header.left < 1, 'no rail beside the header');
+      assert.equal(s.headingShown, false, 'tabs need no heading');
+      // tabs side by side, scrolling sideways when they do not fit
+      for (let i = 1; i < s.rows.length; i++) {
+        assert.ok(Math.abs(s.rows[i].box.top - s.rows[0].box.top) < 1, 'one row of tabs');
+        assert.ok(s.rows[i].box.left >= s.rows[i - 1].box.right - 0.5, 'side by side in arrival order');
+      }
+      assert.ok(s.list.scrollWidth > s.list.clientWidth, 'five tabs scroll sideways at 600 px');
+      assert.ok(s.box.height <= 80, `a slim row (${s.box.height})`);
+      const horizontalPageScroll = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+      assert.equal(horizontalPageScroll, false, 'the page itself never scrolls sideways');
+      // the current tab is scrolled into view
+      const last = s.rows[4];
+      assert.equal(last.current, 'page');
+      assert.ok(last.box.right <= s.viewport.width + 0.5 && last.box.left >= -0.5, 'the current tab is in view');
+      // the same page widened past 720 px becomes the rail
+      await page.setViewportSize({ width: 880, height: 720 });
+      const wide = await inbox(page);
+      assert.equal(wide.box.left, 0);
+      assert.ok(wide.header.left >= wide.box.right - 0.5);
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('twelve open: the rail scrolls on its own and long titles stay in their row', async () => {
+    const long = 'Sicherung der Dateiserver an allen drei Standorten nach dem Umzug prüfen';
+    const runs = showRuns(11);
+    runs.push(show({ bot: BOTS[0].bot, identity: BOTS[0].identity, title: long }));
+    const { ctx, page } = await open(runs[0].run_id, '', { width: 880, height: 600 });
+    try {
+      await rowsAre(page, 12);
+      const s = await inbox(page);
+      assert.equal(s.heading, fill('inbox_heading', { n: 12 }));
+      assert.ok(s.list.scrollHeight > s.list.clientHeight, 'twelve rows scroll inside the rail');
+      assert.ok(Math.abs(s.box.height - s.viewport.height) <= 1, 'the rail never grows the page');
+      const row = s.rows[11];
+      assert.equal(row.title, long);
+      assert.ok(row.titleOverflows, 'a long title is cut, not wrapped endlessly');
+      assert.ok(row.box.height <= 80, `the row stays compact (${row.box.height})`);
+      assert.ok(row.box.right <= s.box.right + 0.5, 'inside the rail');
+      // Ctrl+9 is the ninth report; Alt+Down past it reaches the twelfth
+      await page.keyboard.press('Control+9');
+      await activeIs(page, runs[8].run_id);
+      for (const id of runs.slice(9).map((r) => r.run_id)) {
+        await page.keyboard.press('Alt+ArrowDown');
+        await activeIs(page, id);
+      }
+      const after = await inbox(page);
+      const current = after.rows[11];
+      assert.equal(current.current, 'page');
+      assert.ok(current.box.bottom <= after.box.bottom + 0.5 && current.box.top >= after.box.top - 0.5, 'the current row is scrolled into view');
     } finally { await ctx.close(); }
   });
 
@@ -245,18 +372,18 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
       // over the next one after the advance
       assert.deepEqual(await page.$$eval('#rs-toasts .rs-toast', (t) => t.map((x) => x.textContent)), [], 'no toast over the next report');
       assert.equal(server.result(runs[0].run_id).status, 'submitted');
-      await page.waitForFunction(() => document.querySelectorAll('#rs-strip .rs-strip__run').length === 2);
-      assert.equal((await strip(page)).count, fill('strip_count', { n: 1, m: 2 }));
+      await rowsAre(page, 2);
+      assert.deepEqual((await inbox(page)).rows.map((x) => x.current), ['page', null]);
       assert.equal(await page.textContent('#rs-title'), BOTS[1].title);
-      assert.equal(await page.isEnabled('rs-action-row button[value="erledigt"]'), true, 'the next report is live');
+      assert.equal(await page.isEnabled('#rs-submit'), true, 'the next report is live');
 
       // a discard is a decision too
       await page.click('#rs-more-btn'); await page.click('#rs-discard');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await activeIs(page, runs[2].run_id);
       assert.equal(server.result(runs[1].run_id).status, 'cancelled');
-      await page.waitForFunction(() => document.getElementById('rs-strip-nav').getClientRects().length === 0);
-      assert.equal(await page.getAttribute('#rs-app', 'data-strip'), 'off', 'one open left: no strip');
+      await rowsAre(page, 1);
+      assert.equal(await page.getAttribute('#rs-app', 'data-inbox'), 'off', 'one open left: no inbox');
 
       await decide(page);
       await page.waitForSelector('.rs-banner[data-banner="submitted"][data-done]');
@@ -327,7 +454,7 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
       try {
         await decide(page);
         await page.waitForSelector('.rs-banner[data-done]');
-        const next = server.show(golden, { bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
+        const next = show({ bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
         await activeIs(page, next.run_id);
         await page.waitForTimeout(1400);
         assert.equal(page.isClosed(), false, 'a new report cancels the close');
@@ -367,7 +494,7 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
       // It replaces the entry: Chromium lets a script close a window that no
       // script opened only while its history holds one entry
       // (DOMWindow::Close), and the app window never adds one itself
-      const next = server.show(golden, { bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
+      const next = show({ bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
       const nextUrl = server.url(`?run=${next.run_id}`);
       await Promise.all([page.waitForURL((u) => u.href.includes(next.run_id)), page.evaluate((u) => location.replace(u), nextUrl)]);
       await ready(page);
@@ -416,78 +543,108 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
     }
   });
 
-  test('keyboard: Left/Right/Home/End on the strip, Ctrl+1..9 anywhere, arrows in text stay text', async () => {
+  test('Ctrl+2 opens the second report', async () => {
     const runs = showRuns(3);
     const ids = runs.map((r) => r.run_id);
     const { ctx, page, errors } = await open(ids[0]);
     const focused = () => page.evaluate(() => document.activeElement.dataset.runId || document.activeElement.id);
     try {
-      await page.evaluate(() => document.activeElement && document.activeElement.blur());
-      await page.keyboard.press('Tab');
-      assert.equal(await focused(), ids[0], 'the strip is the first Tab stop, on the active report');
+      await rowsAre(page, 3);
+      // Ctrl+n from anywhere: the n-th report, not the n-th bot
+      await page.keyboard.press('Control+2');
+      await activeIs(page, ids[1]);
+      assert.equal(await page.textContent('#rs-title'), BOTS[1].title);
+      assert.deepEqual((await inbox(page)).rows.map((x) => x.current), [null, 'page', null]);
+      await page.keyboard.press('Control+3');
+      await activeIs(page, ids[2]);
+      await page.keyboard.press('Control+1');
+      await activeIs(page, ids[0]);
+      // Ctrl+9 with three open: nothing happens
+      await page.keyboard.press('Control+9');
+      await page.waitForTimeout(150);
+      assert.equal(await page.evaluate(() => window.RS.activeRun), ids[0]);
+
+      // Alt+Down / Alt+Up: next and previous; no wrap at the ends
+      await page.keyboard.press('Alt+ArrowDown');
+      await activeIs(page, ids[1]);
+      await page.keyboard.press('Alt+ArrowDown');
+      await activeIs(page, ids[2]);
+      await page.keyboard.press('Alt+ArrowDown');
+      await page.waitForTimeout(150);
+      assert.equal(await page.evaluate(() => window.RS.activeRun), ids[2], 'the last stays the last');
+      await page.keyboard.press('Alt+ArrowUp');
+      await activeIs(page, ids[1]);
+
+      // the inbox is one Tab stop; arrows walk it and open the report
+      await page.focus(`#rs-inbox a[data-run-id="${ids[1]}"]`);
       const ring = await page.evaluate(() => {
         const s = getComputedStyle(document.activeElement);
         return { style: s.outlineStyle, width: parseFloat(s.outlineWidth) };
       });
-      assert.ok(ring.style !== 'none' && ring.width >= 2, 'visible focus ring on the strip');
-
-      await page.keyboard.press('ArrowRight');
-      await activeIs(page, ids[1]);
-      assert.equal(await focused(), ids[1], 'focus moves along the strip');
-      await page.keyboard.press('ArrowRight');
+      assert.ok(ring.style !== 'none' && ring.width >= 2, 'visible focus ring in the inbox');
+      await page.keyboard.press('ArrowDown');
       await activeIs(page, ids[2]);
-      await page.keyboard.press('ArrowRight');
-      await activeIs(page, ids[0]);
-      assert.equal(await focused(), ids[0], 'wraps around');
-      await page.keyboard.press('ArrowLeft');
-      await activeIs(page, ids[2]);
+      assert.equal(await focused(), ids[2], 'focus moves along the inbox');
       await page.keyboard.press('Home');
       await activeIs(page, ids[0]);
       await page.keyboard.press('End');
       await activeIs(page, ids[2]);
-      assert.equal(await focused(), ids[2]);
-      // one Tab leaves the strip (one stop)
-      await page.keyboard.press('Tab');
-      assert.equal(await focused(), 'rs-more-btn');
-
-      // Ctrl+n from anywhere
-      await page.keyboard.press('Control+2');
+      await page.keyboard.press('ArrowUp');
       await activeIs(page, ids[1]);
+      assert.equal(await focused(), ids[1]);
+
+      // arrows inside the note never switch reports
       await page.keyboard.press('Control+1');
       await activeIs(page, ids[0]);
-      assert.equal((await strip(page)).count, fill('strip_count', { n: 1, m: 3 }));
-
-      // arrows inside a text input never switch reports
-      const opener = page.locator('[data-starter="note-open"]');
-      if (await opener.isVisible()) await opener.click();
-      await page.fill('#starter-note', 'abc');
-      await page.focus('#starter-note');
-      await page.keyboard.press('ArrowLeft');
-      await page.keyboard.press('ArrowRight');
-      await page.keyboard.press('Home');
-      await page.keyboard.press('ArrowLeft');
+      await focusNote(page);
+      await page.keyboard.type('abc');
+      for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'ArrowLeft', 'Alt+ArrowDown']) await page.keyboard.press(key);
       await page.waitForTimeout(150);
       assert.equal(await page.evaluate(() => window.RS.activeRun), ids[0]);
-      assert.equal(await page.evaluate(() => document.activeElement.id), 'starter-note');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-note');
       await page.keyboard.type('X');
-      assert.equal(await page.inputValue('#starter-note'), 'Xabc', 'the caret moved as text editing');
+      assert.equal(await page.inputValue('#rs-note'), 'Xabc', 'the caret moved as text editing');
       // Ctrl+3 still switches from the text field; the draft stays with its report
       await page.keyboard.press('Control+3');
       await activeIs(page, ids[2]);
       await page.keyboard.press('Control+1');
       await activeIs(page, ids[0]);
-      assert.equal(await page.inputValue('#starter-note'), 'Xabc');
-      // Ctrl+9 with three open: nothing happens
-      await page.keyboard.press('Control+9');
-      await page.waitForTimeout(150);
-      assert.equal(await page.evaluate(() => window.RS.activeRun), ids[0]);
+      assert.equal(await page.inputValue('#rs-note'), 'Xabc');
+      // Escape closes the "…" menu
+      await page.click('#rs-more-btn');
+      assert.equal(await page.isVisible('#rs-more-panel'), true);
+      await page.keyboard.press('Escape');
+      assert.equal(await page.isHidden('#rs-more-panel'), true);
+      assert.deepEqual(errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('arrival while typing keeps focus and report', async () => {
+    const [a] = showRuns(1);
+    const { ctx, page, errors } = await open(a.run_id, '&burst_ms=300');
+    try {
+      await focusNote(page);
+      await page.keyboard.type('Bitte zuerst');
+      const b = show({ bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
+      await rowsAre(page, 2);
+      await page.keyboard.type(' prüfen');
+      assert.equal(await page.evaluate(() => window.RS.activeRun), a.run_id, 'the report on screen stays');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-note', 'focus stays in the note');
+      assert.equal(await page.inputValue('#rs-note'), 'Bitte zuerst prüfen', 'no keystroke lost');
+      const s = await inbox(page);
+      assert.deepEqual(s.rows.map((x) => x.id), [a.run_id, b.run_id], 'the arrival is appended');
+      assert.deepEqual(s.rows.map((x) => x.unread), [false, true]);
+      // announced once, by its title
+      await page.waitForFunction((text) => [...document.querySelectorAll('#rs-toasts .rs-toast')].some((x) => x.textContent.includes(text)), BOTS[1].title, { timeout: 4000 });
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-note', 'the toast does not take focus');
+      assert.equal(await page.title(), de.unread_prefix + fill('window_title', { title: BOTS[0].title, bot: BOTS[0].identity.name }));
       assert.deepEqual(errors, []);
     } finally { await ctx.close(); }
   });
 
   test('fix1: an ordinary tab or window never closes itself, even with one history entry', async () => {
     const ordinary = async (query, mode) => {
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: 'reduce' });
+      const ctx = await browser.newContext({ viewport: { width: 880, height: 720 }, reducedMotion: 'reduce' });
       const page = await ctx.newPage();
       try {
         const url = server.url(query);
@@ -531,7 +688,7 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
         await new Promise((r) => setTimeout(r, 3500));
         try { await route.continue(); } catch { /* page gone */ }
       });
-      const next = server.show(golden, { bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
+      const next = show({ bot: BOTS[1].bot, identity: BOTS[1].identity, title: BOTS[1].title });
       await page.waitForTimeout(2800);
       assert.equal(page.isClosed(), false, 'the arrival stops the close while its detail loads');
       await activeIs(page, next.run_id);
@@ -541,7 +698,7 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
     } finally { await ctx.close(); }
   });
 
-  test('fix1: auto-advance keeps the strip order when the list update beats the response', async () => {
+  test('fix1: auto-advance keeps the inbox order when the list update beats the response', async () => {
     for (const kind of ['submit', 'cancel']) {
       await server.clearRuns();
       const ids = showRuns(3).map((r) => r.run_id);
@@ -553,7 +710,7 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
           await new Promise((r) => setTimeout(r, 700));
           await route.fulfill({ response });
         });
-        await page.waitForFunction(() => document.querySelectorAll('#rs-strip .rs-strip__run').length === 3);
+        await rowsAre(page, 3);
         if (kind === 'submit') await decide(page);
         else {
           await page.click('#rs-more-btn'); await page.click('#rs-discard');
@@ -571,7 +728,7 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
     const ids = showRuns(3).map((r) => r.run_id);
     const { ctx, page } = await open(ids[1]);
     try {
-      await page.waitForFunction(() => document.querySelectorAll('#rs-strip .rs-strip__run').length === 3);
+      await rowsAre(page, 3);
       await page.route('**/submit', async (route) => {
         const response = await route.fetch();
         const headers = { 'X-RS-CSRF': await server.csrf(), 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${server.port}` };
@@ -586,18 +743,20 @@ describe('pop-up: strip, auto-advance, done state, keyboard (served, headless Ed
     } finally { await ctx.close(); }
   });
 
-  test('reload keeps the active report and its place in the strip', async () => {
+  test('reload keeps the active report and its place in the inbox', async () => {
     const runs = showRuns(3);
     const { ctx, page } = await open(runs[0].run_id);
     try {
+      await rowsAre(page, 3);
       await page.keyboard.press('Control+3');
       await activeIs(page, runs[2].run_id);
       await page.reload();
       await ready(page);
       assert.equal(await page.evaluate(() => window.RS.activeRun), runs[2].run_id);
-      const s = await strip(page);
-      assert.deepEqual(s.items.map((x) => x.current), [null, null, 'page']);
-      assert.equal(s.count, fill('strip_count', { n: 3, m: 3 }));
+      await rowsAre(page, 3);
+      const s = await inbox(page);
+      assert.deepEqual(s.rows.map((x) => x.id), runs.map((r) => r.run_id));
+      assert.deepEqual(s.rows.map((x) => x.current), [null, null, 'page']);
       assert.equal(await page.textContent('#rs-title'), BOTS[2].title);
     } finally { await ctx.close(); }
   });

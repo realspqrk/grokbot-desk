@@ -184,7 +184,7 @@
     gone: {},          // run id -> true once this page decided it (before SSE says so)
     done: null,        // null, 'closing' or 'kept': the calm done state after the last decision
     order: [],         // open run ids in arrival order (arrivals append)
-    groups: [],        // bot ids in first-seen order while they have open runs
+    inboxShown: null,  // run id whose inbox row was last brought into view
     burst: null        // { ids, bots, timer, started }: arrivals not announced yet
   };
   var el = {};
@@ -274,7 +274,7 @@
   }
 
   /* a toast belongs to the report it was raised for: switching reports
-     (auto-advance after a decision, a new arrival, the strip) clears it */
+     (auto-advance after a decision, a new arrival, the inbox) clears it */
   function clearToasts() {
     if (el.toasts) el.toasts.textContent = '';
   }
@@ -556,7 +556,7 @@
       if (!r.ok) return;
       var s = findRun(id);
       if (s) s.unread = false;
-      renderStrip();
+      renderInbox();
       updateTitle();
     }, function () { delete state.reading[id]; });
   }
@@ -569,7 +569,7 @@
   // --------------------------------------------------------- identity --
   // Each run carries its bot's name, avatar URL (same origin, or null for
   // initials) and, for the shown run only, accent tokens per theme. The shown
-  // run sets the one accent; strip entries never carry one (C16/K1).
+  // run sets the one accent; inbox rows never carry one (C16/K1).
   // A run may also name a shape and colour. The page draws the shape from
   // the core set in boot.avatar_shapes (path data only, never bot SVG); the
   // eyes are holes. Precedence: image > shape > initials.
@@ -750,21 +750,25 @@
     el.task.hidden = false;
   }
 
-  // ------------------------------------------------------------ strip --
-  /* The window is a pop-up for one decision at a time. With 2+ open
-     reports a slim strip above the header shows each one's avatar with its
-     waiting dot (filled while new, a ring once seen), the active one
-     underlined, and "n of m open". It is one Tab stop (roving tabindex):
-     Left/Right/Home/End switch along it, Ctrl+1..9 from anywhere. Decided
-     reports leave the strip; with one open report there is none (K3). */
-  /* Open reports in a stable order. The page keeps registration order
-     (summary seq, assigned when the run was registered) and groups it by
-     bot: the bots in the order they first showed up, each bot's reports in
-     that same order. A record saved before seq existed is numbered on load,
-     in created order, ahead of later registrations. One that still has no
-     seq stays in that created cohort, ahead of sequenced reports.
-     Arrivals append; nothing jumps during a burst. Bot ids are dictionary
-     keys, so these maps have no prototype (a bot id may be "constructor"). */
+  // ------------------------------------------------------------ inbox --
+  /* With 2+ open reports an inbox lists every one of them, one row per
+     report (not per bot) in arrival order: a side rail in a window 720 px
+     or wider, a horizontal scrolling tab row under the header below that
+     (shell.css). A row shows the bot's avatar, the title, "bot · hint"
+     (urgent, the due date, else the kind of task) and a dot while the
+     report is unread. The current row carries aria-current="page". The
+     list is one Tab stop (roving tabindex): arrows, Home and End open the
+     report next to it; Ctrl/Cmd+1..9 and Alt+Up/Down work from anywhere.
+     Decided reports leave the inbox; with one open report there is none
+     (K3). An arrival never replaces the report on screen. */
+  /* Open reports in a stable order: registration order (summary seq,
+     assigned when the run was registered). A record saved before seq
+     existed is numbered on load, in created order, ahead of later
+     registrations. One that still has no seq stays in that created
+     cohort, ahead of sequenced reports. Arrivals append; nothing jumps
+     during a burst. Bot ids are dictionary keys, so these maps have no
+     prototype (a bot id may be "constructor"). */
+  var INBOX_MAX = 12;
   function botKey(run) { return run.bot || run.bot_display || ''; }
   function dict() { return Object.create(null); }
 
@@ -786,163 +790,164 @@
       var ka = registrationRank(a), kb = registrationRank(b);
       return ka[0] - kb[0] || ka[1] - kb[1];
     });
-    fresh.forEach(function (r) {
-      order.push(r.run_id);
-      have[r.run_id] = true;
-    });
+    fresh.forEach(function (r) { order.push(r.run_id); });
     state.order = order;
-    var bots = dict();
-    order.forEach(function (id) { bots[botKey(open[id])] = true; });
-    var groups = state.groups.filter(function (k) { return bots[k]; });
-    var seen = dict();
-    groups.forEach(function (k) { seen[k] = true; });
-    order.forEach(function (id) {
-      var k = botKey(open[id]);
-      if (!seen[k]) { groups.push(k); seen[k] = true; }
-    });
-    state.groups = groups;
   }
 
+  /* the open reports in inbox order (at most the 12 the server lists) */
   function openRuns() {
     var open = state.runs.filter(function (r) {
       return (r.state === undefined || r.state === 'open') && !state.gone[r.run_id];
     });
     var rank = dict();
     state.order.forEach(function (id, i) { rank[id] = i; });
-    var group = dict();
-    state.groups.forEach(function (k, i) { group[k] = i; });
-    function at(table, key) { return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : 1e9; }
+    function at(id) { return Object.prototype.hasOwnProperty.call(rank, id) ? rank[id] : 1e9; }
     return open.map(function (r, i) { return { r: r, i: i }; }).sort(function (x, y) {
-      return (at(group, botKey(x.r)) - at(group, botKey(y.r)))
-        || (at(rank, x.r.run_id) - at(rank, y.r.run_id))
-        || (y.i - x.i);
-    }).map(function (x) { return x.r; });
+      return (at(x.r.run_id) - at(y.r.run_id)) || (y.i - x.i);
+    }).map(function (x) { return x.r; }).slice(0, INBOX_MAX);
   }
 
-  /* one strip entry per bot: { key, runs } in strip order (max 12) */
-  function stripGroups() {
-    var groups = [];
-    var byKey = dict();
-    openRuns().forEach(function (r) {
-      var k = botKey(r);
-      if (!byKey[k]) { byKey[k] = { key: k, runs: [] }; groups.push(byKey[k]); }
-      byKey[k].runs.push(r);
+  function inboxRows() {
+    return Array.prototype.slice.call(el.inboxList.querySelectorAll('a[data-run-id]'));
+  }
+
+  function inboxRow(runId) {
+    return inboxRows().filter(function (a) { return a.getAttribute('data-run-id') === runId; })[0] || null;
+  }
+
+  function focusInbox(runId) {
+    var row = inboxRow(runId) || el.inboxList.querySelector('a[tabindex="0"]');
+    if (row && !el.inbox.hidden) row.focus({ preventScroll: true });
+  }
+
+  /* the row's hint: urgent, else the due date, else the kind of task */
+  function hintOf(run, now) {
+    if (run.urgent) return { text: t('ask_urgent'), tone: 'urgent' };
+    var due = window.RSAsk.dueInfo(run.due, now);
+    if (due) return { text: due.text, tone: due.urgent ? 'urgent' : 'due' };
+    return { text: window.RSAsk.kindOf(run, now).text, tone: null };
+  }
+
+  function inboxItem(run, i, current, now) {
+    var who = identityOf(run);
+    var unread = !!run.unread && !current;
+    var li = document.createElement('li');
+    var a = document.createElement('a');
+    a.className = 'rs-inbox__row';
+    a.href = '?run=' + encodeURIComponent(run.run_id);
+    a.setAttribute('data-run-id', run.run_id);
+    a.setAttribute('data-ask', run.ask || '');
+    if (current) a.setAttribute('aria-current', 'page');
+    if (i < 9) a.setAttribute('aria-keyshortcuts', 'Control+' + (i + 1));
+    a.title = run.title;
+    a.appendChild(avatarBox(who));
+    var text = document.createElement('span');
+    text.className = 'rs-inbox__text';
+    text.appendChild(textNode('span', 'rs-inbox__title', run.title));
+    /* a space between title and meta for the accessible name (a grid
+       ignores whitespace-only text, so it paints nothing) */
+    text.appendChild(document.createTextNode(' '));
+    var meta = document.createElement('span');
+    meta.className = 'rs-inbox__meta';
+    meta.appendChild(textNode('span', 'rs-inbox__bot', who.name));
+    var hint = hintOf(run, now);
+    meta.appendChild(document.createTextNode(' ' + t('sep') + ' '));
+    var hintEl = textNode('span', 'rs-inbox__hint', hint.text);
+    if (hint.tone) hintEl.setAttribute('data-tone', hint.tone);
+    meta.appendChild(hintEl);
+    text.appendChild(meta);
+    a.appendChild(text);
+    var dot = document.createElement('span');
+    dot.className = 'rs-inbox__dot';
+    dot.setAttribute('aria-hidden', 'true');
+    if (unread) dot.setAttribute('data-new', '');
+    a.appendChild(dot);
+    /* the row's name is its text: "title bot · hint", then "· new" */
+    if (unread) a.appendChild(textNode('span', 'rs-vh', ' ' + t('sep') + ' ' + t('new')));
+    a.addEventListener('click', function (e) {
+      /* a modified or middle click keeps the link's own meaning */
+      if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      if (run.run_id !== state.activeId) activate(run.run_id, { focusInbox: true });
     });
-    return groups.slice(0, 12);
+    li.appendChild(a);
+    return li;
   }
 
-  function groupOf(runId) {
-    return stripGroups().filter(function (g) {
-      return g.runs.some(function (r) { return r.run_id === runId; });
-    })[0] || null;
-  }
-
-  /* where a group leads: that bot's oldest open report; the current group
-     steps on to that bot's next report (wrapping) */
-  function groupTarget(g) {
-    var ids = g.runs.map(function (r) { return r.run_id; });
-    var at = ids.indexOf(state.activeId);
-    if (at < 0) return ids[0];
-    return ids[(at + 1) % ids.length];
-  }
-
-  function stripButtons() {
-    return Array.prototype.slice.call(el.strip.querySelectorAll('.rs-strip__run'));
-  }
-
-  function focusStrip(runId) {
-    var g = groupOf(runId);
-    var b = (g && stripButtons().filter(function (x) { return x.getAttribute('data-bot') === g.key; })[0])
-      || el.strip.querySelector('.rs-strip__run[tabindex="0"]');
-    if (b && !el.stripNav.hidden) b.focus();
-  }
-
-  function renderStrip() {
-    var groups = stripGroups();
-    var all = openRuns();
-    var heldEl = el.strip.contains(document.activeElement) ? document.activeElement : null;
-    var held = heldEl ? heldEl.getAttribute('data-bot') : null;
+  function renderInbox() {
+    var runs = openRuns();
+    var on = runs.length >= 2;
+    var focused = el.inboxList.contains(document.activeElement) ? document.activeElement : null;
+    var held = focused ? focused.getAttribute('data-run-id') : null;
+    var scrollY = el.inboxList.scrollTop;
+    var scrollX = el.inboxList.scrollLeft;
     var at = -1;
-    groups.forEach(function (g, i) {
-      if (g.runs.some(function (r) { return r.run_id === state.activeId; })) at = i;
+    runs.forEach(function (r, i) { if (r.run_id === state.activeId) at = i; });
+    var now = new Date();
+    el.inboxList.textContent = '';
+    runs.forEach(function (run, i) {
+      el.inboxList.appendChild(inboxItem(run, i, i === at, now));
     });
-    var position = -1;
-    all.forEach(function (r, i) { if (r.run_id === state.activeId) position = i; });
-    el.strip.textContent = '';
-    groups.forEach(function (g, i) {
-      var current = i === at;
-      var lead = g.runs[0];
-      var who = identityOf(lead);
-      var waiting = g.runs.some(function (r) { return r.unread && r.run_id !== state.activeId; });
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'rs-strip__run';
-      b.setAttribute('data-bot', g.key);
-      b.setAttribute('data-run-id', current ? state.activeId : lead.run_id);
-      /* accessible name and tooltip: the bot and the report title, or the
-         bot and how many reports it has waiting. The current bot's avatar
-         cycles its reports, so that one also says how to step on. */
-      var label = g.runs.length > 1
-        ? t(current ? 'strip_cycle' : 'strip_group', { bot: who.name, n: number(g.runs.length) })
-        : t('strip_item', { bot: who.name, title: lead.title });
-      if (waiting) label += ' ' + t('sep') + ' ' + t('new');
-      b.setAttribute('aria-label', label);
-      b.title = label;
-      if (current) b.setAttribute('aria-current', 'page');
-      b.tabIndex = i === Math.max(at, 0) ? 0 : -1;
-      if (i < 9) b.setAttribute('aria-keyshortcuts', 'Control+' + (i + 1));
-      b.appendChild(avatarBox(who, 'md'));
-      var dot = document.createElement('span');
-      dot.className = 'rs-strip__dot';
-      if (waiting) dot.setAttribute('data-new', '');
-      b.appendChild(dot);
-      if (g.runs.length > 1) {
-        var badge = document.createElement('span');
-        badge.className = 'rs-strip__badge';
-        badge.setAttribute('aria-hidden', 'true');
-        badge.textContent = number(g.runs.length);
-        b.appendChild(badge);
-      }
-      b.addEventListener('click', function () {
-        var target = groupTarget(g);
-        if (target && target !== state.activeId) activate(target, { focusStrip: true });
-      });
-      el.strip.appendChild(b);
-    });
-    var on = all.length >= 2;
-    /* the open count sits in the header's byline, only while several wait */
-    el.stripCount.textContent = !on ? ''
-      : position >= 0 ? t('strip_count', { n: position + 1, m: all.length })
-        : t('strip_count_all', { m: all.length });
-    el.stripNav.hidden = !on;
-    el.app.setAttribute('data-strip', on ? 'on' : 'off');
-    if (held) {
-      var again = stripButtons().filter(function (x) { return x.getAttribute('data-bot') === held; })[0];
-      if (again && !el.stripNav.hidden) again.focus();
+    var rows = inboxRows();
+    var stop = rows[Math.max(at, 0)];
+    rows.forEach(function (a) { a.tabIndex = a === stop ? 0 : -1; });
+    el.inboxHeading.textContent = on ? t('inbox_heading', { n: number(runs.length) }) : '';
+    el.inbox.hidden = !on;
+    el.app.setAttribute('data-inbox', on ? 'on' : 'off');
+    el.inboxList.scrollTop = scrollY;
+    el.inboxList.scrollLeft = scrollX;
+    if (held && on) {
+      var again = inboxRow(held) || stop;
+      if (again) again.focus({ preventScroll: true });
+    }
+    /* the current row comes into view once, when it becomes current;
+       otherwise the person's own scrolling stays */
+    if (!on || at < 0) state.inboxShown = null;
+    else if (state.inboxShown !== state.activeId) {
+      state.inboxShown = state.activeId;
+      revealRow(rows[at]);
     }
   }
 
-  function onStripKey(e) {
+  /* scrolls only the inbox list, never the page */
+  function revealRow(row) {
+    var list = el.inboxList;
+    var lr = list.getBoundingClientRect();
+    var rr = row.getBoundingClientRect();
+    if (rr.top < lr.top) list.scrollTop -= lr.top - rr.top;
+    else if (rr.bottom > lr.bottom) list.scrollTop += rr.bottom - lr.bottom;
+    if (rr.left < lr.left) list.scrollLeft -= lr.left - rr.left;
+    else if (rr.right > lr.right) list.scrollLeft += rr.right - lr.right;
+  }
+
+  /* the report `step` rows from the current one (no wrap), or null */
+  function inboxStep(step) {
+    var runs = openRuns();
+    var at = -1;
+    runs.forEach(function (r, i) { if (r.run_id === state.activeId) at = i; });
+    var j = at < 0 ? (step > 0 ? 0 : runs.length - 1) : at + step;
+    return j >= 0 && j < runs.length ? runs[j].run_id : null;
+  }
+
+  function onInboxKey(e) {
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-    var buttons = stripButtons();
-    var i = buttons.indexOf(document.activeElement);
-    var n = buttons.length;
+    var rows = inboxRows();
+    var i = rows.indexOf(document.activeElement);
+    var n = rows.length;
     if (i < 0 || !n) return;
     var j;
-    if (e.key === 'ArrowRight') j = (i + 1) % n;
-    else if (e.key === 'ArrowLeft') j = (i - 1 + n) % n;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') j = Math.min(i + 1, n - 1);
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') j = Math.max(i - 1, 0);
     else if (e.key === 'Home') j = 0;
     else if (e.key === 'End') j = n - 1;
     else return;
     e.preventDefault();
-    var target = buttons[j];
-    buttons.forEach(function (b) { b.tabIndex = b === target ? 0 : -1; });
-    target.focus();
-    /* a step along the strip goes to that bot's oldest open report; its own
-       group (a single one: Home/End) stays where it is */
-    var g = stripGroups()[j];
-    if (!g || g.runs.some(function (r) { return r.run_id === state.activeId; })) return;
-    activate(g.runs[0].run_id, { focusStrip: true });
+    var target = rows[j];
+    rows.forEach(function (a) { a.tabIndex = a === target ? 0 : -1; });
+    target.focus({ preventScroll: true });
+    revealRow(target);
+    var id = target.getAttribute('data-run-id');
+    if (id !== state.activeId) activate(id, { focusInbox: true });
   }
 
   // ----------------------------------------------------- submit bar --
@@ -1227,27 +1232,15 @@
     return appWindow;
   }
 
-  /* The strip order after a report, captured when its decision starts:
-     the same bot's later reports, then that bot's earlier ones (a wrap),
-     then the later bots, then the earlier ones. The server's list drops
-     the report before our own answer may arrive, so the order is not
-     read again afterwards. */
+  /* The inbox order after a report, captured when its decision starts:
+     the reports below it, then the ones above it (a wrap). The server's
+     list drops the report before our own answer may arrive, so the order
+     is not read again afterwards. */
   function successorsOf(runId) {
-    var runs = openRuns();
-    var at = -1;
-    runs.forEach(function (r, i) { if (r.run_id === runId) at = i; });
-    if (at < 0) return runs.map(function (r) { return r.run_id; });
-    var mine = botKey(runs[at]);
-    var later = [], earlier = [], restLater = [], restEarlier = [];
-    runs.forEach(function (r, i) {
-      if (i === at) return;
-      var same = botKey(r) === mine;
-      if (same && i > at) later.push(r.run_id);
-      else if (same) earlier.push(r.run_id);
-      else if (i > at) restLater.push(r.run_id);
-      else restEarlier.push(r.run_id);
-    });
-    return later.concat(earlier, restLater, restEarlier);
+    var ids = openRuns().map(function (r) { return r.run_id; });
+    var at = ids.indexOf(runId);
+    if (at < 0) return ids;
+    return ids.slice(at + 1).concat(ids.slice(0, at));
   }
 
   /* the intended successor if it is still open, else the next of the
@@ -1270,7 +1263,7 @@
     document.documentElement.setAttribute('data-rs-done', '1');
     var banner = setBanner(state.active.state);
     if (banner) banner.focus();
-    renderStrip();
+    renderInbox();
     if (state.done === 'closing' && mayClose()) scheduleClose();
   }
 
@@ -1377,7 +1370,7 @@
     setBanner(kind);
     lockTemplate();
     renderBar();
-    renderStrip();
+    renderInbox();
     updateTitle();
     focusResult();
   }
@@ -1497,7 +1490,7 @@
     }
   }
 
-  /** Renders a fetched run detail: blocks, banner/lock, bar, strip, title. */
+  /** Renders a fetched run detail: blocks, banner/lock, bar, inbox, title. */
   function mountRun(run, opts) {
     clearDone();
     state.hydrated = run.state === 'open' ? null : hydrationKey(run);
@@ -1556,12 +1549,12 @@
        ready to send focuses the primary */
     else if (!refocused && state.mode !== 'decide') state.composer.focus();
     else if (state.touched && document.activeElement === document.body && !el.submit.disabled) el.submit.focus();
-    renderStrip();
+    renderInbox();
     updateTitle();
     maybeMarkRead();
     // the window may get focus a moment after the run renders
     setTimeout(maybeMarkRead, 300);
-    if (opts.focusStrip) focusStrip(run.run_id);
+    if (opts.focusInbox) focusInbox(run.run_id);
     else if (opts.focusTitle) el.title.focus();
     else if (opts.focusResult) focusResult();
     watchFold(root);
@@ -1643,7 +1636,7 @@
     }
     watchFold(null);
     renderBar();
-    renderStrip();
+    renderInbox();
     updateTitle();
     setReady(true);
     if (focusedId) {
@@ -1662,7 +1655,7 @@
     var status = textNode('p', 'rs-doorbell__state', '');
     status.id = 'rs-doorbell-state';
     section.appendChild(status);
-    /* reports waiting meanwhile: the strip may be hidden (one report), so
+    /* reports waiting meanwhile: the inbox is hidden with one report, so
        the page names them and opens the first one */
     var waitingRow = document.createElement('p');
     waitingRow.className = 'rs-doorbell__waiting';
@@ -1952,7 +1945,7 @@
       var wanted = query.get('run');
       var newestId = runs[0] && !doorbellPage ? runs[0].run_id : null;
       if (wanted || newestId) {
-        renderStrip();
+        renderInbox();
         updateTitle();
         activate(wanted || newestId, { fallback: wanted ? newestId : null });
         return;
@@ -1964,7 +1957,7 @@
        stays, touched or not; an arrival becomes active only when nothing
        open is shown (empty, or the shown report is decided or gone) and no
        other report is loading. The oldest arrival goes first; the rest wait
-       in the strip and the burst is announced once (noteArrivals). */
+       in the inbox and the burst is announced once (noteArrivals). */
     if (fresh.length) {
       var oldest = fresh[fresh.length - 1];
       /* the doorbell setup page stays until the person opens a report */
@@ -1974,7 +1967,7 @@
     }
     if (!a && !state.pending) { showEmpty(); return; }
     if (a && a.state !== 'open') setBanner(a.state);
-    renderStrip();
+    renderInbox();
     updateTitle();
   }
 
@@ -2133,7 +2126,7 @@
       window.name = 'rs-app:' + appToken + ':' + sid;
     });
     /* `doorbell setup` while this window is open: show the setup page here;
-       open reports stay in the strip */
+       open reports stay in the inbox */
     es.addEventListener('page', function (ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
@@ -2163,6 +2156,11 @@
     return es;
   }
 
+  function isTextField(node) {
+    return !!(node && node.closest && node.closest('textarea, select, [contenteditable=""], [contenteditable="true"], '
+      + 'input:not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="reset"])'));
+  }
+
   function onKey(e) {
     if (document.querySelector('dialog[open]')) return;
     if (e.key === 'Escape' && !el.morePanel.hidden) {
@@ -2187,11 +2185,19 @@
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !e.isComposing) {
       var m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || '');
       if (!m) return;
-      var g = stripGroups()[Number(m[1]) - 1];
-      if (!g) return;
+      var run = openRuns()[Number(m[1]) - 1];
+      if (!run) return;
       e.preventDefault();
-      var target = groupTarget(g);
-      if (target && target !== state.activeId) activate(target, { focusTitle: true });
+      if (run.run_id !== state.activeId) activate(run.run_id, { focusTitle: true });
+      return;
+    }
+    /* Alt+Up/Down: the previous or next report. In a text field the keys
+       stay text editing (macOS moves the caret by paragraph). */
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      if (isTextField(e.target)) return;
+      var next = inboxStep(e.key === 'ArrowDown' ? 1 : -1);
+      e.preventDefault();
+      if (next && next !== state.activeId) activate(next, { focusInbox: el.inboxList.contains(document.activeElement), focusTitle: true });
     }
   }
 
@@ -2210,9 +2216,9 @@
   function start() {
     el = {
       app: document.getElementById('rs-app'),
-      stripNav: document.getElementById('rs-strip-nav'),
-      strip: document.getElementById('rs-strip'),
-      stripCount: document.getElementById('rs-strip-count'),
+      inbox: document.getElementById('rs-inbox'),
+      inboxHeading: document.getElementById('rs-inbox-heading'),
+      inboxList: document.getElementById('rs-inbox-list'),
       moreBtn: document.getElementById('rs-more-btn'),
       morePanel: document.getElementById('rs-more-panel'),
       moreExtra: document.getElementById('rs-more-extra'),
@@ -2322,7 +2328,7 @@
     }
 
     document.addEventListener('keydown', onKey);
-    el.strip.addEventListener('keydown', onStripKey);
+    el.inboxList.addEventListener('keydown', onInboxKey);
     window.addEventListener('focus', maybeMarkRead);
     document.addEventListener('pointerdown', maybeMarkRead, true);
     document.addEventListener('keydown', maybeMarkRead, true);
