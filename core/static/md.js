@@ -443,7 +443,7 @@
           /* status, not input: a glyph and a word, no box, no checkbox role */
           li.className = 'rs-md__task';
           li.setAttribute('data-state', task.done ? 'done' : 'open');
-          var mark = make('span', 'rs-md__mark', task.done ? '✓' : '○');
+          var mark = make('span', 'rs-md__mark', task.done ? '✓' : '–');
           mark.setAttribute('aria-hidden', 'true');
           /* a status colour on a small mark only (calm K6) */
           if (task.done) mark.setAttribute('data-rs-status', 'ok');

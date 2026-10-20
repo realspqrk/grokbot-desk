@@ -147,7 +147,7 @@ describe('content blocks (served, headless browser)', { skip }, () => {
       }));
       assert.deepEqual(glyphs.map((g) => [g.state, g.glyph, g.hidden, g.border, g.background]), [
         ['done', '✓', 'true', '0px', 'rgba(0, 0, 0, 0)'],
-        ['open', '○', 'true', '0px', 'rgba(0, 0, 0, 0)'],
+        ['open', '–', 'true', '0px', 'rgba(0, 0, 0, 0)'],
       ]);
       assert.ok(glyphs[0].text.includes(de.blk_task_done), glyphs[0].text);
       assert.ok(glyphs[1].text.includes(de.blk_task_open), glyphs[1].text);

@@ -652,6 +652,10 @@ async function expectMode() {
         for (const [copyId, expected] of Object.entries(testCase.expect.copies || {})) {
           const selector = copySelector(copyId);
           await reveal(page, selector);
+          if (!(await page.$(selector))) {
+            findings.push({ fixture: testCase.fixture, copy_id: copyId, error: 'copy control missing from the page', expected });
+            continue;
+          }
           let body;
           try {
             body = await clickAndCaptureCopy(page, selector);

@@ -935,6 +935,16 @@ test('round 2 finding 1: expect awaits a 150 ms route and detects mismatching bo
   const mismatched = await scope.expectMode();
   assert.equal(mismatched.ok, false);
   assert.equal(mismatched.findings[0].actual, 'wrong text');
+
+  /* an expected copy id that the page lacks is a finding, not a crash */
+  actual = 'expected text';
+  testCase.expect.copies.gone = 'never rendered';
+  const missing = await scope.expectMode();
+  assert.equal(missing.ok, false);
+  const absent = missing.findings.find((item) => item.copy_id === 'gone');
+  assert.ok(absent, JSON.stringify(missing.findings));
+  assert.equal(absent.fixture, 'test');
+  assert.match(absent.error, /missing/);
 });
 
 test('round 2 finding 2: network accepts copy-only edge expects and rejects malformed supplied steps', async () => {

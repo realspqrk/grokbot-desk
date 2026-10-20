@@ -459,8 +459,10 @@ describe('footer: composer, chips, ask contract, request state (served, headless
       assert.equal(await page.textContent('#rs-task .rs-task__what'), fill('ask_done_revise', { bot: de.task_the_bot }));
       /* the imperative why belongs to the open report */
       assert.equal(await page.isVisible('#rs-task .rs-task__why'), false);
+      assert.equal(await page.locator('#rs-mount .rs-reply').count(), 0, 'no reply buttons once decided, without a reload');
       await page.reload();
       await ready(page);
+      assert.equal(await page.locator('#rs-mount .rs-reply').count(), 0, 'none after a reload either');
       assert.equal(await page.inputValue('#rs-note'), 'Add a map.');
       assert.equal(await page.$eval('#rs-note', (n) => n.readOnly), true);
       assert.deepEqual(await page.locator('#rs-submitbar [data-rs-ref]').allTextContents(), ['First day']);

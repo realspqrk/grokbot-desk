@@ -785,35 +785,6 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.server.window_title = value["title"]
                 self._json(200, {"ok": True})
-        elif path == "/log":
-            if not self._action_body(
-                value, {"run_id": str, "event": str, "detail": dict}
-            ):
-                return
-            detail = value["detail"]
-            invalid_detail = next(
-                (
-                    key
-                    for key, item in detail.items()
-                    if key not in {"item", "choice"}
-                    or not isinstance(item, str)
-                    or len(item) > 200
-                ),
-                None,
-            )
-            if invalid_detail is not None:
-                self._json(
-                    400,
-                    {"error": "invalid_log_detail", "pointer": f"/detail/{invalid_detail}"},
-                )
-            elif value["event"] != "choice" or not self.server.runs.has(value["run_id"]):
-                self._json(400, {"error": "invalid_log_event"})
-            else:
-                safe_detail = {
-                    key: detail[key] for key in ("item", "choice") if key in detail
-                }
-                self.server.action_log.write(value["run_id"], "choice", safe_detail)
-                self._json(200, {"ok": True})
         elif path == "/copy-image":
             if not self._action_body(value, {"run_id": str, "media_id": str}):
                 return

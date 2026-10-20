@@ -846,48 +846,10 @@ def test_guarded_action_routes_reject_non_object_json_bodies(server_process):
         "X-RS-CSRF": csrf,
         "Content-Type": "application/json",
     }
-    for route in ("/submit", "/cancel", "/read", "/log", "/reveal", "/copy", "/copy-image", "/copy-path", "/open-url"):
+    for route in ("/submit", "/cancel", "/read", "/reveal", "/copy", "/copy-image", "/copy-path", "/open-url"):
         status, body = request(port, "POST", route, b"[]", headers)
         assert status == 400, route
         assert json.loads(body)["pointer"] == "/"
-
-
-def test_client_log_rejects_comments_and_never_persists_them(server_process):
-    process, env, port = server_process(os.environ)
-    state = json.loads((Path(env["RS_DATA_DIR"]) / "state.json").read_text())
-    status, body = request(
-        port,
-        "POST",
-        "/push",
-        json.dumps(valid_payload()).encode("utf-8"),
-        {"Host": f"127.0.0.1:{port}", "X-RS-Token": state["token"]},
-    )
-    assert status == 200
-    run_id = json.loads(body)["run_id"]
-    page = request(port, "GET", "/")[1].decode("utf-8")
-    marker = '<script id="rs-boot" type="application/json">'
-    csrf = json.loads(page.split(marker, 1)[1].split("</script>", 1)[0])["csrf"]
-    headers = {
-        "Host": f"127.0.0.1:{port}",
-        "Origin": f"http://127.0.0.1:{port}",
-        "X-RS-CSRF": csrf,
-        "Content-Type": "application/json",
-    }
-    private = "PRIVATE_COMMENT_REGRESSION"
-    status, _ = request(
-        port,
-        "POST",
-        "/log",
-        json.dumps(
-            {"run_id": run_id, "event": "choice", "detail": {"comment": private}}
-        ).encode("utf-8"),
-        headers,
-    )
-    assert status == 400
-    assert all(
-        private not in path.read_text(encoding="utf-8")
-        for path in (Path(env["RS_DATA_DIR"]) / "log").glob("*.jsonl")
-    )
 
 
 def test_stale_browser_pid_notification_uses_title_reported_by_page(tmp_path):
@@ -1456,18 +1418,6 @@ def test_finding_2_surrogate_routes_reject_before_state_change_and_server_surviv
             b'{"title":"\\ud800"}',
             action_headers,
             "/title",
-        ),
-        (
-            "/log",
-            json.dumps(
-                {
-                    "run_id": run_id,
-                    "event": "choice",
-                    "detail": {"item": "\ud800"},
-                }
-            ).encode("ascii"),
-            action_headers,
-            "/detail/item",
         ),
         (
             "/submit",

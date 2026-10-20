@@ -1372,6 +1372,8 @@
     closeDiscardFor(state.active.run_id);
     setBanner(kind);
     lockTemplate();
+    /* a decided report cannot be replied to: drop the heading anchors live */
+    Array.prototype.forEach.call(el.mount.querySelectorAll('.rs-reply'), function (b) { b.remove(); });
     renderBar();
     renderInbox();
     updateTitle();
