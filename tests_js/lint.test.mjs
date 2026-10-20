@@ -1,23 +1,21 @@
 // Static UI rules: no colour literals outside tokens.css,
-// no URLs (the SVG namespace constant in components.js is the only exception).
+// no URLs (the SVG namespace string is the only exception).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
+/* every page file but tokens.css (the one home of colour values) */
 const files = [
-  'core/static/components.js', 'core/static/shell.css', 'core/static/count.js',
   'core/static/twitter-text-v3-data.js',
-  'core/static/platforms.json', 'core/static/contrast-pairs.json', 'core/i18n/de.json',
-  'tools/dev/kit-preview.html', 'tools/dev/kit-preview.mjs',
-  'core/static/rs.js', 'core/static/ask.js', 'core/static/composer.js', 'core/static/inputs.js', 'core/static/shell.html',
-  'templates/builtin/_starter/template.html', 'templates/builtin/_starter/template.css', 'templates/builtin/_starter/template.js',
-  'templates/builtin/preview-post/template.html',
-  'templates/builtin/preview-post/template.css',
-  'templates/builtin/preview-post/template.js',
+  'core/static/platforms.json', 'core/static/contrast-pairs.json', 'core/i18n/de.json', 'core/i18n/en.json',
+  ...readdirSync(new URL('../core/static/', import.meta.url))
+    .filter((f) => /\.(js|css|html)$/.test(f) && f !== 'tokens.css' && f !== 'twitter-text-v3-data.js')
+    .map((f) => 'core/static/' + f),
 ];
 const read = (f) => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
-const SVG_NS_LINE = "var SVG_NS = 'http://www.w3.org/2000/svg';";
+// the SVG namespace is a name, not a link
+const SVG_NS = "'http://www.w3.org/2000/svg'";
 
 for (const f of files) {
   test('no colour literals: ' + f, () => {
@@ -25,8 +23,8 @@ for (const f of files) {
     assert.deepEqual(hits, []);
   });
   test('no URLs: ' + f, () => {
-    const hits = read(f).split('\n').filter((l) => /\b[a-z][a-z0-9+.-]*:\/\//i.test(l) || /(src|href)\s*=\s*["']\/\//i.test(l))
-      .filter((l) => l.trim() !== SVG_NS_LINE);
+    const hits = read(f).split('\n').map((l) => l.split(SVG_NS).join(''))
+      .filter((l) => /\b[a-z][a-z0-9+.-]*:\/\//i.test(l) || /(src|href)\s*=\s*["']\/\//i.test(l));
     assert.deepEqual(hits, []);
   });
 }
@@ -44,22 +42,20 @@ test('no shadow DOM, no positive tabindex in components', () => {
   assert.doesNotMatch(js, /tabIndex\s*=\s*[1-9]/);
 });
 
-// review round 2, finding 6: publishable examples are fictional and portable
-test('kit and starter examples use fictional neutral identities and relative commands', () => {
-  const kit = read('tools/dev/kit-preview.html');
-  const readme = read('templates/builtin/_starter/README.md');
+// publishable examples are fictional: example domains, shipped sample bots
+test('payload fixtures and shipped bots use fictional neutral identities', () => {
   const bots = read('core/bots.json');
-  const schema = JSON.parse(read('templates/builtin/_starter/result.schema.json'));
-  const fixture = JSON.parse(read('templates/builtin/_starter/fixtures/golden.json'));
-
-  assert.match(kit, /Northwind/);
-  assert.match(kit, /example\.invalid/);
-  assert.match(kit, /Social Agent/);
-  assert.match(kit, /Inbox Agent/);
   assert.match(bots, /Operations Agent/);
-  assert.match(readme, /python report_shell\.py new <namespace>\/<name>/);
-  assert.equal(schema.properties.choice.description, 'The option the user picked.');
-  assert.match(fixture.copy.text, /files\.example\.invalid/);
+  assert.match(bots, /Inbox Agent/);
+  const dir = new URL('../tests/fixtures/payloads/', import.meta.url);
+  const names = readdirSync(dir).filter((f) => f.endsWith('.json'));
+  assert.ok(names.length >= 10);
+  for (const name of names) {
+    const text = read('tests/fixtures/payloads/' + name);
+    for (const [url] of text.matchAll(/https?:\/\/[^"\s/]+/g)) {
+      assert.match(url, /^https:\/\/([a-z0-9-]+\.)*example\.(com|org|net|invalid)$/, `${name}: ${url}`);
+    }
+  }
 });
 
 test('counter examples and verification notes are fictional and role-based', () => {

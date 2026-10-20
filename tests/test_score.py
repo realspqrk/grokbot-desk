@@ -10,7 +10,6 @@ def _complete_calm_result():
     scenes = []
 
     def add_scene(fixture, theme, width, height, open_runs, identity=None):
-        golden_scene = fixture == "golden" or identity is not None
         raw = {
             "K1": {
                 "primary_ids": ["#primary"],
@@ -20,8 +19,8 @@ def _complete_calm_result():
             "K2": {"items": []},
             "K3": {
                 "open_runs": open_runs,
-                "strip_rendered": open_runs == 3,
-                "strip_width": 180 if open_runs == 3 else 0,
+                "inbox_rendered": open_runs == 3,
+                "inbox_width": 180 if open_runs == 3 else 0,
                 "focusable_descendants": 1 if open_runs == 3 else 0,
             },
             "K4": {"font_sizes": [16, 24], "font_weights": ["400", "600"]},
@@ -31,18 +30,15 @@ def _complete_calm_result():
                 "item_gaps": [20],
                 "wide_text": [],
                 "page_background": [245, 245, 240],
-                "background_ratio": (
-                    0.8 if golden_scene and (width, height) == (1500, 1000)
-                    else None
-                ),
+                "background_ratio": 0.8 if (width, height) == (1500, 1000) else None,
                 "lint_pass": None,
             },
             "K8": {"visible_inputs": [], "open_secondary": []},
             "K9": {
-                "measured": golden_scene and (width, height) == (1280, 720),
+                "measured": (width, height) == (1280, 720),
                 "visible_interactive_above_fold": 5,
             },
-            "K10": {"mockups": [], "tablists": [], "interaction": None},
+            "K10": {"post_blocks": 0, "mockups": [], "tablists": [], "interaction": None},
             "K11": {
                 "noise": [],
                 "header_titles": 1,
@@ -75,7 +71,6 @@ def _complete_calm_result():
             },
         }
         scene = {
-            "template": "_starter",
             "fixture": fixture,
             "theme": theme,
             "viewport": {"width": width, "height": height},
@@ -90,29 +85,25 @@ def _complete_calm_result():
             scene["identity"] = identity
         scenes.append(scene)
 
-    for fixture in ("golden", "edge-max"):
+    for theme in ("light", "dark"):
+        for width, height in ((1500, 1000), (1280, 720)):
+            for open_runs in (1, 3):
+                add_scene("read", theme, width, height, open_runs)
+    for variant in score.CALM_IDENTITY_VARIANTS:
         for theme in ("light", "dark"):
             for width, height in ((1500, 1000), (1280, 720)):
-                for open_runs in (1, 3):
-                    add_scene(fixture, theme, width, height, open_runs)
-    identity_accents = {
-        "golden+custom-accent": {"light": "#3b4fd8", "dark": "#0891b2"},
-        "golden+low-contrast-accent": {"light": "#3b4fd8", "dark": "#f6c945"},
-    }
-    for fixture, accents in identity_accents.items():
-        for theme in ("light", "dark"):
-            for width, height in ((1500, 1000), (1280, 720)):
-                add_scene(fixture, theme, width, height, 3, {
-                    "expected_accent": accents[theme],
-                    "observed_accent": accents[theme],
-                    "strip_accents": [],
+                accent = "#0891b2" if theme == "dark" else "#3b4fd8"
+                add_scene(f"read+{variant}", theme, width, height, 3, {
+                    "expected_accent": accent,
+                    "observed_accent": accent,
+                    "inbox_accents": [],
                     "pass": True,
                 })
     return {
         "mode": "calm",
-        "template": "_starter",
+        "fixture": "read",
         "ok": True,
-        "identity": {"scenes": 8, "failed": []},
+        "identity": {"scenes": 20, "failed": []},
         "passed": 13,
         "total": 13,
         "items": {
@@ -121,7 +112,6 @@ def _complete_calm_result():
                 "reasons": [],
                 "raw": [
                     {
-                        "template": scene["template"],
                         "fixture": scene["fixture"],
                         "theme": scene["theme"],
                         "viewport": scene["viewport"],
@@ -135,9 +125,9 @@ def _complete_calm_result():
         },
         "scenes": scenes,
         "coverage": {
-            "expected": 2,
-            "executed": 2,
-            "templates": [{"template": "_starter", "expected": 2, "executed": 2}],
+            "expected": 1,
+            "executed": 1,
+            "fixtures": [{"fixture": "read", "expected": 1, "executed": 1}],
         },
         "_process": {"returncode": 0, "stderr": ""},
     }
@@ -301,9 +291,9 @@ def test_round_2_finding_14_c16_requires_raw_schema_for_every_k_item():
     assert score._valid_calm_result(malformed) is False
 
 
-def test_c16_accepts_real_24_scene_shape_and_requires_identity_evidence():
+def test_c16_accepts_real_28_scene_shape_and_requires_identity_evidence():
     complete = _complete_calm_result()
-    assert len(complete["scenes"]) == 24
+    assert len(complete["scenes"]) == 28
     assert score._valid_calm_result(complete) is True
 
     missing_scene = json.loads(json.dumps(complete))
@@ -315,27 +305,23 @@ def test_c16_accepts_real_24_scene_shape_and_requires_identity_evidence():
     assert score._valid_calm_result(missing_identity) is False
 
     missing_scene_evidence = json.loads(json.dumps(complete))
-    missing_scene_evidence["scenes"][16].pop("identity")
+    missing_scene_evidence["scenes"][8].pop("identity")
     assert score._valid_calm_result(missing_scene_evidence) is False
 
     inconsistent_identity = json.loads(json.dumps(complete))
-    inconsistent_identity["scenes"][16]["identity"]["pass"] = False
+    inconsistent_identity["scenes"][8]["identity"]["pass"] = False
     assert score._valid_calm_result(inconsistent_identity) is False
 
 
 def test_review_finding_16_dev_helpers_use_shared_public_defaults():
     server = (score.ROOT / "tools" / "dev" / "rs-server.mjs").read_text(encoding="utf-8")
-    preview = (score.ROOT / "tools" / "dev" / "kit-preview.mjs").read_text(encoding="utf-8")
-    shell_shots = (score.ROOT / "tools" / "dev" / "shell-shots.mjs").read_text(
-        encoding="utf-8"
-    )
-    builtin_shots = (score.ROOT / "tools" / "dev" / "builtin-shots.mjs").read_text(
-        encoding="utf-8"
-    )
-    combined = server + preview + shell_shots + builtin_shots
-    assert "browserChannel()" in combined
-    assert "measurement.json" in server + shell_shots
-    assert "templates', 'builtin" in builtin_shots
+    readme_shots = (score.ROOT / "tools" / "dev" / "readme-shots.mjs").read_text(encoding="utf-8")
+    visual = (score.ROOT / "tools" / "visual.mjs").read_text(encoding="utf-8")
+    for source in (readme_shots, visual):
+        assert "browserChannel()" in source
+        assert "fixtureMedia()" in source
+    assert "measurement.json" in server
+    assert "tests', 'fixtures', 'payloads'" in server
 
 
 def test_review_finding_17_generated_score_output_is_not_committed():
@@ -355,11 +341,11 @@ def test_review_finding_18_public_measurement_wording_is_browser_neutral():
 
 
 def test_round_2_finding_21_all_preview_display_identities_are_fictional():
-    text = (score.ROOT / "tools" / "dev" / "kit-preview.html").read_text(
-        encoding="utf-8"
-    )
+    text = (score.ROOT / "tools" / "dev" / "readme-shots.mjs").read_text(encoding="utf-8")
 
-    assert "@northwind" in text
+    assert "Northwind" in text
+    hosts = re.findall(r"https?://([^/'\"\s)]+)", text)
+    assert all(re.fullmatch(r"([a-z0-9-]+\.)*example\.(com|org|net|invalid)", host) for host in hosts), hosts
 
 
 def test_not_run_gate_does_not_silently_pass_or_apply_failure_cap():

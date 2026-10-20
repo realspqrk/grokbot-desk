@@ -1,37 +1,30 @@
 #!/usr/bin/env node
+// C6: the page's character counter (core/static/count.js) against the
+// pinned upstream twitter-text corpus (tests_js/fixtures): every case's X
+// weight equals the upstream count, and none is over the limit.
 import { createRequire } from 'node:module';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { resolvedTemplates } from './template-registry.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(
   process.env.RS_TOOL_ROOT || path.join(path.dirname(fileURLToPath(import.meta.url)), '..'),
 );
-
-function registeredTemplate(templateId) {
-  const matches = resolvedTemplates(root, templateId).map((item) => item.dir);
-  if (matches.length !== 1) {
-    throw new Error(`${templateId}: expected one registered template, found ${matches.length}`);
-  }
-  return matches[0];
-}
+const FIXTURES = path.join(root, 'tests_js', 'fixtures');
 
 try {
-  const templateDir = registeredTemplate('preview-post');
-  const casesPath = path.join(templateDir, 'fixtures', 'expect', 'counter-cases.json');
-  if (!existsSync(casesPath)) throw new Error(`missing ${path.relative(root, casesPath)}`);
+  const round4 = JSON.parse(readFileSync(path.join(FIXTURES, 'twitter-text-round4.json'), 'utf8'));
+  const round5 = (await import(pathToFileURL(path.join(FIXTURES, 'twitter-text-round5.mjs')).href)).default;
+  const cases = [...round4.cases, ...round5.cases].map((item) => ({
+    name: item.name, platform: 'x', text: item.text, count: item.upstream_count, over: false,
+  }));
   const require = createRequire(import.meta.url);
   const counter = require(path.join(root, 'core', 'static', 'count.js'));
-  const cases = JSON.parse(readFileSync(casesPath, 'utf8'));
-  if (!Array.isArray(cases)) throw new Error('counter-cases.json must contain an array');
   const results = cases.map((item, index) => {
     const actual = counter.count(item.text, item.platform);
     const failures = [];
     if (actual.count !== item.count) failures.push(`count ${actual.count} != ${item.count}`);
     if (actual.over !== item.over) failures.push(`over ${actual.over} != ${item.over}`);
-    if (item.limit !== undefined && actual.limit !== item.limit) failures.push(`limit ${actual.limit} != ${item.limit}`);
-    if (item.hashtags !== undefined && actual.hashtags !== item.hashtags) failures.push(`hashtags ${actual.hashtags} != ${item.hashtags}`);
     return { index, name: item.name || `case-${index + 1}`, platform: item.platform, pass: failures.length === 0, failures, actual };
   });
   const passed = results.filter((item) => item.pass).length;
@@ -41,7 +34,7 @@ try {
     total: results.length,
     ratio: results.length ? passed / results.length : 0,
     minimum_cases: 30,
-    template_dir: path.relative(root, templateDir),
+    corpus: 'tests_js/fixtures/twitter-text-round4.json + twitter-text-round5.mjs',
     cases: results,
   };
   console.log(JSON.stringify(output));

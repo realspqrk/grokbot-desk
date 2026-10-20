@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core.schema import SchemaError, validate
+from core.payload import EnvelopeError, ResultError  # noqa: E402
+from tools.validate_result import check  # noqa: E402
 
 
 def main():
@@ -76,22 +77,8 @@ def main():
                 "error": "missing timed validation evidence",
             })
         try:
-            schema_path = next(
-                ROOT.glob(f"templates/*/{case['template']}/result.schema.json")
-            )
-            schema = json.loads(schema_path.read_text(encoding="utf-8"))
-            result = case["result"]
-            validate(result["data"], schema)
-            if case.get("expected") is not None and result["data"] != case["expected"]:
-                findings.append(
-                    {
-                        "run_id": case["run_id"],
-                        "error": "result data differs from fixtures/expect",
-                        "expected": case["expected"],
-                        "actual": result["data"],
-                    }
-                )
-        except (StopIteration, OSError, KeyError, ValueError, SchemaError) as error:
+            check(case["fixture"], case["result"], case.get("expected"))
+        except (OSError, KeyError, TypeError, ValueError, EnvelopeError, ResultError) as error:
             findings.append({"run_id": case.get("run_id"), "error": str(error)})
     measured["cases"] = cases
     measured["total"] = len(cases)

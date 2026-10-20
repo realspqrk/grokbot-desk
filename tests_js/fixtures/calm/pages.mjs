@@ -26,13 +26,16 @@ html, body { margin: 0; width: 100%; min-height: 100%; background: #f5f5f0; colo
 header { height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }
 h1 { margin: 0; font-size: 24px; font-weight: 600; }
 button { font: inherit; color: inherit; border: 0; background: transparent; }
-button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #336699; }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid #336699; }
 .layout { width: 100%; display: grid; grid-template-columns: ${railDisplay === 'block' ? '180px 1fr' : '0 1fr'}; }
 .rail { display: block; overflow: hidden; width: ${railDisplay === 'block' ? '180px' : '0'}; }
-.rail button { display: ${railDisplay === 'block' ? 'block' : 'none'}; }
+.rail a { display: ${railDisplay === 'block' ? 'block' : 'none'}; }
 main { width: 620px; max-width: 100%; padding: 24px; }
 .items { display: flex; flex-direction: column; gap: ${itemGap}; }
-[data-rs-item] { min-height: 44px; }
+[data-rs-item] { min-height: ${cluttered === 'K7' ? '0' : '44px'}; }
+[data-rs-item] p { margin: 0; }
+${cluttered === 'K7' ? '.copy { position: absolute; }' : ''}
+a { color: inherit; }
 .copy { opacity: 0; width: 28px; height: 28px; transition: opacity 150ms; }
 [data-rs-item]:hover .copy, .copy:focus-visible { opacity: 1; }
 .bad-copy-focus:focus-visible { opacity: 0; }
@@ -56,8 +59,8 @@ main { width: 620px; max-width: 100%; padding: 24px; }
 <body>
 <header><h1>Review report</h1><button aria-label="More">More</button></header>
 <div class="layout">
-  <nav class="rail" aria-label="Open runs">
-    ${Array.from({ length: runCount }, (_, index) => `<button>Run ${index + 1}</button>`).join('')}
+  <nav class="rail" id="rs-inbox" aria-label="Open reports">
+    ${Array.from({ length: runCount }, (_, index) => `<a href="?run=r${index + 1}" data-run-id="r${index + 1}" tabindex="${index ? -1 : 0}">Run ${index + 1}</a>`).join('')}
   </nav>
   <main>
     <div class="items">

@@ -1,0 +1,41 @@
+{
+  "flow": [
+    {
+      "click": "#rs-submit"
+    }
+  ],
+  "keyboard": [
+    {
+      "press": "Tab",
+      "repeat": 11
+    },
+    {
+      "press": "Enter"
+    }
+  ],
+  "result": {
+    "decision": "approve",
+    "note": "",
+    "refs": [],
+    "blocks": {
+      "post": {
+        "platforms": [
+          {
+            "platform": "x",
+            "included": true
+          },
+          {
+            "platform": "linkedin",
+            "included": true
+          }
+        ]
+      }
+    }
+  },
+  "copies": {
+    "inp-post-x-text": "From Monday we open at 6:30. Fresh rolls from the first minute.\n\n#bakery #autumn",
+    "inp-post-x-hashtags": "#bakery #autumn",
+    "inp-post-linkedin-text": "From Monday our shop opens at 6:30. Thank you to our early team for making this possible.\n\n#bakery #autumn",
+    "inp-post-linkedin-hashtags": "#bakery #autumn"
+  }
+}

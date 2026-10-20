@@ -19,17 +19,18 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = path.join(ROOT, 'tests_js');
 export const STARTS_BROWSER = /\bloadChromium\b|\bchromium\.launch/;
 
-/* The blocking smoke set: one served page renders a template, the mouse
-   and keyboard decide flows write their result, discard writes a cancel,
-   the empty state, and the pop-up opens and auto-advances. Exact test
+/* The blocking smoke set: one served report renders (strings, CSP,
+   same-origin, clean console), the mouse and keyboard-only flows write their
+   result, Discard writes a cancel, the empty state, the pop-up opens and
+   auto-advances, and a half-done decision survives a reload. Exact test
    names, so a renamed test fails the guard test instead of dropping out. */
 export const SMOKE = {
   'shell.e2e.test.mjs': [
-    'renders the starter golden: strings, copy text, CSP, same-origin only, no console errors',
-    'expect.flow (mouse) + Ctrl+Enter writes the result file = expect.result',
-    'expect.keyboard (keys only, one open run) writes the same result',
-    'Verwerfen asks first, then writes a cancelled result',
-    'no open runs: empty state and title',
+    'renders a report: strings, CSP, same-origin only, no console errors',
+    'mouse: Approve writes the result file and the report turns read-only',
+    'keyboard only (one open report): a typed note and Enter on the primary write the result',
+    'Discard asks first, then writes a cancelled result',
+    'no open reports: empty state and title',
   ],
   'popup.e2e.test.mjs': [
     '1 open: compact pop-up without an inbox; header = quiet byline, strong report title',
@@ -38,10 +39,38 @@ export const SMOKE = {
   'inputs.e2e.test.mjs': [
     'half-done decide + chips survive reload, send, reopen read-only',
   ],
-  'builtin-review-pick.e2e.test.mjs': [
-    'review-doc: a half-done review survives a reload, sends, and reopens read-only',
-  ],
 };
+/* The test ports of every file that starts a desk, as offsets from
+   RS_E2E_PORT (default 18921). Ports wrap inside 18920-18939 (AGENTS.md),
+   so no two files share a port whatever the base, and two files running at
+   the same time never collide. */
+export const PORT_RANGE = Object.freeze({ first: 18920, size: 20 });
+export const E2E_PORTS = Object.freeze({
+  'avatar-shapes.e2e.test.mjs': [0],
+  'blocks.e2e.test.mjs': [1],
+  'burst.e2e.test.mjs': [2, 3],
+  'doorbell.e2e.test.mjs': [4, 5],
+  'footer.e2e.test.mjs': [6],
+  'hydration.e2e.test.mjs': [7],
+  'identity.e2e.test.mjs': [8],
+  'inputs.e2e.test.mjs': [9],
+  'popup.e2e.test.mjs': [10],
+  'post.e2e.test.mjs': [11],
+  'shell.e2e.test.mjs': [12],
+  'review_findings.test.mjs': [13, 14, 15, 16, 17, 18],
+});
+
+/** The port `slot` of test file `file` (see E2E_PORTS). */
+export function e2ePort(file, slot = 0, environment = process.env) {
+  const base = Number(environment.RS_E2E_PORT || 18921);
+  const { first, size } = PORT_RANGE;
+  if (!Number.isInteger(base) || base < first || base >= first + size) {
+    throw new Error(`RS_E2E_PORT ${environment.RS_E2E_PORT} is outside ${first}-${first + size - 1}`);
+  }
+  const offsets = E2E_PORTS[file];
+  if (!offsets || !Number.isInteger(offsets[slot])) throw new Error(`no test port ${slot} for ${file} in tools/node-tests.mjs`);
+  return first + ((base - first + offsets[slot]) % size);
+}
 /* Timing budgets inside unit files. They guard against super-linear
    matching, and a busy shared runner can blow them without any regression,
    so CI runs them in the advisory step, not in the gate. */

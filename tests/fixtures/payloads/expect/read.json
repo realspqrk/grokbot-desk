@@ -1,0 +1,21 @@
+{
+  "flow": [
+    {
+      "click": "#rs-submit"
+    }
+  ],
+  "keyboard": [
+    {
+      "press": "Tab",
+      "repeat": 4
+    },
+    {
+      "press": "Enter"
+    }
+  ],
+  "result": {
+    "decision": "read",
+    "note": "",
+    "refs": []
+  }
+}

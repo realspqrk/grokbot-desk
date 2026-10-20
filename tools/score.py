@@ -289,8 +289,8 @@ def _valid_k_raw(name, raw, *, open_runs, measured_k9, screenshot_k7):
     if name == "K3":
         return (
             raw.get("open_runs") == open_runs
-            and isinstance(raw.get("strip_rendered"), bool)
-            and _number(raw.get("strip_width"))
+            and isinstance(raw.get("inbox_rendered"), bool)
+            and _number(raw.get("inbox_width"))
             and isinstance(raw.get("focusable_descendants"), int)
             and not isinstance(raw.get("focusable_descendants"), bool)
         )
@@ -349,7 +349,9 @@ def _valid_k_raw(name, raw, *, open_runs, measured_k9, screenshot_k7):
     if name == "K10":
         interaction = raw.get("interaction")
         return (
-            _list_of(raw.get("mockups"), lambda item: (
+            isinstance(raw.get("post_blocks"), int)
+            and not isinstance(raw.get("post_blocks"), bool)
+            and _list_of(raw.get("mockups"), lambda item: (
                 isinstance(item, dict)
                 and isinstance(item.get("identity"), str)
                 and _number(item.get("width"))
@@ -429,7 +431,17 @@ def _valid_k_raw(name, raw, *, open_runs, measured_k9, screenshot_k7):
     return False
 
 
+# the identity scenes calm adds per payload fixture (tools/e2e.mjs IDENTITY_SCENES)
+CALM_IDENTITY_VARIANTS = (
+    "custom-accent", "low-contrast-accent", "shape-avatars", "shape-avatars-2", "shape-fallbacks",
+)
+CALM_VIEWPORTS = ((1500, 1000), (1280, 720))
+
+
 def _valid_calm_result(result):
+    """One `e2e.mjs calm <fixture>` result: every scene (both themes, both
+    viewports, 1 and 3 open reports, plus the identity scenes) with all 13
+    K-items, raw facts in shape, and aggregates that agree with the scenes."""
     process_code = result.get("_process", {}).get("returncode")
     if (
         result.get("mode") != "calm"
@@ -439,39 +451,29 @@ def _valid_calm_result(result):
     ):
         return False
     coverage = result.get("coverage", {})
-    if coverage.get("expected") != 2 or coverage.get("executed") != 2:
+    if coverage.get("expected") != 1 or coverage.get("executed") != 1:
         return False
-    template = result.get("template")
-    if not isinstance(template, str) or not template:
+    fixture = result.get("fixture")
+    if not isinstance(fixture, str) or not fixture:
         return False
-    coverage_templates = coverage.get("templates")
-    if (
-        not isinstance(coverage_templates, list)
-        or len(coverage_templates) != 1
-        or coverage_templates[0] != {
-            "template": template,
-            "expected": 2,
-            "executed": 2,
-        }
-    ):
-        return False
-    scenes = result.get("scenes")
-    if not isinstance(scenes, list) or len(scenes) != 24:
+    if coverage.get("fixtures") != [{"fixture": fixture, "expected": 1, "executed": 1}]:
         return False
     expected_base_scenes = {
         (fixture, theme, width, height, open_runs)
-        for fixture in ("golden", "edge-max")
         for theme in ("light", "dark")
-        for width, height in ((1500, 1000), (1280, 720))
+        for width, height in CALM_VIEWPORTS
         for open_runs in (1, 3)
     }
     expected_identity_scenes = {
-        (fixture, theme, width, height, 3)
-        for fixture in ("golden+custom-accent", "golden+low-contrast-accent")
+        (f"{fixture}+{variant}", theme, width, height, 3)
+        for variant in CALM_IDENTITY_VARIANTS
         for theme in ("light", "dark")
-        for width, height in ((1500, 1000), (1280, 720))
+        for width, height in CALM_VIEWPORTS
     }
     expected_scenes = expected_base_scenes | expected_identity_scenes
+    scenes = result.get("scenes")
+    if not isinstance(scenes, list) or len(scenes) != len(expected_scenes):
+        return False
     actual_scenes = set()
     identity_failures = []
     for scene in scenes:
@@ -488,8 +490,6 @@ def _valid_calm_result(result):
         identity = scene.get("identity")
         identity_scene = key in expected_identity_scenes
         if (
-            scene.get("template") != template
-            or
             not isinstance(scene.get("ok"), bool)
             or not isinstance(scene_items, dict)
             or any(
@@ -507,7 +507,7 @@ def _valid_calm_result(result):
             if (
                 not isinstance(identity, dict)
                 or set(identity) != {
-                    "expected_accent", "observed_accent", "strip_accents", "pass",
+                    "expected_accent", "observed_accent", "inbox_accents", "pass",
                 }
                 or any(
                     not isinstance(identity.get(name), str)
@@ -517,7 +517,7 @@ def _valid_calm_result(result):
                     for name in ("expected_accent", "observed_accent")
                 )
                 or not _list_of(
-                    identity.get("strip_accents"),
+                    identity.get("inbox_accents"),
                     lambda value: isinstance(value, str),
                 )
                 or not isinstance(identity.get("pass"), bool)
@@ -525,25 +525,24 @@ def _valid_calm_result(result):
                 return False
             identity_pass = (
                 identity["observed_accent"] == identity["expected_accent"]
-                and not identity["strip_accents"]
+                and not identity["inbox_accents"]
             )
             if identity["pass"] is not identity_pass:
                 return False
             if not identity_pass:
                 identity_failures.append(
-                    f"{scene['template']}/{scene['fixture']}/{scene['theme']}/"
+                    f"{scene['fixture']}/{scene['theme']}/"
                     f"{viewport['width']}x{viewport['height']}: "
                     f"accent {identity['observed_accent']} "
                     f"(expected {identity['expected_accent']}), "
-                    f"strip accents {' '.join(identity['strip_accents']) or 'none'}"
+                    f"inbox accents {' '.join(identity['inbox_accents']) or 'none'}"
                 )
         elif identity is not None:
             return False
         if scene["ok"] is not (k_items_pass and identity_pass):
             return False
-        golden_scene = key[0] == "golden" or identity_scene
-        expected_k9 = golden_scene and key[2:4] == (1280, 720)
-        screenshot_k7 = golden_scene and key[2:4] == (1500, 1000)
+        expected_k9 = key[2:4] == (1280, 720)
+        screenshot_k7 = key[2:4] == (1500, 1000)
         for index in range(1, 14):
             name = f"K{index}"
             item = scene_items[name]
@@ -587,7 +586,6 @@ def _valid_calm_result(result):
             return False
         for scene, aggregate in zip(scenes, item["raw"]):
             expected = {
-                "template": scene["template"],
                 "fixture": scene["fixture"],
                 "theme": scene["theme"],
                 "viewport": scene["viewport"],
@@ -942,15 +940,15 @@ def _run_score(args, netlog_dir, selected_port):
             )
         elif criterion == "C16":
             calm = {}
-            for template_id in _calm_scenes():
-                calm[template_id] = browser_json(
+            for fixture in _calm_scenes():
+                calm[fixture] = browser_json(
                     [
                         "node",
                         str(ROOT / "tools" / "e2e.mjs"),
                         "calm",
-                        template_id,
+                        fixture,
                     ],
-                    timeout=300,
+                    timeout=900,
                 )
             lint = _command_json(
                 ["py", "-3", str(ROOT / "tools" / "lint_src.py"), "--calm"],
@@ -996,23 +994,23 @@ def _run_score(args, netlog_dir, selected_port):
                         item.get("ok") for item in (axe, basic, contrast)
                     ),
                 }
-            template_data_valid = bool(calm) and all(
+            fixture_data_valid = bool(calm) and all(
                 _valid_calm_result(result) for result in calm.values()
             )
             items = {}
             for index in range(1, 14):
                 name = f"K{index}"
-                template_items = {
-                    template_id: result.get("items", {}).get(name, {})
-                    for template_id, result in calm.items()
+                fixture_items = {
+                    fixture: result.get("items", {}).get(name, {})
+                    for fixture, result in calm.items()
                 }
                 reasons = [
-                    f"{template_id}: {reason}"
-                    for template_id, item in template_items.items()
+                    f"{fixture}: {reason}"
+                    for fixture, item in fixture_items.items()
                     for reason in item.get("reasons", [])
                 ]
-                passed = template_data_valid and all(
-                    item.get("pass") is True for item in template_items.values()
+                passed = fixture_data_valid and all(
+                    item.get("pass") is True for item in fixture_items.values()
                 )
                 if name == "K7" and lint.get("ok") is not True:
                     passed = False
@@ -1033,15 +1031,15 @@ def _run_score(args, netlog_dir, selected_port):
                 items[name] = {
                     "pass": passed,
                     "reasons": reasons,
-                    "templates": template_items,
+                    "fixtures": fixture_items,
                 }
             passed_items = sum(item["pass"] for item in items.values())
-            passed = template_data_valid and passed_items == 13
+            passed = fixture_data_valid and passed_items == 13
             raw = {
                 "pass": passed,
-                "measurement_valid": template_data_valid,
+                "measurement_valid": fixture_data_valid,
                 "items": items,
-                "templates": calm,
+                "fixtures": calm,
                 "lint": lint,
                 "C12": c12_raw,
                 "C13": c13_raw,

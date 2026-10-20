@@ -716,12 +716,12 @@ def test_template_commands_are_gone(capsys):
 def test_show_rejects_template_argument(tmp_path, capsys):
     source = tmp_path / "payload.json"
     source.write_text(json.dumps(show_fixture("read")), encoding="utf-8")
-    args = SimpleNamespace(template="decide-list", data=str(source), no_window=True, focus=False)
+    args = SimpleNamespace(template="legacy-list", data=str(source), no_window=True, focus=False)
     assert cli_module.command_show(args, tmp_path, free_port()) == 2
     assert "show takes no template since payload@2" in capsys.readouterr().err
     # also through the parser, before any desk starts
     env = dict(os.environ, RS_DATA_DIR=str(tmp_path / "data"))
-    shown = cli(env, free_port(), "show", "decide-list", "--data", str(source), "--no-window")
+    shown = cli(env, free_port(), "show", "legacy-list", "--data", str(source), "--no-window")
     assert shown.returncode == 2 and "show takes no template since payload@2" in shown.stderr
     assert "Traceback" not in shown.stderr
 

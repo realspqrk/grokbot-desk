@@ -13,6 +13,7 @@ import {
   pngBackgroundRatio,
 } from '../tools/calm.mjs';
 import * as calmTools from '../tools/calm.mjs';
+import { parseColor, toHex } from '../tools/colour.mjs';
 import { browserChannel, loadChromium } from '../tools/dev/rs-server.mjs';
 import { ROOT } from '../tools/dev/rs-server.mjs';
 
@@ -38,7 +39,6 @@ describe('C16 calm synthetic pages', { skip }, () => {
     });
     return page.evaluate(calmEvaluator, {
       thresholds: CALM_THRESHOLDS,
-      templateId: 'preview-post',
       openRuns,
       verifiedRovingGroups,
     });
@@ -79,7 +79,6 @@ describe('C16 calm synthetic pages', { skip }, () => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       const reduced = await page.evaluate(calmEvaluator, {
         thresholds: CALM_THRESHOLDS,
-        templateId: 'preview-post',
         openRuns: 1,
       });
       facts.K12 = { normal: facts.K12, reduced: reduced.K12 };
@@ -93,8 +92,9 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   }
 
+  /* post: the synthetic page stands for a report with a post block (K10) */
   async function judgeHtml(html, {
-    templateId = 'preview-post',
+    post = true,
     viewport = { width: 1500, height: 1000 },
     theme = 'light',
     screenshot = false,
@@ -120,8 +120,8 @@ describe('C16 calm synthetic pages', { skip }, () => {
           one.K3,
           {
             open_runs: 3,
-            strip_rendered: true,
-            strip_width: 180,
+            inbox_rendered: true,
+            inbox_width: 180,
             focusable_descendants: 1,
           },
         ],
@@ -139,7 +139,6 @@ describe('C16 calm synthetic pages', { skip }, () => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       const reduced = await page.evaluate(calmEvaluator, {
         thresholds: CALM_THRESHOLDS,
-        templateId,
         openRuns: 1,
       });
       facts.K12 = { normal: one.K12, reduced: reduced.K12 };
@@ -147,7 +146,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
       return {
         facts,
         judged: judgeCalmFacts(facts, {
-          templateId,
+          post,
           k13: passingEvidence,
         }),
         page,
@@ -209,8 +208,8 @@ describe('C16 calm synthetic pages', { skip }, () => {
     const baseline = await measure();
     const one = structuredClone(baseline);
     const three = structuredClone(baseline);
-    one.K3 = { open_runs: 1, strip_rendered: false, strip_width: 0, focusable_descendants: 0 };
-    three.K3 = { open_runs: 3, strip_rendered: true, strip_width: 180, focusable_descendants: 1 };
+    one.K3 = { open_runs: 1, inbox_rendered: false, inbox_width: 0, focusable_descendants: 0 };
+    three.K3 = { open_runs: 3, inbox_rendered: true, inbox_width: 180, focusable_descendants: 1 };
     one.K9 = { measured: true, visible_interactive_above_fold: 11 };
     three.K9 = { measured: true, visible_interactive_above_fold: 14 };
     three.K13 = { copy_focus: { pass: true }, keyboard: false, accessibility: false };
@@ -220,8 +219,8 @@ describe('C16 calm synthetic pages', { skip }, () => {
     const scope = {
       CALM_THRESHOLDS,
       judgeCalmFacts,
-      requestedTemplate: 'preview-post',
-      calmFixtureCases: () => [{ fixture: 'golden', manifest: { id: 'preview-post' } }],
+      requestedFixture: 'approve-post',
+      fixtureCases: () => [{ id: 'approve-post', fixture: 'approve-post' }],
       withSession: (callback) => callback({}),
       calmScene: async (_browser, _server, _testCase, scene) => (
         structuredClone(scene.openRuns === 1 ? one : three)
@@ -413,7 +412,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   });
 
-  test('Only the shell strip with verified arrow keys counts as the report switcher', async () => {
+  test('Only the shell inbox with verified arrow keys counts as the report switcher', async () => {
     const source = readFileSync(path.join(ROOT, 'tools/e2e.mjs'), 'utf8');
     const scope = {
       CALM_THRESHOLDS,
@@ -433,45 +432,50 @@ describe('C16 calm synthetic pages', { skip }, () => {
       ),
       scope,
     );
-    const style = '<style>body{background:white;color:black}button:focus{outline:2px solid blue;outline-offset:2px}</style>';
+    const style = '<style>body{background:white;color:black}button:focus,a:focus{outline:2px solid blue;outline-offset:2px}</style>';
     const extras = Array.from({ length: 9 }, (_, i) => `<button>Extra ${i + 1}</button>`).join('');
     // four toolbar buttons with one Tab stop and no arrow handler (review case)
-    const toolbar = (attrs = '') => `<div role="toolbar" aria-label="Reports" data-rs-item ${attrs}>`
-      + [0, 1, 2, 3].map((i) => `<button tabindex="${i ? -1 : 0}" class="rs-strip__run" data-run-id="r${i}">Agent ${i + 1}</button>`).join('')
+    const toolbar = () => '<div role="toolbar" aria-label="Reports" data-rs-item>'
+      + [0, 1, 2, 3].map((i) => `<button tabindex="${i ? -1 : 0}" data-run-id="r${i}">Agent ${i + 1}</button>`).join('')
       + '</div>';
     const pages = {
-      marked: `<main>${'<div data-rs-strip>'}${toolbar()}</div>${extras}</main>`,
-      'marked in template': `<main id="rs-mount"><div class="rs-tpl"><nav id="rs-strip-nav" data-rs-strip>${toolbar('id="rs-strip"')}</nav>${extras}</div></main>`,
-      'shell strip without arrow keys': `<nav id="rs-strip-nav" data-rs-strip>${toolbar('id="rs-strip"')}</nav><main id="rs-mount">${extras}</main>`,
+      'a toolbar of reports in the report': `<main id="rs-mount">${toolbar()}${extras}</main>`,
+      'an inbox inside the report mount': `<main id="rs-mount"><nav id="rs-inbox">${toolbar()}</nav>${extras}</main>`,
     };
-    // the shell's strip: arrows switch the shown report, which re-renders the
-    // strip after a moment (data-rs-ready 0 -> 1) with the new one current
-    const switcher = `<script>(() => {
-      const strip = document.getElementById('rs-strip');
+    // the shell's inbox: links with a roving tabindex; arrows open the
+    // report next to the current one (no wrap) and the list re-renders
+    // after a moment (data-rs-ready 0 -> 1) with the new one current
+    const inbox = `<nav id="rs-inbox" aria-label="Reports" data-rs-item><ol id="rs-inbox-list"></ol></nav><main id="rs-mount">${extras}</main><script>(() => {
+      const list = document.getElementById('rs-inbox-list');
       let active = 0;
+      window.RS = { activeRun: 'r0' };
       function render() {
-        strip.textContent = '';
+        list.textContent = '';
         for (let i = 0; i < 4; i += 1) {
-          const b = document.createElement('button');
-          b.className = 'rs-strip__run';
-          b.dataset.runId = 'r' + i;
-          b.textContent = 'Agent ' + (i + 1);
-          b.tabIndex = i === active ? 0 : -1;
-          if (i === active) b.setAttribute('aria-current', 'page');
-          strip.appendChild(b);
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = '?run=r' + i;
+          a.dataset.runId = 'r' + i;
+          a.textContent = 'Report ' + (i + 1);
+          a.tabIndex = i === active ? 0 : -1;
+          if (i === active) a.setAttribute('aria-current', 'page');
+          li.appendChild(a);
+          list.appendChild(li);
         }
       }
       render();
       document.documentElement.dataset.rsReady = '1';
-      strip.addEventListener('keydown', (e) => {
-        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      list.addEventListener('keydown', (e) => {
+        const next = { ArrowDown: Math.min(active + 1, 3), ArrowUp: Math.max(active - 1, 0), Home: 0, End: 3 }[e.key];
+        if (next === undefined) return;
         e.preventDefault();
-        active = (active + (e.key === 'ArrowRight' ? 1 : 3)) % 4;
-        strip.children[active].focus();
+        active = next;
+        list.children[active].firstChild.focus();
         document.documentElement.dataset.rsReady = '0';
         setTimeout(() => {
+          window.RS.activeRun = 'r' + active;
           render();
-          strip.children[active].focus();
+          list.children[active].firstChild.focus();
           document.documentElement.dataset.rsReady = '1';
         }, 60);
       });
@@ -485,7 +489,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
       try { audit = await scope.tabAudit(page); } catch (caught) { error = String(caught); }
       const verified = audit ? audit.groups.map((group) => group.identity).filter(Boolean) : [];
       const facts = await page.evaluate(calmEvaluator, {
-        thresholds: CALM_THRESHOLDS, templateId: '_starter', openRuns: 3, verifiedRovingGroups: verified,
+        thresholds: CALM_THRESHOLDS, openRuns: 4, verifiedRovingGroups: verified,
       });
       return { audit, error, facts };
     };
@@ -495,7 +499,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
         assert.match(error || '', /ArrowRight did not move within toolbar/, `${name}: the arrow audit still runs`);
         // K13 has no keyboard evidence; K2/K9 count all four buttons again
         const judged = judgeCalmFacts(facts, {
-          templateId: '_starter',
+          post: false,
           k13: { keyboard: error === null, accessibility: true, copy_focus: true },
         });
         assert.equal(judged.items.K13.pass, false, name);
@@ -504,32 +508,18 @@ describe('C16 calm synthetic pages', { skip }, () => {
         assert.equal(facts.K9.visible_interactive_above_fold, 13, name);
         assert.equal(judged.items.K9.pass, false, name);
       }
-      // the real switcher: arrows verified (each moves focus, makes the next
-      // report current and wraps), then it counts as one control
-      const { audit, error, facts } = await scene(
-        `<nav id="rs-strip-nav" data-rs-strip><div role="toolbar" aria-label="Reports" id="rs-strip" data-rs-item></div></nav><main id="rs-mount">${extras}</main>${switcher}`,
-      );
+      // the real inbox: arrows verified (each opens the report it moves to,
+      // with a visible ring), then it counts as one control
+      const { audit, error, facts } = await scene(inbox);
       assert.equal(error, null);
-      const group = audit.groups.find((item) => item.kind === 'toolbar');
+      const group = audit.groups.find((item) => item.kind === 'inbox');
       assert.equal(group.switcher, true);
-      assert.deepEqual([...group.arrowed], ['r1', 'r2', 'r3', 'r0']);
+      assert.deepEqual([...group.arrowed], ['r0', 'r1', 'r2', 'r3', 'r2', 'r1', 'r0']);
       assert.equal(facts.K2.items[0].interactive_count, 1);
       assert.equal(facts.K9.visible_interactive_above_fold, 10);
-
-      // the shell re-renders the strip whenever the server's list changes
-      // (e.g. the shown report was marked read on the first key press):
-      // fresh buttons, same reports; the audit follows them by run id
-      const rerendering = switcher.replace(
-        "strip.addEventListener('keydown'",
-        "let again = 2; document.addEventListener('keydown', () => { if (again > 0) { again -= 1; setTimeout(() => { const held = strip.contains(document.activeElement); render(); if (held) strip.children[active].focus(); }, 0); } }, true); strip.addEventListener('keydown'",
-      );
-      assert.notEqual(rerendering, switcher);
-      const again = await scene(
-        `<nav id="rs-strip-nav" data-rs-strip><div role="toolbar" aria-label="Reports" id="rs-strip" data-rs-item></div></nav><main id="rs-mount">${extras}</main>${rerendering}`,
-      );
-      assert.equal(again.error, null);
-      assert.ok(again.audit.groups.some((group) => group.switcher));
-      assert.equal(again.facts.K2.items[0].interactive_count, 1);
+      // an inbox whose arrows open nothing is not verified
+      const dead = await scene(inbox.replace("list.addEventListener('keydown'", "list.addEventListener('rs-never'"));
+      assert.match(dead.error || '', /did not open the next report in the inbox/);
     } finally {
       await context.close();
     }
@@ -682,10 +672,10 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   });
 
-  test('round 2 finding 13: invisible keyboard-focusable rail descendants fail K3', async () => {
+  test('round 2 finding 13: invisible keyboard-focusable inbox descendants fail K3', async () => {
     const html = calmPage()
       .replace('.rail { display: block; overflow: hidden; width: 0; }', '.rail { display:block;overflow:hidden;width:0;opacity:0; }')
-      .replace('.rail button { display: none; }', '.rail button { display:block;width:30px; }');
+      .replace('.rail a { display: none; }', '.rail a { display:block;width:30px; }');
     const result = await judgeHtml(html);
     try {
       assert.equal(result.judged.items.K3.pass, false);
@@ -695,13 +685,13 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   });
 
-  test('round 3 finding 5: display-none rail ancestors remove descendants from K3', async () => {
+  test('round 3 finding 5: display-none inbox ancestors remove descendants from K3', async () => {
     const html = calmPage()
       .replace(
         '.rail { display: block; overflow: hidden; width: 0; }',
         '.rail { display:none;overflow:hidden;width:0; }',
       )
-      .replace('.rail button { display: none; }', '.rail button { display:block; }');
+      .replace('.rail a { display: none; }', '.rail a { display:block; }');
     const result = await judgeHtml(html);
     try {
       assert.equal(result.judged.items.K3.pass, true);
@@ -1002,13 +992,13 @@ describe('C16 calm synthetic pages', { skip }, () => {
     const item = `K${index}`;
     test(`${item}: cluttered synthetic page fails exactly ${item} and calm synthetic page passes all items`, async () => {
       const calm = judgeCalmFacts(await measure(), {
-        templateId: 'preview-post',
+        post: true,
         k13: passingEvidence,
       });
       assert.equal(calm.ok, true, JSON.stringify(calm.items, null, 2));
 
       const cluttered = judgeCalmFacts(await measure(item), {
-        templateId: 'preview-post',
+        post: true,
         k13: passingEvidence,
       });
       const failed = Object.entries(cluttered.items)
@@ -1061,21 +1051,21 @@ describe('C16 calm synthetic pages', { skip }, () => {
 
       const facts = await measure();
       const missingC12 = judgeCalmFacts(facts, {
-        templateId: 'preview-post',
+        post: true,
         k13: { keyboard: false, accessibility: true, copy_focus: true },
       });
       assert.equal(missingC12.items.K13.pass, false);
       assert.match(missingC12.items.K13.reasons.join(' '), /C12/);
 
       const missingC13 = judgeCalmFacts(facts, {
-        templateId: 'preview-post',
+        post: true,
         k13: { keyboard: true, accessibility: false, copy_focus: true },
       });
       assert.equal(missingC13.items.K13.pass, false);
       assert.match(missingC13.items.K13.reasons.join(' '), /C13/);
 
       const hiddenCopy = judgeCalmFacts(facts, {
-        templateId: 'preview-post',
+        post: true,
         k13: { keyboard: true, accessibility: true, copy_focus: false },
       });
       assert.equal(hiddenCopy.items.K13.pass, false);
@@ -1085,16 +1075,18 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   });
 
-  test('calm mode adds accent and shape-avatar scenes per golden', async () => {
+  test('calm mode adds accent and shape-avatar scenes per payload fixture', async () => {
     const source = readFileSync(path.join(ROOT, 'tools/e2e.mjs'), 'utf8');
     const seen = [];
     const scope = {
       readFileSync,
       path,
       ROOT,
+      parseColor,
+      toHex,
       judgeCalmFacts: () => ({ ok: true, items: {} }),
       calmScene: async (_browser, _server, testCase, scene) => {
-        seen.push({ template: testCase.manifest.id, ...scene });
+        seen.push({ case: testCase.id, ...scene });
         return {
           K13: { keyboard: { pass: true }, accessibility: { pass: true }, copy_focus: { pass: true } },
           identity: { pass: true, expected_accent: scene.expectedAccent },
@@ -1109,11 +1101,9 @@ describe('C16 calm synthetic pages', { skip }, () => {
       ),
       scope,
     );
-    const scenes = await scope.calmIdentityScenes({}, {}, [
-      { fixture: 'golden', manifest: { id: '_starter' } },
-      { fixture: 'edge-max', manifest: { id: '_starter' } },
-    ]);
+    const scenes = await scope.calmIdentityScenes({}, {}, [{ id: 'approve', fixture: 'approve' }]);
     assert.equal(scenes.length, 20);
+    assert.ok(seen.every((scene) => scene.case === 'approve'));
     assert.ok(seen.every((scene) => scene.openRuns === 3 && scene.identities.length === 3));
     const accentScenes = seen.filter((scene) => scene.fixture.endsWith('accent'));
     assert.equal(accentScenes.length, 8);
@@ -1123,20 +1113,27 @@ describe('C16 calm synthetic pages', { skip }, () => {
     const accent = (fixture, theme) => seen.find((scene) => (
       scene.fixture === fixture && scene.theme === theme
     )).expectedAccent;
-    assert.equal(accent('golden+custom-accent', 'light'), '#3b4fd8');
-    assert.equal(accent('golden+custom-accent', 'dark'), '#0891b2');
-    assert.equal(accent('golden+low-contrast-accent', 'light'), '#3b4fd8');
-    assert.equal(accent('golden+low-contrast-accent', 'dark'), '#f6c945');
-    assert.equal(accent('golden+shape-avatars', 'light'), '#8b4cf0');
-    assert.equal(accent('golden+shape-avatars', 'dark'), '#8f9cf7');
-    assert.equal(accent('golden+shape-avatars-2', 'light'), '#3b4fd8');
-    assert.equal(accent('golden+shape-avatars-2', 'dark'), '#ff6700');
-    assert.equal(accent('golden+shape-fallbacks', 'light'), '#3b4fd8');
-    assert.equal(accent('golden+shape-fallbacks', 'dark'), '#8f9cf7');
+    const tokens = readFileSync(path.join(ROOT, 'core/static/tokens.css'), 'utf8');
+    const token = (name, theme) => {
+      const block = theme === 'light'
+        ? tokens.match(/:root\s*\{([^}]*)\}/u)[1]
+        : tokens.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/u)[1];
+      return toHex(parseColor(block.slice(block.indexOf(`${name}:`) + name.length + 1).match(/^\s*(#[0-9a-f]{6}|oklch\([^)]*\))/iu)[1]));
+    };
+    assert.equal(accent('approve+custom-accent', 'light'), token('--rs-accent', 'light'));
+    assert.equal(accent('approve+custom-accent', 'dark'), '#0891b2');
+    assert.equal(accent('approve+low-contrast-accent', 'light'), token('--rs-accent', 'light'));
+    assert.equal(accent('approve+low-contrast-accent', 'dark'), '#f6c945');
+    assert.equal(accent('approve+shape-avatars', 'light'), token('--rs-avatar-violet', 'light'));
+    assert.equal(accent('approve+shape-avatars', 'dark'), token('--rs-accent', 'dark'));
+    assert.equal(accent('approve+shape-avatars-2', 'light'), token('--rs-accent', 'light'));
+    assert.equal(accent('approve+shape-avatars-2', 'dark'), token('--rs-avatar-orange', 'dark'));
+    assert.equal(accent('approve+shape-fallbacks', 'light'), token('--rs-accent', 'light'));
+    assert.equal(accent('approve+shape-fallbacks', 'dark'), token('--rs-accent', 'dark'));
   });
 
   // Identity calibration: avatars are media, a bot accent is the one
-  // accent, and a foreign run's accent painted in the rail is caught.
+  // accent, and another report's accent painted in the inbox is caught.
   test('24 and 32 px avatars are media, not nested boxes (K5)', async () => {
     const avatar = (size, inner = '') => (
       `<span data-rs-avatar aria-hidden="true" style="display:inline-grid;width:${size}px;height:${size}px;border-radius:50%;background:#c4c4cc">${inner}</span>`
@@ -1173,7 +1170,7 @@ describe('C16 calm synthetic pages', { skip }, () => {
     }
   });
 
-  test('another run\'s accent painted in the rail fails K6 (one accent at a time)', async () => {
+  test('another report\'s accent painted in the inbox fails K6 (one accent at a time)', async () => {
     const page = calmPage({ runCount: 3 }).replaceAll('#336699', '#0891b2');
     const clean = await judgeHtml(page);
     try {
@@ -1182,8 +1179,8 @@ describe('C16 calm synthetic pages', { skip }, () => {
       await clean.context.close();
     }
     const foreign = await judgeHtml(page.replace(
-      '<button>Run 2</button>',
-      '<button>Run 2 <span style="color:#a855f7">Desk Agent</span></button>',
+      '>Run 2</a>',
+      '>Run 2 <span style="color:#a855f7">Desk Agent</span></a>',
     ));
     try {
       assert.equal(foreign.judged.items.K6.pass, false);
@@ -1303,11 +1300,11 @@ describe('C16 calm synthetic pages', { skip }, () => {
   });
 });
 
-test('K10 social audit scope: the preview-post built-in and templates extending it', () => {
-  assert.equal(calmTools.isSocialPreview('preview-post'), true);
-  assert.equal(calmTools.isSocialPreview('preview-post'), true);
-  assert.equal(calmTools.isSocialPreview({ id: 'shop-post', extends: 'preview-post' }), true);
-  assert.equal(calmTools.isSocialPreview({ id: 'decide-list' }), false);
-  assert.equal(calmTools.isSocialPreview({ id: 'shop-list', extends: 'decide-list' }), false);
-  assert.equal(calmTools.isSocialPreview(null), false);
+test('K10 judges a report with a post block, or a page the caller marks', () => {
+  const facts = (n) => ({ K10: { post_blocks: n } });
+  assert.equal(calmTools.judgesPostPreview(facts(1)), true);
+  assert.equal(calmTools.judgesPostPreview(facts(0)), false);
+  assert.equal(calmTools.judgesPostPreview({}), false);
+  assert.equal(calmTools.judgesPostPreview(facts(0), { post: true }), true);
+  assert.equal(calmTools.judgesPostPreview(facts(2), { post: false }), false);
 });

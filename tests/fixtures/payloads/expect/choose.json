@@ -1,0 +1,32 @@
+{
+  "flow": [
+    {
+      "click": "#inp-date-o1"
+    },
+    {
+      "click": "#rs-submit"
+    }
+  ],
+  "keyboard": [
+    {
+      "press": "Tab",
+      "repeat": 2
+    },
+    {
+      "press": "ArrowRight"
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "result": {
+    "decision": "choose",
+    "note": "",
+    "refs": [],
+    "blocks": {
+      "date": {
+        "choice": "fri"
+      }
+    }
+  }
+}

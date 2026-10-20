@@ -1,0 +1,61 @@
+{
+  "flow": [
+    {
+      "click": "#inp-replies-r0-done"
+    },
+    {
+      "click": "#inp-replies-r1-skipped"
+    },
+    {
+      "click": "#inp-replies-r2-later"
+    },
+    {
+      "click": "#rs-submit"
+    }
+  ],
+  "keyboard": [
+    {
+      "press": "Tab",
+      "repeat": 4
+    },
+    {
+      "press": "a"
+    },
+    {
+      "press": "x"
+    },
+    {
+      "press": "l"
+    },
+    {
+      "press": "Enter"
+    }
+  ],
+  "result": {
+    "decision": "submit",
+    "note": "",
+    "refs": [],
+    "blocks": {
+      "replies": {
+        "items": [
+          {
+            "id": "reply-1",
+            "choice": "done"
+          },
+          {
+            "id": "reply-2",
+            "choice": "skipped"
+          },
+          {
+            "id": "reply-3",
+            "choice": "later"
+          }
+        ]
+      }
+    }
+  },
+  "copies": {
+    "replies-reply-1-1": "We deliver within two working days.",
+    "replies-reply-2-1": "Thank you, glad it helps."
+  }
+}

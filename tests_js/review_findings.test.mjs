@@ -12,14 +12,17 @@ import {
   auditCopyFocus,
   calmEvaluator,
   focusedControlFacts,
-  isSocialPreview,
   pngBackgroundRatio,
   settleShortAnimations,
 } from '../tools/calm.mjs';
 import { isSameOriginPath } from '../tools/dev/browser-safety.mjs';
 import {
   browserChannel,
+  fixtureMedia,
   loadChromium,
+  PAYLOAD_FIXTURES,
+  payloadFixture,
+  payloadFixtureNames,
   resolvePythonExecutable,
   ROOT,
   serverStderrTail,
@@ -27,24 +30,27 @@ import {
   startServer,
   validateServerPort,
 } from '../tools/dev/rs-server.mjs';
-import { resolvedTemplates } from '../tools/template-registry.mjs';
+import { parseColor, toHex } from '../tools/colour.mjs';
+import { e2ePort } from '../tools/node-tests.mjs';
 import { calmPage } from './fixtures/calm/pages.mjs';
 
 const source = fs.readFileSync(path.join(ROOT, 'tools', 'e2e.mjs'), 'utf8');
 const declarations = source.slice(source.indexOf('function json('), source.indexOf('const runners ='));
 const serverSource = fs.readFileSync(path.join(ROOT, 'tools', 'dev', 'rs-server.mjs'), 'utf8');
 const FIXTURE_CLOCK_ENV = { RS_CLOCK_ANCHOR: '2026-10-08T10:40:00Z' };
-const BASE_PORT = Number(process.env.RS_E2E_PORT || 18920);
-const REVIEW_PORT = BASE_PORT + 3;
-const REVIEW_AUX_PORT = BASE_PORT + 4;
-const REVIEW_PARALLEL_PORTS = [BASE_PORT + 4, BASE_PORT + 5, BASE_PORT + 6];
-const REVIEW_FAKE_ORIGIN = `http://127.0.0.1:${BASE_PORT + 7}`;
+// this file's own test ports (tools/node-tests.mjs E2E_PORTS)
+const port = (slot) => e2ePort('review_findings.test.mjs', slot);
+const REVIEW_PORT = port(0);
+const REVIEW_AUX_PORT = port(1);
+const REVIEW_PARALLEL_PORTS = [port(1), port(2), port(3)];
+const REVIEW_FAKE_ORIGIN = `http://127.0.0.1:${port(4)}`;
+const REVIEW_TOOL_PORT = port(5);
 
 function sandbox(overrides = {}) {
   const value = {
     ROOT,
     PORT: REVIEW_PORT,
-    requestedTemplate: '--all',
+    requestedFixture: '--all',
     AXE: path.join(ROOT, 'vendor', 'axe.min.js'),
     AXE_SHA256: '20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878',
     path,
@@ -52,7 +58,12 @@ function sandbox(overrides = {}) {
     existsSync: fs.existsSync,
     readFileSync: fs.readFileSync,
     readdirSync: fs.readdirSync,
-    resolvedTemplates,
+    PAYLOAD_FIXTURES,
+    payloadFixture,
+    payloadFixtureNames,
+    fixtureMedia,
+    parseColor,
+    toHex,
     performance,
     console,
     process,
@@ -65,7 +76,6 @@ function sandbox(overrides = {}) {
     CALM_THRESHOLDS,
     focusedControlFacts,
     settleShortAnimations,
-    isSocialPreview,
     isSameOriginPath,
     sleep: async () => {},
     runNetwork: { requests: [], responses: [], errors: [] },
@@ -319,14 +329,14 @@ test('browser launch and page navigation use explicit bounded timeouts', async (
 test('round 3 finding 1: the real production keyboard runner imports its focus evaluator', () => {
   const result = spawnSync(
     process.execPath,
-    [path.join(ROOT, 'tools', 'e2e.mjs'), 'keyboard', 'decide-list'],
+    [path.join(ROOT, 'tools', 'e2e.mjs'), 'keyboard', 'approve-decide'],
     {
       cwd: ROOT,
       env: {
         ...process.env,
         RS_PLAYWRIGHT_CORE: process.env.RS_PLAYWRIGHT_CORE,
         RS_E2E_RESULT_TIMEOUT_MS: '30000',
-        RS_TOOL_PORT: String(BASE_PORT + 8),
+        RS_TOOL_PORT: String(REVIEW_TOOL_PORT),
       },
       encoding: 'utf8',
       timeout: 120000,
@@ -338,7 +348,7 @@ test('round 3 finding 1: the real production keyboard runner imports its focus e
   assert.equal(result.status, 0, output);
 });
 
-test('keyboard flow waits for the rendered rail before replaying Tab steps', async () => {
+test('keyboard flow waits for the rendered inbox before replaying Tab steps', async () => {
   const events = [];
   const scope = sandbox();
   let sequence = 0;
@@ -346,18 +356,18 @@ test('keyboard flow waits for the rendered rail before replaying Tab steps', asy
     server: {
       result: (runId) => (
         runId === 'run-2'
-          ? { data: { choice: 'erledigt', note: 'Passt so' } }
+          ? { data: { decision: 'read', note: 'Passt so', refs: [] } }
           : null
       ),
     },
     browser: {},
   });
   scope.fixtureCases = () => [{
-    manifest: { id: '_starter' },
-    fixture: 'golden',
+    id: 'read',
+    fixture: 'read',
     expect: {
       keyboard: [{ press: 'Tab' }],
-      result: { choice: 'erledigt', note: 'Passt so' },
+      result: { decision: 'read', note: 'Passt so', refs: [] },
     },
   }];
   scope.cancelOpen = async () => {};
@@ -366,7 +376,7 @@ test('keyboard flow waits for the rendered rail before replaying Tab steps', asy
     context: { close: async () => {} },
     page: {},
   });
-  scope.tabAudit = async () => ({ seen: ['id:starter-note'] });
+  scope.tabAudit = async () => ({ seen: ['id:rs-note'] });
   scope.waitForTabAuditReady = async () => { events.push('ready'); };
   scope.runStep = async () => { events.push('step'); };
 
@@ -476,8 +486,8 @@ test('round 5 finding 1: safe copy interception catches bare and query URLs befo
       return context;
     },
   };
-  const scope = sandbox({ PORT: port, requestedTemplate: 'decide-list' });
-  const testCase = scope.fixtureCases('decide-list', { goldenOnly: true })[0];
+  const scope = sandbox({ PORT: port, requestedFixture: 'approve-decide' });
+  const testCase = scope.fixtureCases('approve-decide')[0];
   const run = await scope.show(server, testCase);
   const opened = await scope.openPage(guardedBrowser, server, run.run_id, {
     copyHandler: (body) => ordinary.push(body),
@@ -516,38 +526,16 @@ test('round 5 finding 1: safe copy interception catches bare and query URLs befo
   );
 });
 
-test('finding 6: zero templates and a missing golden expect contract fail', () => {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-e2e-coverage-'));
-  try {
-    fs.mkdirSync(path.join(scratch, 'templates'), { recursive: true });
-    fs.mkdirSync(path.join(scratch, 'tools'), { recursive: true });
-    fs.copyFileSync(
-      path.join(ROOT, 'tools', 'measurement.json'),
-      path.join(scratch, 'tools', 'measurement.json'),
-    );
-    const scope = sandbox({ ROOT: scratch, resolvedTemplates: () => [] });
-    assert.throws(() => scope.fixtureCases('--all'), /no registered templates/i);
-
-    const fixtureDir = path.join(scratch, 'templates', 'global', 'missing', 'fixtures');
-    fs.mkdirSync(fixtureDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(fixtureDir, '..', 'template.json'),
-      JSON.stringify({ id: 'missing', namespace: 'global', version: 1, title_de: 'Fehlt' }),
-    );
-    fs.writeFileSync(path.join(fixtureDir, 'golden.json'), '{}');
-    scope.resolvedTemplates = () => [{
-      dir: path.join(scratch, 'templates', 'global', 'missing'),
-      manifest: {
-        id: 'missing',
-        namespace: 'global',
-        version: 1,
-        title_de: 'Fehlt',
-      },
-    }];
-    assert.throws(() => scope.fixtureCases('--all'), /fixtures[/\\]expect[/\\]golden\.json/);
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
-  }
+test('finding 6: no fixtures, an unknown fixture and a missing expect part fail', () => {
+  const none = sandbox({ payloadFixtureNames: () => [] });
+  assert.throws(() => none.fixtureCases('--all'), /no fixture cases/i);
+  const scope = sandbox();
+  assert.throws(() => scope.fixtureCases('no-such-fixture'), /no payload fixture no-such-fixture/);
+  // needs: only fixtures whose expect file holds that part
+  const flows = scope.fixtureCases('--all', { needs: 'flow' });
+  assert.ok(flows.length > 0 && flows.every((item) => Array.isArray(item.expect.flow)));
+  assert.ok(!flows.some((item) => item.id === 'do-post'), 'do-post has copies only');
+  assert.throws(() => scope.fixtureCases('do-post', { needs: 'flow' }), /no fixture cases/i);
 });
 
 test('finding 7: empty and one-letter payloads do not admit unrelated English text', async () => {
@@ -562,7 +550,7 @@ test('finding 7: empty and one-letter payloads do not admit unrelated English te
   });
 
   for (const data of [{ optional: '' }, { letter: 'e' }]) {
-    scope.fixtureCases = () => [{ manifest: { id: 'test' }, fixture: 'golden', data }];
+    scope.fixtureCases = () => [{ id: 'test', fixture: 'test', data }];
     const result = await scope.stringsMode();
     assert.equal(result.ok, false);
     assert.equal(result.findings[0].text, 'Click here to delete everything');
@@ -579,8 +567,8 @@ test('finding 8: C14 exercises dark pages and proves CSP on a real copy response
     }),
   });
   const testCase = {
-    manifest: { id: 'template-a' },
-    fixture: 'golden',
+    id: 'template-a',
+    fixture: 'template-a',
     data: {},
     expect: { copies: {}, flow: [{ press: 'Enter' }], keyboard: [{ press: 'Enter' }], result: {} },
   };
@@ -705,8 +693,8 @@ test('round 3 finding 4: a multi-entry toolbar is not collapsed as roving', asyn
 test('finding 10: keyboard fixture rejects mouse-only steps', async () => {
   const scope = sandbox();
   const testCase = {
-    manifest: { id: 'test' },
-    fixture: 'golden',
+    id: 'test',
+    fixture: 'test',
     data: {},
     expect: { keyboard: [{ click: '#submit' }], result: {} },
   };
@@ -757,8 +745,8 @@ test('finding 13: submit timing starts at browser event dispatch, after action p
       browser: {},
     });
     scope.fixtureCases = () => [{
-      manifest: { id: 'test' },
-      fixture: 'golden',
+      id: 'test',
+      fixture: 'test',
       data: {},
       expect: { flow: [{ click: '#submit' }], result: {} },
     }];
@@ -782,13 +770,14 @@ test('finding 15: browser launch failure still stops the isolated server', async
     boundedMilliseconds: (name, fallback) => fallback,
     loadChromium: async () => ({ launch: async () => { throw new Error('Edge launch failed'); } }),
     startServer: async () => ({ stop: async () => { stopped += 1; } }),
+    fixtureMedia: () => ({ dir: 'media', map: (data) => data, cleanup: () => {} }),
     PORT: REVIEW_PORT,
     ROOT,
     TIME_BASELINE: { default: { clockAnchor: FIXTURE_CLOCK_ENV.RS_CLOCK_ANCHOR } },
   };
   vm.createContext(scope);
   vm.runInContext(
-    source.slice(source.indexOf('async function withSession('), source.indexOf('async function openPage(')),
+    `let fixtureMediaFiles = null;\n${source.slice(source.indexOf('async function withSession('), source.indexOf('async function openPage('))}`,
     scope,
   );
 
@@ -798,12 +787,8 @@ test('finding 15: browser launch failure still stops the isolated server', async
 
 test('fixture clock anchor keeps baseline open and open assertion rejects an expired baseline', async (t) => {
   const tools = await import('../tools/dev/rs-server.mjs');
-  const golden = JSON.parse(fs.readFileSync(
-    path.join(ROOT, 'templates/builtin/_starter/fixtures/golden.json'),
-    'utf8',
-  ));
   const created = '2026-10-08T10:39:00Z';
-  const showBaseline = (server) => server.show(golden, {
+  const showBaseline = (server) => server.show(tools.PLAIN_REPORT, {
     title: 'Fixture clock regression',
     created,
     expires_minutes: 240,
@@ -847,27 +832,24 @@ test('round 3 finding 2: every runner fixture is asserted open after registratio
     },
   };
   const testCase = {
-    dir: 'C:\\templates\\sample',
-    fixture: 'golden',
-    manifest: {
-      id: 'sample',
-      version: 1,
-      namespace: 'global',
-      title_de: 'Sample',
-    },
-    data: { media: '%RS_TEMPLATE%/media/hero.png' },
+    id: 'sample',
+    fixture: 'sample',
+    data: { bot: 'sample-bot', title: 'Sample', media: '/srv/media/hero.png' },
   };
+  // the session's fixture media root takes the fixture's /srv/media paths
+  vm.runInContext("fixtureMediaFiles = { map: (data) => ({ ...data, media: 'C:/media/hero.png' }) }", scope);
 
   const run = await scope.show(server, testCase);
 
   assert.equal(run.run_id, 'open-fixture');
-  assert.equal(calls[0].data.media, 'C:\\templates\\sample/media/hero.png');
+  assert.equal(calls[0].data.media, 'C:/media/hero.png');
+  assert.equal(calls[0].envelope.bot, 'sample-bot');
   assert.deepEqual(
     calls.filter((call) => call.kind === 'assert'),
     [{
       kind: 'assert',
       runId: 'open-fixture',
-      context: 'sample/golden',
+      context: 'sample',
     }],
   );
 });
@@ -879,8 +861,8 @@ test('round 2 finding 1: expect awaits a 150 ms route and detects mismatching bo
   t.after(() => browser.close());
   const scope = sandbox();
   const testCase = {
-    manifest: { id: 'test' },
-    fixture: 'golden',
+    id: 'test',
+    fixture: 'test',
     data: {},
     expect: { copies: { first: 'expected text' }, counters: {} },
   };
@@ -937,7 +919,7 @@ test('round 2 finding 2: network accepts copy-only edge expects and rejects malf
     }),
   });
   const edge = {
-    manifest: { id: 'test' },
+    id: 'edge-copy-only',
     fixture: 'edge-copy-only',
     data: {},
     expect: { copies: {} },
@@ -987,30 +969,12 @@ test('round 2 finding 6: strings admits each exact fixture envelope title', asyn
     page: { evaluate: async () => [scope.currentTitle] },
   });
   const cases = [
-    {
-      manifest: {
-        id: 'decide-list',
-        namespace: 'global',
-        version: 1,
-        title_de: 'List decisions',
-      },
-      fixture: 'golden',
-      data: {},
-    },
-    {
-      manifest: {
-        id: 'distinct',
-        namespace: 'global',
-        version: 1,
-        title_de: 'Eigenständiger Umschlagtitel',
-      },
-      fixture: 'golden',
-      data: {},
-    },
+    { id: 'listed', fixture: 'listed', data: { bot: 'office-bot', title: 'List decisions' } },
+    { id: 'distinct', fixture: 'distinct', data: { bot: 'office-bot', title: 'Eigenständiger Umschlagtitel' } },
   ];
 
   for (const testCase of cases) {
-    scope.currentTitle = testCase.manifest.title_de;
+    scope.currentTitle = testCase.data.title;
     scope.fixtureCases = () => [testCase];
     const result = await scope.stringsMode();
     assert.equal(result.ok, true, JSON.stringify(result.findings));
@@ -1036,7 +1000,7 @@ test('round 3 finding 1: every arrow-focused native radio has a visible outline 
   );
 });
 
-test('decide-list choice arrows are audited beyond the Tab-entry button', async (t) => {
+test('decide row choice arrows are audited beyond the Tab-entry button', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
   const server = await startServer({ port: REVIEW_PORT });
@@ -1044,12 +1008,7 @@ test('decide-list choice arrows are audited beyond the Tab-entry button', async 
   t.after(async () => {
     try { await browser.close(); } finally { await server.stop(); }
   });
-  const fixture = JSON.parse(fs.readFileSync(
-    path.join(ROOT, 'templates', 'builtin', 'decide-list', 'fixtures', 'golden.json'),
-    'utf8',
-  ));
-  const run = server.show(fixture, {
-    template: 'decide-list',
+  const run = server.show(payloadFixture('approve-decide'), {
     bot: 'example-inbox-bot',
     title: 'Outline-Prüfung',
   });
@@ -1064,7 +1023,7 @@ test('decide-list choice arrows are audited beyond the Tab-entry button', async 
   await page.goto(server.url(`?run=${run.run_id}&client=test`));
   await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
   await page.addStyleTag({
-    content: 'rs-action-row button:nth-child(2):focus{outline-style:none!important}',
+    content: 'rs-segmented .rs-seg:nth-child(2):focus{outline-style:none!important}',
   });
 
   await assert.rejects(
@@ -1093,8 +1052,8 @@ test('round 3 finding 1: keyboard flow actions check newly focused controls', as
     browser,
   });
   scope.fixtureCases = () => [{
-    manifest: { id: 'test' },
-    fixture: 'golden',
+    id: 'test',
+    fixture: 'test',
     data: {},
     expect: { keyboard: [{ press: 'ArrowRight' }], result: {} },
   }];
@@ -1116,16 +1075,7 @@ test('round 3 finding 2: strings accepts only the fixture exact rendered date', 
   scope.textMatchers = () => ({ regexes: [], bots: [] });
   scope.cancelOpen = async () => {};
   scope.show = () => ({ run_id: 'strings-time' });
-  scope.fixtureCases = () => [{
-    manifest: {
-      id: 'test',
-      namespace: 'global',
-      version: 1,
-      title_de: 'Zeitprüfung',
-    },
-    fixture: 'golden',
-    data: {},
-  }];
+  scope.fixtureCases = () => [{ id: 'test', fixture: 'test', data: { bot: 'time-bot', title: 'Zeitprüfung' } }];
   scope.currentText = 'Erstellt Do 08.10.2026 · 12:39';
   scope.openPage = async () => ({
     context: { close: async () => {} },
@@ -1195,7 +1145,7 @@ test('round 4 finding 3: strings audits visible aria-hidden text but ignores vis
   });
 
   async function audit(style) {
-    const scope = sandbox({ PORT: port, requestedTemplate: 'decide-list' });
+    const scope = sandbox({ PORT: port, requestedFixture: 'approve-decide' });
     scope.withSession = async (callback) => callback({ server, browser });
     const openPage = scope.openPage;
     scope.openPage = async (...args) => {
@@ -1232,8 +1182,8 @@ test('round 5 finding 2: strings uses text geometry for display contents and exc
   });
 
   async function audit({ nodeStyle = '', hostStyle = '' }) {
-    const scope = sandbox({ PORT: port, requestedTemplate: 'decide-list' });
-    const cases = scope.fixtureCases('decide-list', { goldenOnly: true });
+    const scope = sandbox({ PORT: port, requestedFixture: 'approve-decide' });
+    const cases = scope.fixtureCases('approve-decide');
     scope.fixtureCases = () => cases;
     scope.withSession = async (callback) => callback({ server, browser });
     const openPage = scope.openPage;
@@ -1321,9 +1271,9 @@ test('round 4 finding 4: date-shaped payload text is not mistaken for envelope m
   t.after(async () => {
     try { await browser.close(); } finally { await server.stop(); }
   });
-  const scope = sandbox({ PORT: port, requestedTemplate: 'decide-list' });
-  const cases = scope.fixtureCases('decide-list', { goldenOnly: true });
-  cases[0].data.items[0].title = 'Mo 01.01.1900 · 00:00';
+  const scope = sandbox({ PORT: port, requestedFixture: 'approve-decide' });
+  const cases = scope.fixtureCases('approve-decide');
+  cases[0].data.blocks.find((block) => block.type === 'decide').items[0].title = 'Mo 01.01.1900 · 00:00';
   scope.fixtureCases = () => cases;
   scope.withSession = async (callback) => callback({ server, browser });
 
@@ -1340,15 +1290,10 @@ test('round 4 finding 5: time rejects missing and empty decided timestamps', asy
     });
     const baseline = vm.runInContext('TIME_BASELINE', scope);
     const testCase = {
-      manifest: {
-        id: '_starter',
-        namespace: 'global',
-        version: 1,
-        title_de: 'Starter',
-      },
-      fixture: 'golden',
-      data: {},
-      expect: { result: {} },
+      id: 'read',
+      fixture: 'read',
+      data: { bot: 'report-shell-test', title: 'Zeit' },
+      expect: { result: { decision: 'read', note: '', refs: [] } },
     };
     scope.withSession = async (callback) => callback({
       server: {
@@ -1359,10 +1304,8 @@ test('round 4 finding 5: time rejects missing and empty decided timestamps', asy
         result: (runId) => {
           const expected = baseline.cases[Number(runId.split('-').at(-1))];
           return {
-            schema: 'report-shell/result@1',
+            schema: 'grokbot-desk/result@2',
             run_id: runId,
-            template: '_starter',
-            template_version: 1,
             bot: 'report-shell-test',
             status: 'submitted',
             created: expected.persisted_created,
@@ -1415,8 +1358,8 @@ test('round 4 finding 6: C10 stop time includes per-case schema and equality val
       browser: {},
     });
     scope.fixtureCases = () => [{
-      manifest: { id: '_starter' },
-      fixture: 'golden',
+      id: 'read',
+      fixture: 'read',
       data: {},
       expect: { flow: [{ click: '#submit' }], result: {} },
     }];
@@ -1491,78 +1434,43 @@ test('flake 8: time mode is repeatable back to back and under parallel load', as
   assert.ok(parallel.every((result) => result.total === 6));
 });
 
-test('round 3 finding 4: generic envelopes are neutral while real templates keep manifest ownership', () => {
+test('round 3 finding 4: the envelope keeps the fixture bot and names a bot without a name', () => {
   const scope = sandbox();
-
-  assert.equal(scope.registrationEnvelope({
-    manifest: {
-      id: '_starter',
-      namespace: 'global',
-      version: 1,
-      title_de: 'Starter',
-    },
-  }).bot, 'report-shell-test');
-  assert.equal(scope.registrationEnvelope({
-    manifest: {
-      id: 'owned-template',
-      namespace: 'acme-report-bot',
-      version: 1,
-      title_de: 'Eigene Vorlage',
-    },
-  }).bot, 'acme-report-bot');
+  const named = scope.registrationEnvelope({ id: 'read', data: payloadFixture('read') });
+  assert.equal(named.bot, 'ops-bot');
+  assert.equal(JSON.stringify(named.identity), JSON.stringify(payloadFixture('read').identity));
+  const derived = scope.registrationEnvelope({ id: 'approve', data: payloadFixture('approve') });
+  assert.equal(derived.bot, 'deploy-bot');
+  assert.equal(derived.identity.name, 'Deploy Bot');
+  // identity scenes give every other report its own bot id and identity
+  const scene = scope.registrationEnvelope({ id: 'approve', data: payloadFixture('approve') }, { name: 'Desk Agent' }, '-1');
+  assert.deepEqual([scene.bot, scene.identity.name], ['deploy-bot-1', 'Desk Agent']);
+  assert.equal(scope.registrationEnvelope({ id: 'bare', data: {} }).bot, 'report-shell-test');
 });
 
-test('counter cases use the resolved user template id', () => {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-counter-registry-'));
+test('C6 counter cases come from the pinned upstream corpus and all pass', () => {
+  const result = spawnSync('node', [path.join(ROOT, 'tools', 'counter_test.mjs')], {
+    cwd: ROOT, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const body = JSON.parse(result.stdout.trim());
+  assert.equal(body.ok, true);
+  assert.ok(body.total >= 30);
+  assert.equal(body.passed, body.total);
+});
+
+test('fixture media paths resolve into the session media root', () => {
+  const media = fixtureMedia();
   try {
-    const template = path.join(scratch, 'templates', 'preview-post');
-    fs.cpSync(
-      path.join(ROOT, 'templates', 'builtin', 'preview-post'),
-      template,
-      { recursive: true },
-    );
-    fs.writeFileSync(
-      path.join(template, 'fixtures', 'expect', 'counter-cases.json'),
-      JSON.stringify(Array.from({ length: 30 }, (_, index) => ({
-        name: `case-${index + 1}`,
-        platform: 'linkedin',
-        text: 'abc',
-        count: 3,
-        over: false,
-      }))),
-    );
-
-    const result = spawnSync(
-      'node',
-      [path.join(ROOT, 'tools', 'counter_test.mjs')],
-      {
-        cwd: ROOT,
-        env: { ...process.env, RS_DATA_DIR: scratch },
-        encoding: 'utf8',
-        windowsHide: true,
-      },
-    );
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    const body = JSON.parse(result.stdout.trim());
-    assert.equal(body.ok, true);
-    assert.equal(body.total, 30);
-    assert.match(body.template_dir, /templates[\\/]preview-post$/);
+    const payload = payloadFixture('review');
+    const mapped = media.map(payload);
+    const image = mapped.blocks[0].images[0].path;
+    assert.equal(image, path.join(media.dir, 'floor-plan.png'));
+    assert.ok(fs.existsSync(image));
+    assert.equal(payload.blocks[0].images[0].path, '/srv/media/onboarding/floor-plan.png', 'the fixture stays as it is');
   } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
+    media.cleanup();
   }
-});
-
-test('fixture media paths resolve against the registered template directory', () => {
-  const scope = sandbox();
-  const payload = {
-    image: '%RS_TEMPLATE%/media/hero.png',
-    nested: ['%RS_TEMPLATE%/media/other.png'],
-  };
-  const resolved = scope.resolveTemplatePaths(payload, 'C:\\repo\\templates\\example');
-
-  assert.equal(resolved.image, 'C:\\repo\\templates\\example/media/hero.png');
-  assert.equal(resolved.nested[0], 'C:\\repo\\templates\\example/media/other.png');
-  assert.equal(payload.image, '%RS_TEMPLATE%/media/hero.png');
 });
 
 test('reveal opens lazy tabs and collapsed details before copy and counter lookup', async (t) => {
@@ -1772,14 +1680,6 @@ test('round 5 finding 1: calmScene catches copies created by native details togg
             </script></body>`,
           );
         await page.setContent(html);
-        await page.evaluate(() => {
-          const rail = document.querySelector('.rail');
-          rail.setAttribute('data-rs-rail', '');
-          const readyEntry = document.createElement('i');
-          readyEntry.className = 'rs-rail__run';
-          readyEntry.hidden = true;
-          rail.append(readyEntry);
-        });
         const scope = sandbox({
           CALM_THRESHOLDS,
           auditCopyFocus,
@@ -1796,7 +1696,7 @@ test('round 5 finding 1: calmScene catches copies created by native details togg
         const facts = await scope.calmScene(
           {},
           {},
-          { fixture: 'golden', manifest: { id: 'decide-list' } },
+          { id: 'approve-decide', fixture: 'approve-decide' },
           { openRuns: 1, theme: 'light', viewport },
         );
         rows.push({
@@ -1878,7 +1778,7 @@ async function frozenAnimationPage(browser, { focusOnly = true } = {}) {
   return { context, page };
 }
 
-test('introduced finding 1: template timers cannot defeat any animation settle deadline', async (t) => {
+test('introduced finding 1: page timers cannot defeat any animation settle deadline', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
@@ -1915,7 +1815,7 @@ test('introduced finding 1: template timers cannot defeat any animation settle d
       );
       await assertAnimationSettleFailsWithinCap(() => scope.calmRestingFacts(
         page,
-        { manifest: { id: 'decide-list' } },
+        { id: 'approve-decide', fixture: 'approve-decide' },
         1,
         [],
         true,
@@ -2001,8 +1901,7 @@ async function runCalmFadeScene(browser, playbackRate = 1) {
       CALM_THRESHOLDS,
       auditCopyFocus,
       auditPlatformSwitching: async () => null,
-      isSocialPreview,
-      calmEvaluator,
+        calmEvaluator,
       closeAuditContext: async (contextToClose) => contextToClose.close(),
       pngBackgroundRatio,
       cancelOpen: async () => {},
@@ -2040,7 +1939,7 @@ async function runCalmFadeScene(browser, playbackRate = 1) {
     return await scope.calmScene(
       {},
       {},
-      { fixture: 'edge-max', manifest: { id: 'decide-list' } },
+      { id: 'approve-decide', fixture: 'approve-decide' },
       {
         openRuns: 1,
         theme: 'light',
@@ -2172,36 +2071,33 @@ test('round 3 finding 6: a transparent outline is not visible focus evidence', a
   );
 });
 
-test('round 3 finding 10: Tab inventory waits for the expected rail to settle', async (t) => {
+test('round 3 finding 10: Tab inventory waits for the expected inbox to settle', async (t) => {
   const chromium = await loadChromium();
   assert.ok(chromium, 'playwright-core is required');
   const browser = await chromium.launch({ channel: browserChannel(), headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.setContent(`
-    <style>button:focus{outline:2px solid black}</style>
-    <nav id="rs-rail">
-      <button class="rs-rail__run" data-run-id="one">One</button>
+    <style>button:focus,a:focus{outline:2px solid black}</style>
+    <nav id="rs-inbox">
+      <a href="?run=one" data-run-id="one">One</a>
     </nav>
     <button id="outside">Outside</button>
     <script>
+      const rows = () => [
+        '<a href="?run=one" data-run-id="one">One</a>',
+        '<a href="?run=two" data-run-id="two">Two</a>',
+        '<a href="?run=three" data-run-id="three">Three</a>',
+      ].join('');
       window.refreshCount = 0;
-      document.querySelector('#rs-rail').addEventListener('keydown', (event) => {
+      document.querySelector('#rs-inbox').addEventListener('keydown', (event) => {
         if (event.key !== 'Tab' || window.refreshCount || document.activeElement.dataset.runId !== 'one') return;
         event.preventDefault();
         window.refreshCount += 1;
-        document.querySelector('#rs-rail').innerHTML = [
-          '<button class="rs-rail__run" data-run-id="one">One</button>',
-          '<button class="rs-rail__run" data-run-id="two">Two</button>',
-          '<button class="rs-rail__run" data-run-id="three">Three</button>',
-        ].join('');
+        document.querySelector('#rs-inbox').innerHTML = rows();
       });
       setTimeout(() => {
-        document.querySelector('#rs-rail').innerHTML = [
-          '<button class="rs-rail__run" data-run-id="one">One</button>',
-          '<button class="rs-rail__run" data-run-id="two">Two</button>',
-          '<button class="rs-rail__run" data-run-id="three">Three</button>',
-        ].join('');
+        document.querySelector('#rs-inbox').innerHTML = rows();
       }, 500);
     </script>
   `);
@@ -2257,7 +2153,6 @@ test('round 2 finding 8: calm captures the initial resting viewport before inter
       return { pass: true, controls: [] };
     },
     auditPlatformSwitching: async () => null,
-    isSocialPreview,
     pngBackgroundRatio: () => 0.75,
   };
   vm.createContext(scope);
@@ -2272,7 +2167,7 @@ test('round 2 finding 8: calm captures the initial resting viewport before inter
   const result = await scope.calmScene(
     {},
     {},
-    { fixture: 'golden', manifest: { id: 'decide-list' } },
+    { id: 'approve-decide', fixture: 'approve-decide' },
     {
       openRuns: 1,
       theme: 'light',

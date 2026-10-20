@@ -59,5 +59,5 @@ def test_check_names_a_missing_file_and_invalid_json(capsys, tmp_path):
 
 def test_check_and_show_take_no_template(capsys):
     with pytest.raises(SystemExit):
-        cli.main(["check", "decide-list", "--all"])
+        cli.main(["check", "legacy-list", "--all"])
     capsys.readouterr()

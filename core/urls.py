@@ -18,8 +18,8 @@ _URL = re.compile(r"https?://[^\s<>\"'\\]+", re.IGNORECASE)
 _TRAILING = ".,;:!?"
 _SCHEME = re.compile(r"https?://", re.IGNORECASE)
 # ASCII letters, digits and hyphens in dot-separated labels (an IDN must be
-# given as punycode); the same rule as RS.externalLink and the decide-list
-# url pattern (tests/fixtures/url_vectors.json)
+# given as punycode); the same rule as RS.externalLink and the decide block's
+# item url pattern (tests/fixtures/url_vectors.json)
 _HOST = re.compile(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.?\Z")
 _PORT = re.compile(r"[0-9]{1,5}\Z")
 

@@ -46,7 +46,7 @@ NUMBER_COLUMNS = ("number", "money", "percent", "delta")
 MAX_CELL = 500
 DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 VIDEO_SUFFIXES = (".mp4", ".webm")
-# the review-doc renderer's line patterns (anchors() counts its headings)
+# the page's markdown line patterns (core/static/md.js; anchors() counts its headings)
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 HEADING_RE = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*\Z")
 SETEXT_RE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*\Z")
@@ -462,7 +462,7 @@ def _list_end(lines, at):
 def _top_headings(md):
     """(level, text) of every top-level heading, in document order.
 
-    Mirrors the review-doc block parser (core/static md renderer): ATX
+    Mirrors the block parser of the page (core/static/md.js): ATX
     headings, Setext headings (a line of = or - right under paragraph text;
     after a blank line --- is a rule), and lines consumed by fenced code,
     quotes and callouts, lists and tables, which hold no top-level heading.

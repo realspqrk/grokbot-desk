@@ -7,12 +7,12 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, ROOT, PLAIN_REPORT } from '../tools/dev/rs-server.mjs';
+import { e2ePort } from '../tools/node-tests.mjs';
 
 // the desk and the refused ring target, both inside the test range 18920-18939
-const PORT = Number(process.env.RS_E2E_PORT || 18921) + 17;
-const REFUSED = PORT + 1;
-if (!(PORT >= 18920 && REFUSED <= 18939)) throw new Error(`doorbell e2e ports ${PORT}/${REFUSED} leave 18920-18939; set RS_E2E_PORT`);
+const PORT = e2ePort('doorbell.e2e.test.mjs');
+const REFUSED = e2ePort('doorbell.e2e.test.mjs', 1);
 const KEY = 'fake-doorbell-key-e2e-41b7';
 const de = JSON.parse(readFileSync(path.join(ROOT, 'core/i18n/de.json'), 'utf8'));
 
@@ -65,8 +65,8 @@ describe('doorbell setup page (served, headless Edge)', { skip }, () => {
       await page.fill('#rs-doorbell-key', KEY);
       assert.equal(existsSync(path.join(server.dataDir, 'doorbell.json')), false);
 
-      // a report that arrives meanwhile waits in the strip; the form keeps its input
-      const run = server.show(JSON.parse(readFileSync(path.join(ROOT, 'templates/builtin/_starter/fixtures/golden.json'), 'utf8')));
+      // a report that arrives meanwhile waits; the form keeps its input
+      const run = server.show(PLAIN_REPORT);
       await page.waitForSelector(`[data-run-id="${run.run_id}"]`, { state: 'attached' });
       assert.equal(await page.inputValue('#rs-doorbell-key'), KEY);
 
@@ -91,11 +91,11 @@ describe('doorbell setup page (served, headless Edge)', { skip }, () => {
     }
   });
 
-  test('an open window showing a report switches to the setup page; the report stays in the strip', async () => {
+  test('an open window showing a report switches to the setup page; the report stays open', async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await ctx.newPage();
     try {
-      const run = server.show(JSON.parse(readFileSync(path.join(ROOT, 'templates/builtin/_starter/fixtures/golden.json'), 'utf8')), { title: 'Still open' });
+      const run = server.show(PLAIN_REPORT, { title: 'Still open' });
       await page.goto(server.url('?client=test&run=' + run.run_id));
       await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
       assert.equal(await page.textContent('#rs-title'), 'Still open');
@@ -114,23 +114,22 @@ describe('doorbell setup page (served, headless Edge)', { skip }, () => {
     }
   });
 
-  /* the strip stays hidden with one open report: the setup page itself
+  /* the inbox stays hidden with one open report: the setup page itself
      names what waits and opens it; the form keeps what was typed */
   async function waitingScenario(arrivesDuringSetup) {
     await server.stop();
     server = await startServer({ port: PORT });
-    const golden = JSON.parse(readFileSync(path.join(ROOT, 'templates/builtin/_starter/fixtures/golden.json'), 'utf8'));
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await ctx.newPage();
     try {
-      let run = arrivesDuringSetup ? null : server.show(golden, { title: 'Waiting report' });
+      let run = arrivesDuringSetup ? null : server.show(PLAIN_REPORT, { title: 'Waiting report' });
       await page.goto(server.url('?client=test&page=doorbell'));
       await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
       await page.waitForSelector('[data-rs-doorbell]');
       await page.fill('#rs-doorbell-url', 'https://hooks.example.test/typed');
       if (arrivesDuringSetup) {
         assert.equal(await page.isVisible('#rs-doorbell-waiting'), false);
-        run = server.show(golden, { title: 'Waiting report' });
+        run = server.show(PLAIN_REPORT, { title: 'Waiting report' });
       }
       await page.waitForSelector('#rs-doorbell-waiting', { state: 'visible' });
       assert.equal(await page.textContent('#rs-doorbell-waiting'), de.doorbell_waiting_one.replace('{title}', 'Waiting report'));
@@ -138,7 +137,7 @@ describe('doorbell setup page (served, headless Edge)', { skip }, () => {
       assert.equal(await page.locator('[data-rs-doorbell] .rs-btn--primary').count(), 1, 'Save stays the only accent');
       await page.click('#rs-doorbell-waiting');
       await page.waitForFunction(() => document.querySelector('#rs-title')?.textContent === 'Waiting report');
-      await page.waitForSelector('#rs-mount .rs-tpl');
+      await page.waitForSelector('#rs-mount .rs-report');
       assert.equal(server.result(run.run_id), null);
     } finally {
       await ctx.close();

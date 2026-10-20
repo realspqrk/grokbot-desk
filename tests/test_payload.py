@@ -99,7 +99,7 @@ def test_every_invalid_fixture_fails_at_expected_pointer(path):
 def test_payload_v1_rejected_with_pointer_to_skill():
     old = {
         "schema": "report-shell/payload@1",
-        "template": "approve-one",
+        "template": "legacy-approval",
         "version": 1,
         "bot": "test-bot",
         "title": "Old",

@@ -1,35 +1,38 @@
-// Browser tests for the served shell + _starter + core components.
-// Isolated server in the worker's assigned range with a temp RS_DATA_DIR; headless Edge via
-// playwright-core loaded by absolute path. The server is stopped in after().
+// Browser tests for the served shell: one report built from blocks, its
+// footer, Discard, the inbox switch under failures, hydration of a result
+// another client sent, drafts and core components (rs-copy, rs-confirm).
+// Isolated server on its own test port with a temp RS_DATA_DIR; headless
+// Edge (or Chrome) via playwright-core loaded by absolute path.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { readFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { browserChannel, startServer, loadChromium, ROOT, PYTHON } from '../tools/dev/rs-server.mjs';
+import {
+  browserChannel, startServer, loadChromium, ROOT, PLAIN_REPORT,
+  fixtureMedia, payloadFixture, payloadFixtureNames,
+} from '../tools/dev/rs-server.mjs';
+import { e2ePort } from '../tools/node-tests.mjs';
 import round5Corpus from './fixtures/twitter-text-round5.mjs';
 
-// RS_E2E_PORT: another worktree may run this suite at the same time
-const PORT = Number(process.env.RS_E2E_PORT || 18900);
-if (PORT === 18742) throw new Error('refusing the product port');
+const PORT = e2ePort('shell.e2e.test.mjs');
 const ORIGIN = `http://127.0.0.1:${PORT}`;
-// the old _starter template fixtures (tests that still use them wait for
-// their rework); the inbox tests below register payload@2 reports instead
 const SECOND_BOT = 'example-second-bot';
-const STARTER = path.join(ROOT, 'templates/builtin/_starter');
-const starter = (file) => (existsSync(path.join(STARTER, file)) ? JSON.parse(readFileSync(path.join(STARTER, file), 'utf8')) : null);
-const golden = starter('fixtures/golden.json');
-const expect = starter('fixtures/expect/golden.json');
 const de = JSON.parse(readFileSync(path.join(ROOT, 'core/i18n/de.json'), 'utf8'));
 const AXE = path.join(ROOT, 'vendor/axe.min.js');
+/* the approve fixture: a primary named by its label, Reject and Request
+   changes as quiet alternatives, a copy block */
+const APPROVE = payloadFixture('approve');
+const COPY_TEXT = APPROVE.blocks.find((b) => b.type === 'copy').items[0].text;
+const COPY = '[data-rs-block-type="copy"] rs-copy';
+const COPY_BUTTON = `${COPY} .rs-copy__btn`;
 const round4Corpus = JSON.parse(
   readFileSync(new URL('./fixtures/twitter-text-round4.json', import.meta.url), 'utf8'),
 );
 const sharedReviewCorpus = [...round4Corpus.cases, ...round5Corpus.cases];
 const require = createRequire(import.meta.url);
 const nodeCount = require('../core/static/count.js').count;
+const isoAt = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
 
 const chromium = await loadChromium();
 const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CORE)';
@@ -38,20 +41,23 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   beforeEach((t) => { if (process.env.RS_TRACE) console.error('START', t.name, new Date().toISOString()); });
   let server;
   let browser;
+  let media;
 
   before(async () => {
-    server = await startServer({ port: PORT });
-    const show = server.show;
-    server.show = (data, extra = {}) => show(data, {
-      bot: 'operations-agent',
-      ...extra,
-    });
+    media = fixtureMedia();
+    server = await startServer({ port: PORT, mediaRoots: [media.dir] });
     browser = await chromium.launch({ channel: browserChannel(), headless: true });
   });
 
   after(async () => {
-    try { if (browser) await browser.close(); } finally { if (server) await server.stop(); }
+    try { if (browser) await browser.close(); } finally {
+      if (server) await server.stop();
+      if (media) media.cleanup();
+    }
   });
+
+  /** an approve report from operations-agent unless `extra` says otherwise */
+  const show = (extra = {}, payload = APPROVE) => server.show(payload, { bot: 'operations-agent', identity: undefined, ...extra });
 
   async function open(q = '', opts = {}) {
     const ctx = await browser.newContext({
@@ -83,35 +89,42 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     return { ctx, page, log, response };
   }
   const ready = (page) => page.waitForFunction(() => document.documentElement.dataset.rsReady === '1', null, { timeout: 8000 });
-  // calm UI: the starter note sits behind its "Notiz hinzufügen" text button
-  async function fillNote(page, text) {
-    const opener = page.locator('[data-starter="note-open"]');
-    if (await opener.isVisible()) await opener.click();
-    await page.fill('#starter-note', text);
-  }
+  const activeIs = (page, id) => page.waitForFunction((x) => window.RS.activeRun === x
+    && document.documentElement.dataset.rsReady === '1', id, { timeout: 8000 });
   const activeId = (page) => page.evaluate(() => window.RS.activeRun);
   const row = (id) => `#rs-inbox a[data-run-id="${id}"]`;
-  /** Registers a payload@2 report through the CLI (`show --data`), as a bot does. */
-  let showSeq = 0;
-  function showReport(extra = {}) {
-    showSeq += 1;
-    const file = path.join(server.dataDir, `shell-${process.pid}-${showSeq}.json`);
-    const created = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
-    writeFileSync(file, JSON.stringify({
-      schema: 'grokbot-desk/payload@2', bot: 'operations-agent', title: 'Bericht ' + showSeq, created,
-      ask: 'approve', action: 'file', why: 'The check finished.',
-      blocks: [{ type: 'facts', items: [{ label: 'Duration', value: '42 min' }] }],
-      ...extra,
-    }), 'utf8');
-    const out = spawnSync(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(PORT), 'show', '--data', file, '--no-window'], {
-      cwd: ROOT, env: server.env, encoding: 'utf8', windowsHide: true, shell: false, timeout: 30000,
+  const draftNote = (page, id) => page.evaluate((runId) => {
+    const raw = localStorage.getItem('rs-draft:' + runId);
+    return raw ? JSON.parse(raw).value.composer.text : null;
+  }, id);
+  const toastShown = (page, message) => page.waitForFunction((msg) => [...document.querySelectorAll('#rs-toasts .rs-toast')]
+    .some((x) => x.textContent === msg), message, { timeout: 3000 });
+  const dialogOpen = (page) => page.evaluate(() => document.getElementById('rs-discard-dialog').open);
+  async function discardOpen(page) {
+    await page.click('#rs-more-btn');
+    await page.click('#rs-discard');
+  }
+  async function result(run) {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const found = server.result(run.run_id);
+      if (found) return found;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error('no result for ' + run.run_id);
+  }
+  async function submitElsewhere(runId, data) {
+    const response = await fetch(server.url('submit'), {
+      method: 'POST',
+      headers: { 'X-RS-CSRF': await server.csrf(), 'Content-Type': 'application/json', Origin: ORIGIN },
+      body: JSON.stringify({ run_id: runId, data }),
     });
-    if (out.status !== 0) throw new Error(`show failed (${out.status}): ${out.stderr}`);
-    return JSON.parse(out.stdout.trim().split('\n').pop());
+    return response.status;
   }
 
-  test('renders the starter golden: strings, copy text, CSP, same-origin only, no console errors', async () => {
-    const run = server.show(golden, { title: 'Sicherung prüfen' });
+  test('renders a report: strings, CSP, same-origin only, no console errors', async () => {
+    await server.clearRuns();
+    const run = show({ title: 'Sicherung prüfen' });
     const { ctx, page, log, response } = await open('run=' + run.run_id);
     try {
       assert.match(response.headers()['content-security-policy'], /default-src 'self'/);
@@ -120,15 +133,17 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.waitForFunction(() => document.title === 'Sicherung prüfen · Operations Agent', null, { timeout: 3000 });
       assert.equal(await page.textContent('#rs-title'), 'Sicherung prüfen');
       // calm UI: bot and creation time live in the header overflow panel
-      assert.match(await page.textContent('#rs-meta'), /^Von Operations AgentErstellt (Mo|Di|Mi|Do|Fr|Sa|So) \d\d\.\d\d\.\d{4} · \d\d:\d\d$/);
-      assert.equal(await page.textContent('[data-starter="message"]'), golden.message);
-      assert.equal(await page.textContent('[data-copy-id="starter-copy"] .rs-copy__value'), expect.copies['starter-copy']);
-      // calm UI: no visible item heading; it names the decision group instead
-      assert.equal(await page.getAttribute('rs-action-row', 'aria-label'), de.choice_group_label.replace('{what}', de.starter_heading));
-      // the default primary names the bot it sends to
-      assert.equal(await page.textContent('#rs-submit-label'), de.submit_to.replace('{bot}', 'Operations Agent'));
-      assert.equal(await page.isDisabled('#rs-submit'), true);
-      assert.equal(await page.textContent('#rs-status'), de.starter_pick_choice);
+      assert.match(await page.textContent('#rs-meta'), /Operations Agent.*(Mo|Di|Mi|Do|Fr|Sa|So) \d\d\.\d\d\.\d{4} · \d\d:\d\d$/);
+      // what the bot wrote is shown as it is: why, facts, the copy text
+      assert.match(await page.textContent('#rs-task'), new RegExp(APPROVE.why.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      assert.equal(await page.textContent(`${COPY} .rs-copy__value`), COPY_TEXT);
+      // the payload label names the primary; the alternatives come from i18n
+      assert.equal(await page.textContent('#rs-submit-label'), APPROVE.label);
+      assert.equal(await page.isDisabled('#rs-submit'), false);
+      assert.deepEqual(
+        await page.$$eval('#rs-actions button', (b) => b.filter((x) => x.getClientRects().length).map((x) => x.textContent.trim())),
+        [de.ask_reject, de.ask_request_changes, APPROVE.label],
+      );
       assert.equal(await page.textContent('#rs-theme'), de.theme_dark);
       // static files carry the CSP too
       const js = log.responses.find((r) => r.url().endsWith('/static/rs.js'));
@@ -143,7 +158,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   });
 
   test('X counter rejects a failed non-ASCII TLD within 50 ms in Edge', async () => {
-    const run = server.show(golden, { title: 'Zähler prüfen' });
+    const run = server.show(PLAIN_REPORT, { title: 'Zähler prüfen' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       await page.route('**/static/count-timing-worker.js', (route) => route.fulfill({
@@ -184,7 +199,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   });
 
   test('X counter keeps adversarial URL parentheses below the Edge deadlines', async () => {
-    const run = server.show(golden, { title: 'URL-Laufzeit prüfen' });
+    const run = server.show(PLAIN_REPORT, { title: 'URL-Laufzeit prüfen' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       await page.route('**/static/count-timing-worker.js', (route) => route.fulfill({
@@ -240,7 +255,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   });
 
   test('X counter matches the expanded shared upstream URL/IDNA corpus in Node and Edge', async () => {
-    const run = server.show(golden, { title: 'URL-Korpus prüfen' });
+    const run = server.show(PLAIN_REPORT, { title: 'URL-Korpus prüfen' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       const cases = sharedReviewCorpus.flatMap(({ text, upstream_count: value }) => [
@@ -251,12 +266,12 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       ]);
       const expected = cases.map(({ count, over }) => ({ count, over }));
       const node = cases.map(({ text }) => {
-        const result = nodeCount(text, 'x');
-        return { count: result.count, over: result.over };
+        const counted = nodeCount(text, 'x');
+        return { count: counted.count, over: counted.over };
       });
       const edge = await page.evaluate((items) => items.map(({ text }) => {
-        const result = RS_COUNT.count(text, 'x');
-        return { count: result.count, over: result.over };
+        const counted = RS_COUNT.count(text, 'x');
+        return { count: counted.count, over: counted.over };
       }), cases);
       assert.deepEqual(node, expected, 'Node equals pinned upstream');
       assert.deepEqual(edge, expected, 'Edge equals pinned upstream');
@@ -266,10 +281,11 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
 
   test('localization contracts fill data-rs-t-<attr> and report the title with POST /title', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Titel melden' });
+    const run = show({ title: 'Titel melden' });
     const { ctx, page, log } = await open('run=' + run.run_id);
     try {
-      assert.equal(await page.getAttribute('#starter-note', 'placeholder'), de.starter_note_placeholder);
+      assert.equal(await page.getAttribute('#rs-more-btn', 'aria-label'), de.more);
+      assert.equal(await page.getAttribute('#rs-inbox', 'aria-label'), de.inbox_label);
       const want = 'Titel melden · Operations Agent';
       await page.waitForFunction((w) => document.title === w, want, { timeout: 3000 });
       const hello = async () => (await (await fetch(server.url('hello'))).json()).window_title;
@@ -294,18 +310,23 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('axe-core: 0 serious/critical violations, light and dark', async () => {
-    const run = server.show(golden, { title: 'Sicherung prüfen' });
-    for (const colorScheme of ['light', 'dark']) {
-      const { ctx, page } = await open('run=' + run.run_id, { colorScheme });
-      try {
-        await page.addScriptTag({ path: AXE });
-        const v = await page.evaluate(async () => (await window.axe.run(document)).violations
-          .filter((x) => x.impact === 'serious' || x.impact === 'critical')
-          .map((x) => ({ id: x.id, nodes: x.nodes.map((n) => n.target.join(' ')) })));
-        assert.deepEqual(v, [], colorScheme);
-      } finally { await ctx.close(); }
+  test('axe-core: every payload fixture has 0 serious/critical violations, light and dark', async () => {
+    for (const name of payloadFixtureNames()) {
+      await server.clearRuns();
+      const run = server.show(media.map(payloadFixture(name)));
+      for (const colorScheme of ['light', 'dark']) {
+        const { ctx, page, log } = await open('run=' + run.run_id, { colorScheme });
+        try {
+          await page.addScriptTag({ path: AXE });
+          const v = await page.evaluate(async () => (await window.axe.run(document)).violations
+            .filter((x) => x.impact === 'serious' || x.impact === 'critical')
+            .map((x) => ({ id: x.id, nodes: x.nodes.map((n) => n.target.join(' ')) })));
+          assert.deepEqual(v, [], `${name} ${colorScheme}`);
+          assert.deepEqual(log.errors, [], `${name} ${colorScheme}: console`);
+        } finally { await ctx.close(); }
+      }
     }
+    await server.clearRuns();
   });
 
   test('theme toggle Hell/Dunkel flips the theme and persists it', async () => {
@@ -329,54 +350,9 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('finding 2: reload restores the working field focus and selection with the draft', async () => {
-    const run = server.show(golden, { title: 'Pfeiltasten' });
-    const { ctx, page, log } = await open('run=' + run.run_id);
-    try {
-      const radios = () => page.$$eval('rs-action-row button', (b) => b.map((x) => [x.value, x.getAttribute('aria-checked'), x.tabIndex]));
-      assert.deepEqual(await radios(), [['erledigt', 'false', 0], ['spaeter', 'false', -1]]);
-      assert.equal(await page.getAttribute('rs-action-row', 'role'), 'radiogroup');
-      assert.equal(await page.getAttribute('rs-action-row', 'aria-label'), 'Entscheidung: Beispielbericht');
-      await page.focus('rs-action-row button[value="erledigt"]');
-      const logged = page.waitForRequest((r) => r.url() === ORIGIN + '/log');
-      await page.keyboard.press('ArrowRight');
-      const body = JSON.parse((await logged).postData());
-      assert.deepEqual(body, { run_id: run.run_id, event: 'choice', detail: { item: 'starter', choice: 'spaeter' } });
-      assert.deepEqual(await radios(), [['erledigt', 'false', -1], ['spaeter', 'true', 0]]);
-      assert.equal(await page.evaluate(() => document.activeElement.value), 'spaeter');
-      await page.keyboard.press('ArrowRight'); // wraps
-      assert.deepEqual(await radios(), [['erledigt', 'true', 0], ['spaeter', 'false', -1]]);
-      await page.keyboard.press('ArrowLeft');
-      assert.equal(await page.isDisabled('#rs-submit'), false);
-      await fillNote(page, 'Später ansehen 👀');
-      await page.$eval('#starter-note', (note) => {
-        note.setSelectionRange(3, 9, 'backward');
-        note.dispatchEvent(new Event('select', { bubbles: true }));
-      });
-      assert.equal(await page.evaluate(() => window.RS.touched), true);
-
-      await page.reload();
-      await ready(page);
-      assert.deepEqual(await radios(), [['erledigt', 'false', -1], ['spaeter', 'true', 0]]);
-      assert.equal(await page.inputValue('#starter-note'), 'Später ansehen 👀');
-      assert.equal(await page.isDisabled('#rs-submit'), false);
-      assert.equal(await page.evaluate(() => window.RS.touched), true);
-      assert.deepEqual(await page.evaluate(() => {
-        const note = document.getElementById('starter-note');
-        return {
-          active: document.activeElement.id,
-          start: note.selectionStart,
-          end: note.selectionEnd,
-          direction: note.selectionDirection,
-        };
-      }), { active: 'starter-note', start: 3, end: 9, direction: 'backward' });
-      assert.deepEqual(log.errors, []);
-    } finally { await ctx.close(); }
+  test('rs-copy: click posts the exact text to /copy, shows the check and announces it', async () => {
     await server.clearRuns();
-  });
-
-  test('rs-copy: click posts the exact text to /copy, shows Kopiert ✓ and announces it', async () => {
-    const run = server.show(golden, { title: 'Kopieren' });
+    const run = show({ title: 'Kopieren' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       await page.route('**/copy', (route) => route.fulfill({
@@ -384,86 +360,25 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       }));
       const reqP = page.waitForRequest((r) => r.url() === ORIGIN + '/copy');
       const resP = page.waitForResponse((r) => r.url() === ORIGIN + '/copy');
-      await page.click('[data-copy-id="starter-copy"] .rs-copy__btn');
+      await page.click(COPY_BUTTON);
       const req = await reqP;
       const res = await resP;
-      assert.deepEqual(JSON.parse(req.postData()), { run_id: run.run_id, text: expect.copies['starter-copy'] });
+      assert.deepEqual(JSON.parse(req.postData()), { run_id: run.run_id, text: COPY_TEXT });
       assert.equal(req.headers()['x-rs-csrf'] !== undefined, true);
       assert.equal(res.status(), 200);
       assert.deepEqual(await res.json(), { ok: true });
-      await page.waitForSelector('[data-copy-id="starter-copy"][data-state="copied"]');
+      await page.waitForSelector(`${COPY}[data-state="copied"]`);
       // calm UI: icon-only copy button; the name stays, feedback is the check icon + toast
-      assert.equal(await page.getAttribute('[data-copy-id="starter-copy"] .rs-copy__btn', 'aria-label'), golden.copy.label);
+      assert.equal(await page.getAttribute(COPY_BUTTON, 'aria-label'), APPROVE.blocks.find((b) => b.type === 'copy').items[0].label);
       assert.equal(await page.getAttribute('#rs-toasts', 'aria-live'), 'polite');
       assert.ok((await page.$$eval('#rs-toasts .rs-toast', (t) => t.map((x) => x.textContent))).includes(de.copied));
-      assert.equal(await page.evaluate(() => window.RS.touched), true);
-    } finally { await ctx.close(); }
-    await server.clearRuns();
-  });
-
-  // review round 2, finding 3: an API object belongs to one activation
-  test('scoped API: stale side effects cannot affect the active run or its requests', async () => {
-    await server.clearRuns();
-    const a = server.show(golden, { title: 'Scoped A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { bot: SECOND_BOT, title: 'Scoped B', created: isoAt(Date.now()) });
-    const { ctx, page } = await open('run=' + a.run_id);
-    const sideEffects = [];
-    try {
-      for (const endpoint of ['copy', 'reveal', 'submit']) {
-        await page.route(`**/${endpoint}`, (route) => {
-          sideEffects.push({ endpoint, body: route.request().postDataJSON() });
-          return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
-        });
-      }
-      await page.evaluate(() => {
-        window.__scoped = {};
-        window.RS._define('_starter', function (api) {
-          window.__scoped[api.run.run_id] = api;
-          api.setResult({ choice: 'erledigt', note: '' });
-          if (api.run.title === 'Scoped A') api.draft.set({ choice: 'spaeter', note: 'keep A' });
-        });
-      });
-      await page.click(row(b.run_id));
-      await ready(page);
-      await page.click(row(a.run_id));
-      await ready(page);
-      await page.click(row(b.run_id));
-      await ready(page);
-      const before = await page.evaluate((id) => ({
-        touched: window.RS.touched,
-        draft: localStorage.getItem('rs-draft:' + id),
-      }), a.run_id);
-      assert.equal(before.touched, false);
-      assert.ok(before.draft && before.draft.includes('keep A'));
-
-      await page.evaluate(async (id) => {
-        const old = window.__scoped[id];
-        await Promise.all([
-          old.copy('stale copy'),
-          old.reveal('stale-media'),
-          old.submit(),
-        ]);
-        old.draft.set({ choice: 'erledigt', note: 'overwrite A' });
-        old.draft.clear();
-        old.toast('stale toast');
-        old.setStatus('stale status');
-        old.setSubmitLabel('stale label');
-        old.setResult(null);
-      }, a.run_id);
-      await page.waitForTimeout(100);
-
-      assert.deepEqual(sideEffects, []);
-      assert.equal(await page.evaluate(() => window.RS.touched), false);
-      assert.ok(await page.evaluate((id) => localStorage.getItem('rs-draft:' + id), a.run_id), 'A draft remains');
-      assert.equal(await page.locator('#rs-toasts').getByText('stale toast').count(), 0);
-      assert.notEqual(await page.textContent('#rs-submit-label'), 'stale label');
-      assert.notEqual(await page.textContent('#rs-status'), 'stale status');
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
   test('rs-confirm on the real page: exact word only, Esc cancels', async () => {
-    const run = server.show(golden, { title: 'Bestätigen' });
+    await server.clearRuns();
+    const run = show({ title: 'Bestätigen' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       await page.evaluate(() => {
@@ -495,61 +410,69 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     await server.clearRuns();
   });
 
-  test('expect.flow (mouse) + Ctrl+Enter writes the result file = expect.result', async () => {
+  test('mouse: Approve writes the result file and the report turns read-only', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Ablauf Maus' });
+    const run = show({ title: 'Ablauf Maus' });
     const { ctx, page, log } = await open('run=' + run.run_id);
     try {
-      for (const step of expect.flow) await runStep(page, step);
+      await page.click('#rs-submit');
       await page.waitForSelector('.rs-banner[data-banner="submitted"]');
       assert.equal(await page.textContent('.rs-banner > span:first-child'), de.sent);
-      const result = server.result(run.run_id);
-      assert.equal(result.status, 'submitted');
-      assert.deepEqual(result.data, expect.result);
-      assert.equal(await page.isDisabled('#rs-submit'), true);
-      assert.equal(await page.evaluate(() => document.querySelector('.rs-tpl').inert), false);
-      assert.equal(await page.isDisabled('rs-action-row button[value="erledigt"]'), true);
-      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
-      assert.equal(await page.isEnabled('[data-copy-id="starter-copy"] .rs-copy__btn'), true);
+      const sent = await result(run);
+      assert.equal(sent.schema, 'grokbot-desk/result@2');
+      assert.equal(sent.status, 'submitted');
+      assert.deepEqual(sent.data, { decision: 'approve', note: '', refs: [] });
+      assert.equal(await page.isVisible('#rs-submit'), false, 'no primary on a decided report');
+      assert.equal(await page.$eval('#rs-note', (note) => note.readOnly), true);
+      assert.equal(await page.isEnabled(COPY_BUTTON), true, 'copy still works');
       assert.equal(await page.title(), 'grokbot-desk · keine offenen Berichte');
       assert.equal(await page.evaluate((id) => localStorage.getItem('rs-draft:' + id), run.run_id), null);
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
   });
 
-  test('expect.keyboard (keys only, one open run) writes the same result', async () => {
+  test('keyboard only (one open report): a typed note and Enter on the primary write the result', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Ablauf Tastatur' });
+    const run = show({ title: 'Ablauf Tastatur' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
-      for (const step of expect.keyboard) await runStep(page, step);
+      // the "…" menu, the copy button, then the note
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-note');
+      await page.keyboard.type('Go ahead after 17:00.');
+      // Reject, Request changes, then the primary
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-submit');
+      await page.keyboard.press('Enter');
       await page.waitForSelector('.rs-banner[data-banner="submitted"]');
-      assert.deepEqual(server.result(run.run_id).data, expect.result);
+      assert.deepEqual((await result(run)).data, { decision: 'approve', note: 'Go ahead after 17:00.', refs: [] });
     } finally { await ctx.close(); }
   });
 
   test('every Tab stop shows a focus outline of at least 2 px', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Fokus' });
+    const run = show({ title: 'Fokus' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       const seen = [];
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 10; i++) {
         await page.keyboard.press('Tab');
         const f = await page.evaluate(() => {
           const a = document.activeElement;
-          const s = getComputedStyle(a);
+          /* a text field may hand its ring to its own frame (the composer) */
+          let ringed = a;
+          for (let n = a, i = 0; n && i < 2; n = n.parentElement, i++) {
+            const own = getComputedStyle(n);
+            if (own.outlineStyle !== 'none' && parseFloat(own.outlineWidth) >= 2) { ringed = n; break; }
+          }
+          const s = getComputedStyle(ringed);
           return {
             tag: a.tagName,
             id: a.id,
             cls: a.className,
             w: parseFloat(s.outlineWidth),
             style: s.outlineStyle,
-            tab: a.tabIndex,
             fv: a.matches(':focus-visible'),
-            hasFocus: document.hasFocus(),
-            token: getComputedStyle(document.documentElement)
-              .getPropertyValue('--rs-focus-width').trim(),
           };
         });
         seen.push(f);
@@ -557,17 +480,15 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
         assert.ok(f.w >= 2 && f.style !== 'none', 'outline on ' + JSON.stringify(f));
       }
       const order = seen.filter((f) => f.tag !== 'BODY').map((f) => f.id || f.cls.split(' ')[0] || f.tag);
-      // the disabled submit button is not a tab stop until a choice is made
-      // calm UI: one run = no inbox; theme and Discard report live behind the
-      // overflow button, the copy is an icon button and the note opens from a
-      // text button
-      assert.deepEqual(order, ['rs-more-btn', 'rs-icon-btn', 'rs-choice', 'rs-link']);
+      // calm UI: one report = no inbox; theme and Discard report live behind
+      // the overflow button, the copy is an icon button
+      assert.deepEqual(order, ['rs-more-btn', 'rs-icon-btn', 'rs-note', 'rs-alt', 'rs-alt-2', 'rs-submit']);
     } finally { await ctx.close(); }
   });
 
-  test('Verwerfen asks first, then writes a cancelled result', async () => {
+  test('Discard asks first, then writes a cancelled result', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Verwerfen' });
+    const run = show({ title: 'Verwerfen' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       // Discard report is the last "…" menu item, never a footer button
@@ -585,24 +506,23 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       assert.equal(await page.textContent('#rs-discard'), de.discard_report);
       await page.click('#rs-discard');
       assert.equal(await page.isHidden('#rs-more-panel'), true, 'the menu closes behind the confirmation');
-      assert.equal(await page.evaluate(() => document.getElementById('rs-discard-dialog').open), true);
+      assert.equal(await dialogOpen(page), true);
       assert.equal(await page.textContent('#rs-discard-h'), de.discard_confirm_title);
       await page.click('#rs-discard-dialog button[value="cancel"]');
       assert.equal(server.result(run.run_id), null);
-      await page.click('#rs-more-btn'); await page.click('#rs-discard');
+      await discardOpen(page);
       await page.click('#rs-discard-dialog button[value="discard"]');
       await page.waitForSelector('.rs-banner[data-banner="cancelled"]');
-      assert.equal(server.result(run.run_id).status, 'cancelled');
+      assert.equal((await result(run)).status, 'cancelled');
       assert.equal(await page.isDisabled('#rs-discard'), true);
     } finally { await ctx.close(); }
   });
 
-  test('finding 4: closing Verwerfen never steals focus after a fast Tab', async () => {
+  test('closing Discard never steals focus after a fast Tab', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Fokus nach Verwerfen' });
+    const run = show({ title: 'Fokus nach Verwerfen' });
     const { ctx, page } = await open('run=' + run.run_id);
     try {
-      await page.click('rs-action-row button[value="erledigt"]');
       const focused = () => page.evaluate(() => {
         const a = document.activeElement;
         return a.id || a.className.split(' ')[0] || a.tagName;
@@ -624,16 +544,16 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     await server.clearRuns();
   });
 
-  test('a stale Verwerfen close event cannot consume a dialog reopened in the same task', async () => {
+  test('a stale Discard close event cannot consume a dialog reopened in the same task', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Verwerfen erneut öffnen' });
+    const run = show({ title: 'Verwerfen erneut öffnen' });
     const { ctx, page } = await open('run=' + run.run_id);
     const cancels = [];
     page.on('request', (request) => {
       if (request.url() === ORIGIN + '/cancel') cancels.push(request.postDataJSON());
     });
     try {
-      await page.click('#rs-more-btn'); await page.click('#rs-discard');
+      await discardOpen(page);
       await page.evaluate(() => {
         const dialog = document.getElementById('rs-discard-dialog');
         dialog.close('');
@@ -649,17 +569,13 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     await server.clearRuns();
   });
 
-  // review round 1, finding 1: the confirmation keeps its target
-  const isoAt = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
-  const dialogOpen = (page) => page.evaluate(() => document.getElementById('rs-discard-dialog').open);
-
-  test('Verwerfen: a push while the confirmation is open neither switches nor changes the target', async () => {
+  test('Discard: an arrival while the confirmation is open neither switches nor changes the target', async () => {
     await server.clearRuns();
-    const a = server.show(golden, { title: 'Ziel A', created: isoAt(Date.now() - 60000) });
+    const a = show({ title: 'Ziel A', created: isoAt(Date.now() - 60000) });
     const { ctx, page, log } = await open('run=' + a.run_id);
     try {
-      await page.click('#rs-more-btn'); await page.click('#rs-discard'); // A untouched, confirmation open
-      const b = server.show(golden, { bot: SECOND_BOT, title: 'Neu B', created: isoAt(Date.now()) });
+      await discardOpen(page); // A untouched, confirmation open
+      const b = show({ bot: SECOND_BOT, title: 'Neu B', created: isoAt(Date.now()) });
       await page.waitForSelector(row(b.run_id));
       await page.waitForTimeout(300); // a switch would have started by now
       assert.equal(await activeId(page), a.run_id, 'no automatic switch under the confirmation');
@@ -669,9 +585,8 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       await page.click('#rs-discard-dialog button[value="discard"]');
       assert.deepEqual(JSON.parse((await req).postData()), { run_id: a.run_id });
       // The discard is a decision, so the pop-up moves on to B
-      await page.waitForFunction((id) => window.RS.activeRun === id
-        && document.documentElement.dataset.rsReady === '1', b.run_id);
-      assert.equal(server.result(a.run_id).status, 'cancelled');
+      await activeIs(page, b.run_id);
+      assert.equal((await result(a)).status, 'cancelled');
       assert.equal(server.result(b.run_id), null, 'B has no result');
       assert.equal(await page.textContent('#rs-title'), 'Neu B');
       assert.deepEqual(log.errors, []);
@@ -679,16 +594,16 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     await server.clearRuns();
   });
 
-  test('Verwerfen: the confirmation closes when its target is decided elsewhere or expires', async () => {
+  test('Discard: the confirmation closes when its target is decided elsewhere or expires', async () => {
     await server.clearRuns();
     // decided elsewhere (bot/CLI cancel through the API)
-    const a = server.show(golden, { title: 'Ziel extern' });
+    const a = show({ title: 'Ziel extern' });
     {
       const { ctx, page } = await open('run=' + a.run_id);
       const cancels = [];
       page.on('request', (r) => { if (r.url() === ORIGIN + '/cancel') cancels.push(r); });
       try {
-        await page.click('#rs-more-btn'); await page.click('#rs-discard');
+        await discardOpen(page);
         assert.equal(await dialogOpen(page), true);
         await server.clearRuns(); // cancels A through POST /cancel
         await page.waitForSelector('.rs-banner[data-banner="cancelled"]');
@@ -697,17 +612,17 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       } finally { await ctx.close(); }
     }
     // expiry: created 5 min - 3 s ago, expires after 5 min
-    const e = server.show(golden, { title: 'Ziel läuft ab', created: isoAt(Date.now() - 300000 + 3000), expires_minutes: 5 });
+    const e = show({ title: 'Ziel läuft ab', created: isoAt(Date.now() - 300000 + 3000), expires_minutes: 5 });
     {
       const { ctx, page, log } = await open('run=' + e.run_id);
       const cancels = [];
       page.on('request', (r) => { if (r.url() === ORIGIN + '/cancel') cancels.push(r); });
       try {
-        await page.click('#rs-more-btn'); await page.click('#rs-discard');
+        await discardOpen(page);
         assert.equal(await dialogOpen(page), true);
         await page.waitForSelector('.rs-banner[data-banner="expired"]', { timeout: 8000 });
         await page.waitForFunction(() => !document.getElementById('rs-discard-dialog').open, null, { timeout: 3000 });
-        assert.equal(server.result(e.run_id).status, 'expired');
+        assert.equal((await result(e)).status, 'expired');
         assert.equal(cancels.length, 0);
         assert.equal(await page.isDisabled('#rs-discard'), true);
         assert.deepEqual(log.errors, []);
@@ -715,38 +630,34 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     }
   });
 
-  // review round 1, finding 4
-  test('Verwerfen: a failed /cancel request leaves the bar usable, keeps the draft, and the retry works', async () => {
+  test('Discard: a failed /cancel request leaves the footer usable, keeps the draft, and the retry works', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Abbruch scheitert' });
+    const run = show({ title: 'Abbruch scheitert' });
     const { ctx, page } = await open('run=' + run.run_id);
     let held;
     try {
-      await page.click('rs-action-row button[value="erledigt"]');
-      await fillNote(page, 'bleibt');
+      await page.fill('#rs-note', 'bleibt');
       await page.route('**/cancel', (route) => { held = route; });
-      await page.click('#rs-more-btn'); await page.click('#rs-discard');
+      await discardOpen(page);
       const requested = page.waitForRequest((request) => request.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await requested;
-      assert.equal(await page.isDisabled('rs-action-row button[value="erledigt"]'), true);
-      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
-      assert.equal(await page.isEnabled('[data-copy-id="starter-copy"] .rs-copy__btn'), true);
-      assert.equal(await page.isEnabled(row(run.run_id)), true);
+      assert.equal(await page.$eval('#rs-note', (note) => note.readOnly), true, 'busy while the cancel is out');
+      assert.equal(await page.isDisabled('#rs-submit'), true);
+      assert.equal(await page.isEnabled(COPY_BUTTON), true);
       await held.abort('connectionfailed');
-      await page.waitForFunction((msg) => [...document.querySelectorAll('#rs-toasts .rs-toast')].some((x) => x.textContent === msg), de.discard_failed, { timeout: 3000 });
-      assert.equal(await page.isDisabled('#rs-submit'), false, 'An Bot senden usable again');
-      assert.equal(await page.isDisabled('#rs-discard'), false, 'Verwerfen usable again');
-      assert.equal(await page.isDisabled('rs-action-row button[value="erledigt"]'), false);
-      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), false);
+      await toastShown(page, de.discard_failed);
+      assert.equal(await page.isDisabled('#rs-submit'), false, 'the primary is usable again');
+      assert.equal(await page.isDisabled('#rs-discard'), false, 'Discard is usable again');
+      assert.equal(await page.$eval('#rs-note', (note) => note.readOnly), false);
       assert.equal(server.result(run.run_id), null);
-      assert.equal(await page.inputValue('#starter-note'), 'bleibt');
-      assert.ok(await page.evaluate((id) => localStorage.getItem('rs-draft:' + id), run.run_id), 'draft kept');
+      assert.equal(await page.inputValue('#rs-note'), 'bleibt');
+      assert.equal(await draftNote(page, run.run_id), 'bleibt', 'draft kept');
       await page.unroute('**/cancel');
-      await page.click('#rs-more-btn'); await page.click('#rs-discard');
+      await discardOpen(page);
       await page.click('#rs-discard-dialog button[value="discard"]');
       await page.waitForSelector('.rs-banner[data-banner="cancelled"]');
-      assert.equal(server.result(run.run_id).status, 'cancelled');
+      assert.equal((await result(run)).status, 'cancelled');
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
@@ -754,28 +665,27 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   // review round 2, finding 4: busy belongs to a run and operation token
   test('switching during submit keeps the selected run busy until its own submit completes', async () => {
     await server.clearRuns();
-    const a = server.show(golden, { title: 'Submit A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { bot: SECOND_BOT, title: 'Submit B', created: isoAt(Date.now()) });
+    const a = show({ title: 'Submit A', created: isoAt(Date.now() - 60000) });
+    const b = show({ bot: SECOND_BOT, title: 'Submit B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     const held = [];
     try {
       await page.route('**/submit', (route) => { held.push(route); });
-      await page.click('rs-action-row button[value="erledigt"]');
       const requestA = page.waitForRequest((r) => r.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       await requestA;
       await page.click(row(b.run_id));
-      await ready(page);
-      await page.click('rs-action-row button[value="erledigt"]');
-      await fillNote(page, 'B remains pending');
+      await activeIs(page, b.run_id);
+      await page.fill('#rs-note', 'B remains pending');
       const requestB = page.waitForRequest((r) => r.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       await requestB;
       assert.equal(await page.isDisabled('#rs-submit'), true);
 
       await held[0].fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
-      assert.equal(await page.inputValue('#starter-note'), 'B remains pending');
-      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
+      await page.waitForTimeout(50);
+      assert.equal(await page.inputValue('#rs-note'), 'B remains pending');
+      assert.equal(await page.$eval('#rs-note', (note) => note.readOnly), true);
       assert.equal(await page.isDisabled('#rs-submit'), true, 'A completion cannot unlock B');
       assert.equal(await page.isDisabled('#rs-discard'), true, 'A completion cannot unlock B discard');
 
@@ -787,19 +697,19 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
 
   test('switching during cancel keeps the selected run busy until its own cancel completes', async () => {
     await server.clearRuns();
-    const a = server.show(golden, { title: 'Cancel A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { bot: SECOND_BOT, title: 'Cancel B', created: isoAt(Date.now()) });
+    const a = show({ title: 'Cancel A', created: isoAt(Date.now() - 60000) });
+    const b = show({ bot: SECOND_BOT, title: 'Cancel B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     const held = [];
     try {
       await page.route('**/cancel', (route) => { held.push(route); });
-      await page.click('#rs-more-btn'); await page.click('#rs-discard');
+      await discardOpen(page);
       const requestA = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await requestA;
       await page.click(row(b.run_id));
-      await ready(page);
-      await page.click('#rs-more-btn'); await page.click('#rs-discard');
+      await activeIs(page, b.run_id);
+      await discardOpen(page);
       const requestB = page.waitForRequest((r) => r.url() === ORIGIN + '/cancel');
       await page.click('#rs-discard-dialog button[value="discard"]');
       await requestB;
@@ -819,7 +729,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   // review round 1, finding 5
   test('a failed /read (network abort, then HTTP 500) is retried on the next focus; page and server agree', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Lesen scheitert' });
+    const run = show({ title: 'Lesen scheitert' });
     const ctx = await browser.newContext({ viewport: { width: 1500, height: 1000 } });
     const page = await ctx.newPage();
     const serverUnread = async () => {
@@ -856,138 +766,117 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     await server.clearRuns();
   });
 
-  test('failed run switch keeps the rendered form live and submits its exact edited draft', async () => {
+  test('failed run switch keeps the rendered report live and sends its exact edited note', async () => {
     await server.clearRuns();
-    const a = server.show(golden, { title: 'Switch bleibt A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { bot: SECOND_BOT, title: 'Switch scheitert B', created: isoAt(Date.now()) });
+    const a = show({ title: 'Switch bleibt A', created: isoAt(Date.now() - 60000) });
+    const b = show({ bot: SECOND_BOT, title: 'Switch scheitert B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     try {
-      await page.click('rs-action-row button[value="erledigt"]');
-      await fillNote(page, 'old note');
+      await page.fill('#rs-note', 'old note');
       await page.route(`**/api/run/${b.run_id}`, (route) => route.abort('connectionfailed'));
       await page.click(row(b.run_id));
-      await page.waitForFunction((message) => [...document.querySelectorAll('#rs-toasts .rs-toast')]
-        .some((item) => item.textContent === message), de.run_load_failed);
+      await toastShown(page, de.run_load_failed);
 
       assert.equal(await activeId(page), a.run_id);
       assert.equal(await page.textContent('#rs-title'), 'Switch bleibt A');
       assert.equal(await page.getAttribute('html', 'data-rs-ready'), '1');
-      await page.click('rs-action-row button[value="spaeter"]');
-      await fillNote(page, 'new note after failed switch');
-      const expected = { choice: 'spaeter', note: 'new note after failed switch' };
-      assert.deepEqual(
-        await page.evaluate((id) => JSON.parse(localStorage.getItem('rs-draft:' + id)).value, a.run_id),
-        expected,
-      );
-      assert.equal(await page.isDisabled('#rs-submit'), false);
+      await page.fill('#rs-note', 'new note after failed switch');
+      assert.equal(await draftNote(page, a.run_id), 'new note after failed switch');
 
+      const expected = { decision: 'approve', note: 'new note after failed switch', refs: [] };
       const submitted = page.waitForRequest((request) => request.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       assert.deepEqual(JSON.parse((await submitted).postData()), { run_id: a.run_id, data: expected });
       await page.unroute(`**/api/run/${b.run_id}`);
       // Once sent, the pop-up advances to B
-      await page.waitForFunction((id) => window.RS.activeRun === id
-        && document.documentElement.dataset.rsReady === '1', b.run_id);
-      assert.deepEqual(server.result(a.run_id).data, expected);
+      await activeIs(page, b.run_id);
+      assert.deepEqual((await result(a)).data, expected);
       assert.equal(await page.evaluate((id) => localStorage.getItem('rs-draft:' + id), a.run_id), null);
       assert.equal(server.result(b.run_id), null);
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
-  test('finding 5: an HTTP 500 run switch reports a retryable load error and preserves the URL', async () => {
+  test('an HTTP 500 run switch reports a retryable load error and preserves the URL', async () => {
     await server.clearRuns();
-    const a = server.show(golden, { title: 'Aktiv A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { bot: SECOND_BOT, title: 'Fehler B', created: isoAt(Date.now()) });
+    const a = show({ title: 'Aktiv A', created: isoAt(Date.now() - 60000) });
+    const b = show({ bot: SECOND_BOT, title: 'Fehler B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     try {
-      await page.click('rs-action-row button[value="erledigt"]');
+      await page.fill('#rs-note', 'A');
       await page.route(`**/api/run/${b.run_id}`, (route) => route.fulfill({
         status: 500, contentType: 'application/json', body: '{"error":"injected"}',
       }));
       await page.click(row(b.run_id));
-      await page.waitForFunction((message) => [...document.querySelectorAll('#rs-toasts .rs-toast')]
-        .some((item) => item.textContent === message), de.run_load_failed);
+      await toastShown(page, de.run_load_failed);
       assert.equal(await activeId(page), a.run_id);
       assert.equal(new URL(page.url()).searchParams.get('run'), a.run_id);
-      assert.equal(await page.isEnabled('#starter-note'), true);
+      assert.equal(await page.isEditable('#rs-note'), true);
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
-  test('delayed successful switch retires the old result only when the replacement commits', async () => {
+  test('delayed successful switch retires the old report only when the replacement commits', async () => {
     await server.clearRuns();
-    const a = server.show(golden, { title: 'Verzögert A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { bot: SECOND_BOT, title: 'Verzögert B', created: isoAt(Date.now()) });
+    const a = show({ title: 'Verzögert A', created: isoAt(Date.now() - 60000) });
+    const b = show({ bot: SECOND_BOT, title: 'Verzögert B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     let held;
     try {
-      await page.click('rs-action-row button[value="erledigt"]');
-      await fillNote(page, 'A before request');
+      await page.fill('#rs-note', 'A before request');
       await page.route(`**/api/run/${b.run_id}`, (route) => { held = route; });
       const requested = page.waitForRequest((request) => request.url().endsWith('/api/run/' + b.run_id));
       await page.click(row(b.run_id));
       await requested;
 
-      await page.click('rs-action-row button[value="spaeter"]');
-      await fillNote(page, 'A while B is delayed');
+      await page.fill('#rs-note', 'A while B is delayed');
       assert.equal(await activeId(page), a.run_id);
-      assert.deepEqual(
-        await page.evaluate((id) => JSON.parse(localStorage.getItem('rs-draft:' + id)).value, a.run_id),
-        { choice: 'spaeter', note: 'A while B is delayed' },
-      );
+      assert.equal(await draftNote(page, a.run_id), 'A while B is delayed');
 
       const response = await held.fetch();
       await held.fulfill({ response });
-      await page.waitForFunction((id) => window.RS.activeRun === id
-        && document.documentElement.dataset.rsReady === '1', b.run_id);
+      await activeIs(page, b.run_id);
       assert.equal(await page.textContent('#rs-title'), 'Verzögert B');
-      assert.equal(await page.evaluate(() => document.querySelector('rs-action-row').value), '');
-      assert.equal(await page.inputValue('#starter-note'), '');
-      assert.equal(await page.isDisabled('#rs-submit'), true, 'A result cannot enable B submit');
+      assert.equal(await page.inputValue('#rs-note'), '', 'A\'s note stays with A');
 
-      const expected = { choice: 'erledigt', note: 'B exact result' };
-      await page.click('rs-action-row button[value="erledigt"]');
-      await fillNote(page, expected.note);
+      const expected = { decision: 'approve', note: 'B exact result', refs: [] };
+      await page.fill('#rs-note', expected.note);
       const submitted = page.waitForRequest((request) => request.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       assert.deepEqual(JSON.parse((await submitted).postData()), { run_id: b.run_id, data: expected });
       // Once sent, the pop-up advances to the open A with its draft
-      await page.waitForFunction((id) => window.RS.activeRun === id
-        && document.documentElement.dataset.rsReady === '1', a.run_id);
-      assert.deepEqual(server.result(b.run_id).data, expected);
+      await activeIs(page, a.run_id);
+      assert.deepEqual((await result(b)).data, expected);
       assert.equal(server.result(a.run_id), null);
-      assert.equal(await page.inputValue('#starter-note'), 'A while B is delayed');
+      assert.equal(await page.inputValue('#rs-note'), 'A while B is delayed');
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
-  test('finding 1: a successful run switch updates the URL and reload keeps that run', async () => {
+  test('a successful run switch updates the URL and a reload keeps that run and its draft', async () => {
     await server.clearRuns();
-    const a = server.show(golden, { title: 'URL A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { bot: SECOND_BOT, title: 'URL B', created: isoAt(Date.now()) });
+    const a = show({ title: 'URL A', created: isoAt(Date.now() - 60000) });
+    const b = show({ bot: SECOND_BOT, title: 'URL B', created: isoAt(Date.now()) });
     const { ctx, page } = await open('run=' + a.run_id);
     try {
       await page.click(row(b.run_id));
-      await ready(page);
-      await page.click('rs-action-row button[value="spaeter"]');
-      await fillNote(page, 'Entwurf in B');
+      await activeIs(page, b.run_id);
+      await page.fill('#rs-note', 'Entwurf in B');
       assert.equal(new URL(page.url()).searchParams.get('run'), b.run_id);
       await page.reload();
       await ready(page);
       assert.equal(await activeId(page), b.run_id);
-      assert.equal(await page.inputValue('#starter-note'), 'Entwurf in B');
+      assert.equal(await page.inputValue('#rs-note'), 'Entwurf in B');
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
-  test('finding 3: a reopened submitted run shows its result read-only and copy still works', async () => {
+  test('a reopened decided report shows its result read-only and copy still works', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Entschieden wieder öffnen' });
+    const run = show({ title: 'Entschieden wieder öffnen' });
     const first = await open('run=' + run.run_id);
     try {
-      await first.page.click('rs-action-row button[value="spaeter"]');
-      await fillNote(first.page, 'Gesendete Notiz');
+      await first.page.fill('#rs-note', 'Gesendete Notiz');
       await first.page.click('#rs-submit');
       await first.page.waitForSelector('.rs-banner[data-banner="submitted"]');
     } finally { await first.ctx.close(); }
@@ -999,30 +888,19 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
         copies.push(route.request().postDataJSON());
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
       });
-      assert.equal(await page.$eval('rs-action-row', (row) => row.value), 'spaeter');
-      assert.equal(await page.inputValue('#starter-note'), 'Gesendete Notiz');
-      assert.equal(await page.textContent('#rs-status'), '');
-      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
-      assert.equal(await page.isDisabled('rs-action-row button[value="spaeter"]'), true);
-      assert.equal(await page.isEnabled('[data-copy-id="starter-copy"] .rs-copy__btn'), true);
-      await page.click('[data-copy-id="starter-copy"] .rs-copy__btn');
-      assert.deepEqual(copies, [{ run_id: run.run_id, text: expect.copies['starter-copy'] }]);
+      assert.equal(await page.inputValue('#rs-note'), 'Gesendete Notiz');
+      assert.equal(await page.$eval('#rs-note', (note) => note.readOnly), true);
+      assert.equal(await page.isVisible('#rs-submit'), false);
+      assert.equal(await page.isEnabled(COPY_BUTTON), true);
+      await page.click(COPY_BUTTON);
+      assert.deepEqual(copies, [{ run_id: run.run_id, text: COPY_TEXT }]);
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
-  async function submitElsewhere(runId, data) {
-    const response = await fetch(server.url('submit'), {
-      method: 'POST',
-      headers: { 'X-RS-CSRF': await server.csrf(), 'Content-Type': 'application/json', Origin: ORIGIN },
-      body: JSON.stringify({ run_id: runId, data }),
-    });
-    return response.status;
-  }
-
-  test('a live report submitted by another client hydrates the sent result read-only', async () => {
+  test('a live report decided by another client shows the sent result read-only', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Anderswo gesendet' });
+    const run = show({ title: 'Anderswo gesendet' });
     const { ctx, page, log } = await open('run=' + run.run_id);
     const copies = [];
     try {
@@ -1030,69 +908,49 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
         copies.push(route.request().postDataJSON());
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
       });
-      await page.click('rs-action-row button[value="erledigt"]');
-      await fillNote(page, 'lokaler Entwurf');
-      const sent = { choice: 'spaeter', note: 'vom anderen Client' };
+      await page.fill('#rs-note', 'lokaler Entwurf');
+      const sent = { decision: 'revise', note: 'vom anderen Client', refs: [] };
       assert.equal(await submitElsewhere(run.run_id, sent), 200);
       await page.waitForSelector('.rs-banner[data-banner="submitted"]');
-      await page.waitForFunction((note) => document.getElementById('starter-note')?.value === note, sent.note, { timeout: 5000 });
-      assert.equal(await page.$eval('rs-action-row', (row) => row.value), 'spaeter');
-      assert.equal(await page.isDisabled('rs-action-row button[value="spaeter"]'), true);
-      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
-      assert.equal(await page.isHidden('#rs-submitbar'), true);
-      assert.equal(await page.evaluate(() => document.activeElement.classList.contains('rs-banner')), true);
-      assert.equal(await page.isEnabled('[data-copy-id="starter-copy"] .rs-copy__btn'), true);
-      await page.click('[data-copy-id="starter-copy"] .rs-copy__btn');
-      assert.deepEqual(copies, [{ run_id: run.run_id, text: expect.copies['starter-copy'] }]);
-      assert.deepEqual(server.result(run.run_id).data, sent, 'stored result unchanged');
+      await page.waitForFunction((note) => document.getElementById('rs-note')?.value === note, sent.note, { timeout: 5000 });
+      assert.equal(await page.$eval('#rs-note', (note) => note.readOnly), true);
+      assert.equal(await page.isVisible('#rs-submit'), false);
+      assert.equal(await page.evaluate(() => !!document.activeElement.closest('.rs-banner')), true, 'focus at the result banner');
+      assert.equal(await page.isEnabled(COPY_BUTTON), true);
+      await page.click(COPY_BUTTON);
+      assert.deepEqual(copies, [{ run_id: run.run_id, text: COPY_TEXT }]);
+      assert.deepEqual((await result(run)).data, sent, 'stored result unchanged');
       // this page's own late send is refused and changes nothing
-      assert.equal(await submitElsewhere(run.run_id, { choice: 'erledigt', note: 'x' }), 409);
+      assert.equal(await submitElsewhere(run.run_id, { decision: 'approve', note: 'x' }), 409);
       assert.deepEqual(server.result(run.run_id).data, sent);
       assert.deepEqual(log.errors, []);
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
-  test('a 409 on our own send hydrates the result another client sent first', async () => {
+  test('a 409 on our own send shows the result another client sent first', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Wettlauf' });
+    const run = show({ title: 'Wettlauf' });
     const { ctx, page } = await open('run=' + run.run_id);
     let held;
     try {
-      await page.click('rs-action-row button[value="erledigt"]');
       await page.route('**/submit', (route) => { held = route; });
       const requested = page.waitForRequest((r) => r.url() === ORIGIN + '/submit');
       await page.click('#rs-submit');
       await requested;
-      const sent = { choice: 'spaeter', note: 'zuerst' };
+      const sent = { decision: 'reject', note: 'zuerst', refs: [] };
       assert.equal(await submitElsewhere(run.run_id, sent), 200);
       await held.continue();
-      await page.waitForFunction((note) => document.getElementById('starter-note')?.value === note, sent.note, { timeout: 5000 });
-      assert.equal(await page.$eval('rs-action-row', (row) => row.value), 'spaeter');
-      assert.equal(await page.$eval('#starter-note', (note) => note.readOnly), true);
+      await page.waitForFunction((note) => document.getElementById('rs-note')?.value === note, sent.note, { timeout: 5000 });
+      assert.equal(await page.$eval('#rs-note', (note) => note.readOnly), true);
       assert.deepEqual(server.result(run.run_id).data, sent);
-    } finally { await ctx.close(); }
-    await server.clearRuns();
-  });
-
-  test('finding 7: shell and kit expose only neutral fictional sample identities', async () => {
-    await server.clearRuns();
-    const run = server.show(golden, { title: 'Neutrale Beispiele' });
-    const { ctx, page } = await open('run=' + run.run_id);
-    try {
-      assert.match(await page.textContent('#rs-meta'), /Operations Agent/);
-      const kit = await ctx.newPage();
-      await kit.goto(pathToFileURL(path.join(ROOT, 'tools/dev/kit-preview.html')).href);
-      const visible = await kit.locator('body').innerText();
-      assert.match(visible, /Inbox Agent/);
-      assert.match(visible, /Northwind/);
     } finally { await ctx.close(); }
     await server.clearRuns();
   });
 
   test('switching rule, unread dot, ● title prefix and Ctrl+1..3', async () => {
     await server.clearRuns();
-    const a = showReport({ title: 'Bericht A', identity: { name: 'Operations Agent' } });
+    const a = show({ title: 'Bericht A', identity: { name: 'Operations Agent' } });
     const { ctx, page, log } = await open();
     try {
       assert.equal(await activeId(page), a.run_id);
@@ -1100,20 +958,19 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
 
       // A stays even untouched; B waits in the inbox with its unread dot,
       // the title gets "● "
-      const b = showReport({ bot: 'example-second-bot', identity: { name: 'Second Agent' }, title: 'Bericht B' });
+      const b = show({ bot: SECOND_BOT, identity: { name: 'Second Agent' }, title: 'Bericht B' }, PLAIN_REPORT);
       await page.waitForSelector(`${row(b.run_id)} .rs-inbox__dot[data-new]`);
       await page.waitForTimeout(300); // a switch would have started by now
       assert.equal(await activeId(page), a.run_id, 'an untouched report is not replaced');
       assert.equal(await page.title(), '● Bericht A · Operations Agent');
       assert.equal(
         (await page.textContent(row(b.run_id))).replace(/\s+/g, ' ').trim(),
-        `Bericht B Second Agent ${de.sep} ${de.ask_kind_approve} ${de.sep} ${de.new}`,
+        `Bericht B Second Agent ${de.sep} ${de.ask_kind_read} ${de.sep} ${de.new}`,
       );
 
       // a note on A, C arrives: arrivals append, nothing jumps
-      if (await page.locator('[data-rs-note-open]').isVisible()) await page.locator('[data-rs-note-open]').click();
       await page.fill('#rs-note', 'erst morgen');
-      const c = showReport({ bot: 'example-third-bot', identity: { name: 'Third Agent' }, title: 'Bericht C' });
+      const c = show({ bot: 'example-third-bot', identity: { name: 'Third Agent' }, title: 'Bericht C' });
       await page.waitForSelector(`${row(c.run_id)} .rs-inbox__dot[data-new]`);
       assert.equal(await activeId(page), a.run_id);
       const order = await page.$$eval('#rs-inbox a[data-run-id]', (x) => x.map((e) => [e.dataset.runId, e.getAttribute('aria-keyshortcuts')]));
@@ -1123,19 +980,19 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
       const read = page.waitForRequest((r) => r.url() === ORIGIN + '/read');
       await page.keyboard.press('Control+3');
       await read;
-      await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', c.run_id);
+      await activeIs(page, c.run_id);
       await page.waitForFunction(() => document.title.includes('Bericht C'), null, { timeout: 3000 });
       await page.waitForFunction((sel) => !document.querySelector(sel), `${row(c.run_id)} .rs-inbox__dot[data-new]`, { timeout: 3000 });
       assert.equal(await page.getAttribute(row(c.run_id), 'aria-current'), 'page');
 
       // Ctrl+2 -> B; then the "● " prefix goes away (nothing unread)
       await page.keyboard.press('Control+2');
-      await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', b.run_id);
+      await activeIs(page, b.run_id);
       await page.waitForFunction(() => !document.title.startsWith('●'), null, { timeout: 3000 });
 
       // Ctrl+1 -> A with its draft restored
       await page.keyboard.press('Control+1');
-      await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', a.run_id);
+      await activeIs(page, a.run_id);
       await page.waitForFunction(() => document.title === 'Bericht A · Operations Agent', null, { timeout: 3000 });
       assert.equal(await page.inputValue('#rs-note'), 'erst morgen');
       assert.deepEqual(log.errors, []);
@@ -1144,76 +1001,33 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
   });
 
   test('expired run shows the expired banner and cannot be sent', async () => {
-    const created = new Date(Date.now() - 20 * 60000).toISOString().replace(/\.\d+Z$/, 'Z');
-    const run = server.show(golden, { title: 'Abgelaufen', created, expires_minutes: 5 });
-    const deadline = Date.now() + 5000;
-    while (!server.result(run.run_id) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
-    assert.equal(server.result(run.run_id).status, 'expired');
+    await server.clearRuns();
+    const created = isoAt(Date.now() - 20 * 60000);
+    const run = show({ title: 'Abgelaufen', created, expires_minutes: 5 });
+    assert.equal((await result(run)).status, 'expired');
     const { ctx, page } = await open('run=' + run.run_id);
     try {
       assert.equal(await page.textContent('.rs-banner[data-banner="expired"]'), de.run_expired_msg);
-      assert.equal(await page.isDisabled('#rs-submit'), true);
+      assert.equal(await page.isVisible('#rs-submit'), false);
       assert.equal(await page.isDisabled('#rs-discard'), true);
       // A decided report is not in the inbox of open reports
       assert.equal(await page.$(row(run.run_id)), null);
     } finally { await ctx.close(); }
   });
 
-  test('footer: up to two quiet alternatives before the primary, in the given order; setAlternative is the one-item form', async () => {
-    await server.clearRuns();
-    const a = server.show(golden, { title: 'Alternativen A', created: isoAt(Date.now() - 60000) });
-    const b = server.show(golden, { bot: SECOND_BOT, title: 'Alternativen B', created: isoAt(Date.now()) });
-    const { ctx, page, log } = await open('run=' + a.run_id);
-    try {
-      await page.evaluate(() => {
-        window.__clicks = [];
-        window.RS._define('_starter', function (api) {
-          window.__api = api;
-          api.setResult({ choice: 'erledigt', note: '' });
-          api.setAlternatives([
-            { label: 'Erste', run: () => window.__clicks.push('first') },
-            { label: 'Zweite', run: () => window.__clicks.push('second') },
-            { label: 'Dritte', run: () => window.__clicks.push('third') },
-          ]);
-        });
-      });
-      await page.click(row(b.run_id));
-      await ready(page);
-      const footer = () => page.$$eval('#rs-submitbar button', (buttons) => buttons
-        .filter((button) => button.getClientRects().length > 0)
-        .map((button) => [button.id, button.textContent]));
-      assert.deepEqual(await footer(), [['rs-alt', 'Erste'], ['rs-alt-2', 'Zweite'], ['rs-submit', de.submit]]);
-      await page.click('#rs-alt-2');
-      await page.click('#rs-alt');
-      assert.deepEqual(await page.evaluate(() => window.__clicks), ['second', 'first']);
-      await page.evaluate(() => window.__api.setAlternatives([{ label: 'Zweite', run: () => {} }, { label: 'Erste', run: () => {} }]));
-      assert.deepEqual((await footer()).map(([, text]) => text), ['Zweite', 'Erste', de.submit], 'the given order');
-      await page.focus('#rs-alt');
-      await page.evaluate(() => window.__api.setAlternative('Nur eine', () => window.__clicks.push('only')));
-      assert.deepEqual(await footer(), [['rs-alt', 'Nur eine'], ['rs-submit', de.submit]]);
-      assert.equal(await page.evaluate(() => document.activeElement.id), 'rs-alt', 'a kept alternative keeps focus');
-      await page.click('#rs-alt');
-      assert.deepEqual(await page.evaluate(() => window.__clicks.slice(-1)), ['only']);
-      await page.evaluate(() => window.__api.setAlternatives([]));
-      assert.deepEqual(await footer(), [['rs-submit', de.submit]]);
-      assert.deepEqual(log.errors, []);
-    } finally { await ctx.close(); }
-    await server.clearRuns();
-  });
-
   test('footer: right under a short report; at the window bottom over a hairline once the report scrolls', async () => {
     await server.clearRuns();
-    const run = server.show(golden, { title: 'Kurzer Bericht' });
+    const run = show({ title: 'Kurzer Bericht' });
     const { ctx, page } = await open('run=' + run.run_id);
     const layout = () => page.evaluate(() => {
       const mount = document.getElementById('rs-mount');
       const bar = document.getElementById('rs-submitbar');
-      const content = mount.querySelector('.rs-tpl').getBoundingClientRect();
-      const submit = document.getElementById('rs-submit').getBoundingClientRect();
+      const content = mount.querySelector('.rs-report').getBoundingClientRect();
+      const composer = document.getElementById('rs-composer').getBoundingClientRect();
       const space6 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-6'));
       return {
         scrolls: mount.hasAttribute('data-rs-scrolls'),
-        gap: submit.top - content.bottom,
+        gap: composer.top - content.bottom,
         space6,
         barBottom: bar.getBoundingClientRect().bottom,
         windowBottom: innerHeight,
@@ -1223,7 +1037,7 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     try {
       const short = await layout();
       assert.equal(short.scrolls, false);
-      assert.ok(Math.abs(short.gap - short.space6) <= 1, `the primary sits --space-6 under the content (${JSON.stringify(short)})`);
+      assert.ok(short.gap >= 0 && short.gap <= short.space6 * 2, `the footer follows the content (${JSON.stringify(short)})`);
       assert.ok(short.barBottom < short.windowBottom - 200, 'not pinned to the window bottom');
       assert.equal(short.line, 'rgba(0, 0, 0, 0)', 'no hairline under a short report');
       await page.setViewportSize({ width: 1500, height: 300 });
@@ -1236,7 +1050,299 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 
-  test('no open runs: empty state and title', async () => {
+  test('links never navigate the window: every way to open one posts /open-url, drags and drops are cancelled', async () => {
+    await server.clearRuns();
+    const run = show({ title: 'Links' }, payloadFixture('approve-decide'));
+    const { ctx, page, log } = await open('run=' + run.run_id);
+    const opened = [];
+    try {
+      // the desk would open the OS browser: answer /open-url here
+      await page.route('**/open-url', (route) => {
+        opened.push(route.request().postDataJSON());
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      });
+      const link = '[data-item-id="hosting"] a.rs-ext';
+      const href = await page.getAttribute(link, 'href');
+      const urlVectors = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/url_vectors.json'), 'utf8'));
+      const probe = await page.evaluate(({ selector, vectors }) => {
+        const anchor = document.querySelector(selector);
+        const start = new DragEvent('dragstart', { bubbles: true, cancelable: true });
+        anchor.dispatchEvent(start);
+        const uri = new DataTransfer();
+        uri.setData('text/uri-list', 'https://evil.example/drop');
+        const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: uri });
+        document.body.dispatchEvent(over);
+        const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: uri });
+        document.body.dispatchEvent(drop);
+        const plain = new DataTransfer();
+        plain.setData('text/plain', 'hello');
+        const textOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: plain });
+        document.body.dispatchEvent(textOver);
+        const fieldUri = new DataTransfer();
+        fieldUri.setData('text/uri-list', 'https://evil.example/field');
+        const fieldOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: fieldUri });
+        document.getElementById('rs-note').dispatchEvent(fieldOver);
+        const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+        anchor.dispatchEvent(menu);
+        const holder = document.createElement('div');
+        RS.appendLinks(holder, 'See https://example.com/only-the-link today');
+        return {
+          draggable: anchor.getAttribute('draggable'),
+          startCancelled: start.defaultPrevented,
+          overCancelled: over.defaultPrevented,
+          dropCancelled: drop.defaultPrevented,
+          textCancelled: textOver.defaultPrevented,
+          fieldCancelled: fieldOver.defaultPrevented,
+          menuCancelled: menu.defaultPrevented,
+          linksOnly: holder.textContent,
+          badLink: RS.externalLink('https://user@example.com/a', 'x') === null,
+          pathAt: RS.externalLink('https://example.com/a@b', 'x').getAttribute('href'),
+          accepted: vectors.both.concat(vectors.opener_only).filter((u) => RS.externalLink(u, 'x') === null),
+          refused: vectors.bad.filter((u) => RS.externalLink(u, 'x') !== null),
+        };
+      }, { selector: link, vectors: urlVectors });
+      assert.deepEqual(probe, {
+        draggable: 'false',
+        startCancelled: true,
+        overCancelled: true,
+        dropCancelled: true,
+        textCancelled: false,
+        fieldCancelled: false,
+        menuCancelled: true,
+        linksOnly: 'https://example.com/only-the-link',
+        badLink: true,
+        pathAt: 'https://example.com/a@b',
+        accepted: [],
+        refused: [],
+      });
+      /* the page opens a link at most once per 400 ms */
+      const pause = () => page.waitForTimeout(450);
+      await page.click(link);
+      await pause();
+      await page.click(link, { button: 'middle' });
+      await pause();
+      await page.focus(link);
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Control+Enter'); // the submit shortcut, never the link
+      await pause();
+      await page.focus(link);
+      await page.keyboard.press('Shift+Enter');
+      await pause();
+      await page.focus(link);
+      await page.keyboard.press('Alt+Enter');
+      await pause();
+      await page.click(link, { modifiers: ['Shift'] });
+      await pause();
+      // Ctrl+click on macOS is the context-menu gesture (no click event); Cmd+click is
+      // the macOS counterpart, so the platform modifier keeps the count the same.
+      await page.click(link, { modifiers: ['ControlOrMeta'] });
+      await page.click(link, { button: 'right' });
+      await pause();
+      assert.deepEqual(opened.map((entry) => entry.url), Array(7).fill(href));
+      assert.ok(opened.every((entry) => entry.run_id === run.run_id));
+      assert.equal(new URL(page.url()).origin, ORIGIN, 'the window never navigated');
+      assert.equal(server.result(run.run_id), null, 'Ctrl+Enter on a link sent nothing');
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+    await server.clearRuns();
+  });
+
+  /* the fold fade (shell.css .rs-main::after, rs.js updateFold) */
+  const fold = (page) => page.evaluate(() => {
+    const mount = document.getElementById('rs-mount');
+    const fade = getComputedStyle(document.querySelector('.rs-main'), '::after');
+    return {
+      more: mount.hasAttribute('data-rs-more'),
+      fade: fade.content === 'none' ? null : fade.height,
+      scrolls: mount.scrollHeight > mount.clientHeight,
+    };
+  });
+  const fadeHeight = (page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--rs-fade-h').trim())
+    .then(async (value) => `${await page.evaluate((v) => {
+      const probe = document.createElement('div');
+      probe.style.height = v;
+      document.body.appendChild(probe);
+      const h = probe.getBoundingClientRect().height;
+      probe.remove();
+      return h;
+    }, value)}px`);
+
+  test('the fold fade shows only while the report continues below; keyboard focus scrolls clear of it', async () => {
+    await server.clearRuns();
+    const run = server.show(media.map(payloadFixture('report-long')), { title: 'Langer Bericht' });
+    const { ctx, page } = await open('run=' + run.run_id);
+    try {
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.waitForFunction(() => document.getElementById('rs-mount').hasAttribute('data-rs-more'));
+      const fade = await fadeHeight(page);
+      assert.deepEqual(await fold(page), { more: true, fade, scrolls: true });
+      /* every focus stop inside the report stays above the fade (ring included) */
+      const stops = [];
+      for (let i = 0; i < 40; i++) {
+        await page.keyboard.press('Tab');
+        /* the focus scroll and its scroll event settle before the next paint */
+        const stop = await page.evaluate((fadePx) => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+          const mount = document.getElementById('rs-mount');
+          const active = document.activeElement;
+          if (!mount.contains(active)) { resolve({ outside: true }); return; }
+          const fadeTop = mount.getBoundingClientRect().bottom - (mount.hasAttribute('data-rs-more') ? fadePx : 0);
+          resolve({ tag: active.tagName, bottom: active.getBoundingClientRect().bottom + 4, fadeTop });
+        }))), parseFloat(fade));
+        if (stop.outside) { if (stops.length) break; continue; }
+        stops.push(stop.tag);
+        assert.ok(stop.bottom <= stop.fadeTop + 0.5, `${stop.tag} #${stops.length}: ${stop.bottom} under the fade or fold at ${stop.fadeTop}`);
+      }
+      assert.ok(stops.includes('SUMMARY'), `a disclosure is reached: ${stops.join(' ')}`);
+      await page.evaluate(() => { const m = document.getElementById('rs-mount'); m.scrollTop = m.scrollHeight; });
+      await page.waitForFunction(() => !document.getElementById('rs-mount').hasAttribute('data-rs-more'));
+      assert.deepEqual(await fold(page), { more: false, fade: null, scrolls: true }, 'scrolled to the end');
+      /* only the mount's bottom padding below the fold: no fade */
+      const size = await page.evaluate(() => {
+        const mount = document.getElementById('rs-mount');
+        return { chrome: innerHeight - mount.clientHeight, content: mount.lastElementChild.getBoundingClientRect().height };
+      });
+      await page.setViewportSize({ width: 1280, height: Math.ceil(size.chrome + size.content + 8) });
+      await page.evaluate(() => { document.getElementById('rs-mount').scrollTop = 0; });
+      await page.waitForFunction(() => !document.getElementById('rs-mount').hasAttribute('data-rs-more'));
+      assert.equal((await fold(page)).more, false, 'padding only');
+      assert.equal((await fold(page)).fade, null, 'padding only');
+      await page.setViewportSize({ width: 1280, height: Math.ceil(size.chrome + size.content + 400) });
+      await page.waitForFunction(() => !document.getElementById('rs-mount').hasAttribute('data-rs-scrolls'));
+      assert.deepEqual(await fold(page), { more: false, fade: null, scrolls: false }, 'everything fits');
+    } finally { await ctx.close(); }
+  });
+
+  /* the focused element after the ResizeObserver settled, against the fade */
+  const held = (page, fadePx) => page.evaluate((px) => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const mount = document.getElementById('rs-mount');
+    const active = document.activeElement;
+    const more = mount.hasAttribute('data-rs-more');
+    resolve({
+      summary: active.tagName === 'SUMMARY',
+      open: active.parentElement.open,
+      more, scroll: mount.scrollTop, end: mount.scrollHeight - mount.clientHeight, top: active.getBoundingClientRect().top,
+      ring: active.getBoundingClientRect().bottom + 4, fadeTop: mount.getBoundingClientRect().bottom - (more ? px : 0),
+    });
+  }))), fadePx);
+  async function tabToSummary(page) {
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press('Tab');
+      if (await page.evaluate(() => document.activeElement.tagName === 'SUMMARY')) return;
+    }
+    throw new Error('no disclosure reached');
+  }
+
+  test('opening a disclosure that turns the fade on keeps the held focus ring clear; toggling never scrolls on its own', async () => {
+    /* a short report whose last block is folded: closed it fits, open it does not */
+    const report = {
+      ask: 'read', why: 'The weekly numbers are in.',
+      blocks: [
+        { type: 'facts', items: [{ label: 'Orders', value: '412' }, { label: 'Returns', value: '9' }] },
+        { type: 'text', title: 'Details', collapsed: true, md: Array.from({ length: 30 }, (_, i) => `- Line ${i + 1} of the weekly details`).join('\n') },
+      ],
+    };
+    for (const colorScheme of ['light', 'dark']) {
+      await server.clearRuns();
+      const run = show({ title: 'Ausklappen', identity: { name: 'Operations Agent' } }, report);
+      const { ctx, page, log } = await open('run=' + run.run_id, { colorScheme });
+      try {
+        const px = parseFloat(await fadeHeight(page));
+        /* the window just holds the page: the closed report fits, the footer
+           right under it */
+        const natural = await page.evaluate(() => Math.ceil(document.getElementById('rs-submitbar').getBoundingClientRect().bottom));
+        await page.setViewportSize({ width: 1280, height: natural });
+        await page.waitForTimeout(100);
+        await tabToSummary(page);
+        const fits = await held(page, px);
+        assert.equal(fits.more, false, `${colorScheme}: the closed report fits ${JSON.stringify(fits)}`);
+        assert.ok(fits.ring <= fits.fadeTop + 0.5, `${colorScheme}: ring visible ${JSON.stringify(fits)}`);
+        await page.keyboard.press('Enter');
+        const opened = await held(page, px);
+        assert.ok(opened.summary && opened.open && opened.more, `${colorScheme}: open, fade on, focus kept ${JSON.stringify(opened)}`);
+        assert.ok(opened.ring <= opened.fadeTop + 0.5, `${colorScheme}: ring ${opened.ring} under the fade at ${opened.fadeTop}`);
+        /* at most just clear: never more than the fade and the ring */
+        assert.ok(opened.scroll >= 0 && opened.scroll < px + 8, `${colorScheme}: scrolled just clear (${opened.scroll})`);
+        await page.keyboard.press('Enter');
+        const closed = await held(page, px);
+        assert.ok(closed.summary && !closed.open && !closed.more, `${colorScheme}: closed ${JSON.stringify(closed)}`);
+        /* no scroll of its own: only the browser's clamp to the shorter content */
+        assert.equal(closed.scroll, Math.min(opened.scroll, closed.end), `${colorScheme}: closing ${JSON.stringify(closed)}`);
+        assert.equal(closed.top, opened.top + opened.scroll - closed.scroll);
+
+        assert.deepEqual(log.errors, []);
+      } finally { await ctx.close(); }
+    }
+    /* more already follows (the report goes on below the disclosure):
+       toggling the focused disclosure never scrolls */
+    await server.clearRuns();
+    const longer = {
+      ...report,
+      blocks: [...report.blocks, { type: 'text', title: 'Below', md: Array.from({ length: 40 }, (_, i) => `Paragraph ${i + 1}.`).join('\n\n') }],
+    };
+    const run = show({ title: 'Mehr darunter', identity: { name: 'Operations Agent' } }, longer);
+    const { ctx, page } = await open('run=' + run.run_id);
+    try {
+      const px = parseFloat(await fadeHeight(page));
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.waitForFunction(() => document.getElementById('rs-mount').hasAttribute('data-rs-more'));
+      await tabToSummary(page);
+      const before = await held(page, px);
+      assert.ok(before.more && before.ring <= before.fadeTop + 0.5, JSON.stringify(before));
+      await page.keyboard.press('Enter');
+      const opened = await held(page, px);
+      await page.keyboard.press('Enter');
+      const closed = await held(page, px);
+      assert.deepEqual([opened.open, closed.open, opened.more, closed.more], [!before.open, before.open, true, true]);
+      assert.deepEqual([opened.scroll, closed.scroll], [before.scroll, before.scroll]);
+      assert.deepEqual([opened.top, closed.top], [before.top, before.top]);
+    } finally { await ctx.close(); }
+  });
+
+  test('a decided report fades at the window edge too, in the footer column', async () => {
+    await server.clearRuns();
+    const run = server.show(media.map(payloadFixture('report-long')), { title: 'Gelesen' });
+    const { ctx, page, log } = await open('run=' + run.run_id);
+    try {
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.waitForFunction(() => document.getElementById('rs-mount').hasAttribute('data-rs-more'));
+      const fade = await fadeHeight(page);
+      /* the painted box of .rs-main::after, from the DevTools protocol */
+      const cdp = await ctx.newCDPSession(page);
+      const column = async () => {
+        const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+        const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.rs-main' });
+        const { node } = await cdp.send('DOM.describeNode', { nodeId, depth: 1 });
+        const after = (node.pseudoElements || []).find((p) => p.pseudoType === 'after');
+        const { model } = await cdp.send('DOM.getBoxModel', { backendNodeId: after.backendNodeId });
+        const main = await page.evaluate(() => document.querySelector('.rs-main').getBoundingClientRect().left);
+        const mount = await page.evaluate(() => document.getElementById('rs-mount').getBoundingClientRect().bottom);
+        return { left: model.border[0] - main, width: model.width, height: model.height, bottom: model.border[5], mount };
+      };
+      const bar = await page.evaluate(() => {
+        const inner = document.querySelector('.rs-submitbar__inner').getBoundingClientRect();
+        const main = document.querySelector('.rs-main').getBoundingClientRect();
+        return { left: inner.left - main.left, width: inner.width };
+      });
+      const atOpen = await column();
+      assert.deepEqual([atOpen.left, atOpen.width, `${atOpen.height}px`, atOpen.bottom], [bar.left, bar.width, fade, atOpen.mount], 'the footer column, above the footer');
+      await page.click('#rs-submit');
+      assert.equal((await result(run)).data.decision, 'read');
+      await page.waitForFunction(() => document.getElementById('rs-task').getAttribute('data-state') === 'decided');
+      await page.evaluate(() => { document.getElementById('rs-mount').scrollTop = 0; });
+      await page.waitForFunction(() => document.getElementById('rs-mount').hasAttribute('data-rs-more'));
+      assert.deepEqual(await fold(page), { more: true, fade, scrolls: true }, 'decided, at rest');
+      const sent = await column();
+      assert.deepEqual([sent.left, sent.width, `${sent.height}px`], [bar.left, bar.width, fade], 'the same column');
+      assert.equal(sent.bottom, sent.mount, 'at the bottom edge of the mount');
+      if (await page.isHidden('#rs-submitbar')) assert.equal(sent.mount, 720, 'the window edge');
+      await page.evaluate(() => { const m = document.getElementById('rs-mount'); m.scrollTop = m.scrollHeight; });
+      await page.waitForFunction(() => !document.getElementById('rs-mount').hasAttribute('data-rs-more'));
+      assert.deepEqual(await fold(page), { more: false, fade: null, scrolls: true }, 'decided, at the end');
+      assert.deepEqual(log.errors, []);
+    } finally { await ctx.close(); }
+  });
+
+  test('no open reports: empty state and title', async () => {
     await server.clearRuns();
     const { ctx, page } = await open();
     try {
@@ -1246,14 +1352,5 @@ describe('report-shell page (served, headless Edge)', { skip }, () => {
     } finally { await ctx.close(); }
   });
 });
-
-async function runStep(page, step) {
-  if (step.click) await page.click(step.click);
-  else if (step.fill) await page.fill(step.fill[0], step.fill[1]);
-  else if (step.type) await page.keyboard.type(step.type);
-  else if (step.press) {
-    for (let i = 0; i < (step.repeat || 1); i++) await page.keyboard.press(step.press);
-  } else throw new Error('unknown step ' + JSON.stringify(step));
-}
 
 if (!existsSync(AXE)) throw new Error('vendor/axe.min.js missing');

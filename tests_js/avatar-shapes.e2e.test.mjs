@@ -1,17 +1,16 @@
 // Shape avatars in the served shell (headless Edge): the page draws only
 // shapes of the core set (boot.avatar_shapes, path data, eyes as holes), in
-// the named fill per theme, in the strip, header and "…" menu; image > shape >
+// the named fill per theme, in the inbox, header and "…" menu; image > shape >
 // initials; unknown names fall back; the colour seeds the accent.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
-import { parseColor, toHex } from '../tools/colour.mjs';
+import { browserChannel, startServer, loadChromium, ROOT, PLAIN_REPORT } from '../tools/dev/rs-server.mjs';
+import { e2ePort } from '../tools/node-tests.mjs';
+import { contrast, parseColor, toHex } from '../tools/colour.mjs';
 
-const PORT = Number(process.env.RS_E2E_PORT || 18900) + 12;
-if (PORT === 18742) throw new Error('refusing the product port');
-const golden = JSON.parse(readFileSync(path.join(ROOT, 'templates/builtin/_starter/fixtures/golden.json'), 'utf8'));
+const PORT = e2ePort('avatar-shapes.e2e.test.mjs');
 const SET = JSON.parse(readFileSync(path.join(ROOT, 'core/static/avatar-shapes.json'), 'utf8'));
 const tokensCss = readFileSync(path.join(ROOT, 'core/static/tokens.css'), 'utf8');
 const token = (theme, name) => {
@@ -25,7 +24,7 @@ const token = (theme, name) => {
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const CORRUPT = 'data:image/png;base64,' + Buffer.from('\x89PNG\r\n\x1a\nnot really a png').toString('base64');
 // per shape in set order (blob, squircle, pebble, hex, teardrop, tablet); the
-// the strip shows 12 reports, so all runs of this suite fit
+// the inbox shows 12 reports, so all runs of this suite fit
 const COLOURS = ['blue', 'orange', 'black', 'magenta', 'violet', 'yellow'];
 
 const chromium = await loadChromium();
@@ -49,7 +48,7 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
       'example-registry-bot': { name: 'Registry Agent', avatar_shape: 'tablet', avatar_color: 'green' },
       'example-photo-bot': { name: 'Photo Agent', avatar: PNG, avatar_shape: 'hex' },
     }), 'utf8');
-    const show = (title, bot, identity) => server.show(golden, {
+    const show = (title, bot, identity) => server.show(PLAIN_REPORT, {
       title, bot, ...(identity === undefined ? {} : { identity }),
     });
     Object.keys(SET.shapes).forEach((shape, index) => {
@@ -63,8 +62,8 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
     runs.unknown = show('Unknown shape', 'example-unknown-bot', { name: 'Unknown Agent', avatar_shape: 'star', avatar_color: 'blue' });
     runs.nocolour = show('No colour', 'example-nocolour-bot', { name: 'Plain Agent', avatar_shape: 'blob' });
     // fix1: a payload avatar beats a registry image; older than the rest, so
-    // the strip above stays as it is (12 entries)
-    const old = (title, identity) => server.show(golden, {
+    // the inbox above stays as it is (12 entries)
+    const old = (title, identity) => server.show(PLAIN_REPORT, {
       title, bot: 'example-photo-bot', created: new Date(Date.now() - 86400e3).toISOString().replace(/\.\d+Z$/, 'Z'),
       ...(identity === undefined ? {} : { identity }),
     });
@@ -100,9 +99,9 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
       const rect = box.getBoundingClientRect();
       const svg = box.querySelector('svg');
       const p = svg && svg.querySelector('path');
-      const row = box.closest('.rs-strip__run');
+      const row = box.closest('.rs-inbox__row');
       return {
-        where: row ? `strip:${row.dataset.runId}` : box.id === 'rs-bot-avatar' ? 'header' : box.closest('.rs-more__bot') ? 'menu' : 'other',
+        where: row ? `inbox:${row.dataset.runId}` : box.id === 'rs-bot-avatar' ? 'header' : box.closest('.rs-more__bot') ? 'menu' : 'other',
         width: rect.width,
         height: rect.height,
         hidden: box.getAttribute('aria-hidden'),
@@ -128,7 +127,7 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
     }));
 
   for (const theme of ['light', 'dark']) {
-    test(`${theme}: only core-set shapes, in their named fill, at 32 px in the strip and 24 px in the byline`, async () => {
+    test(`${theme}: only core-set shapes, in their named fill, at 24 px in the inbox and the byline`, async () => {
       const { ctx, page, errors } = await open(shapeRuns.teardrop.run_id, theme);
       try {
         const all = await avatars(page);
@@ -150,25 +149,22 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
           assert.equal(item.initials, null);
           const expected = token(theme, `--rs-avatar-${item.color}`);
           assert.equal(hex(item.svg.fill), expected, `${item.where} ${item.color}`);
-          /* 32 px in the strip; 24 px in the header byline and the menu */
-          if (item.where.startsWith('strip:')) {
-            assert.equal(item.width, 32, item.where);
-            assert.equal(item.height, 32, item.where);
-          } else if (item.where === 'header') {
+          /* 24 px in the inbox, the header byline and the menu */
+          if (item.where.startsWith('inbox:') || item.where === 'header') {
             assert.equal(item.width, 24, item.where);
             assert.equal(item.height, 24, item.where);
           }
         }
         for (const [shape, run] of Object.entries(shapeRuns)) {
-          const inStrip = all.find((item) => item.where === `strip:${run.run_id}`);
-          assert.equal(inStrip.shape, shape);
+          const inInbox = all.find((item) => item.where === `inbox:${run.run_id}`);
+          assert.equal(inInbox.shape, shape);
         }
         const header = all.find((item) => item.where === 'header');
         assert.equal(header.shape, 'teardrop');
         assert.equal(header.color, 'violet');
-        const registry = all.find((item) => item.where === `strip:${runs.registry.run_id}`);
+        const registry = all.find((item) => item.where === `inbox:${runs.registry.run_id}`);
         assert.deepEqual([registry.shape, registry.color], ['tablet', 'green']);
-        const black = all.find((item) => item.where === `strip:${shapeRuns.pebble.run_id}`);
+        const black = all.find((item) => item.where === `inbox:${shapeRuns.pebble.run_id}`);
         assert.equal(hex(black.svg.fill), theme === 'light' ? token('light', '--rs-avatar-black') : '#ffffff');
         assert.deepEqual(errors, []);
       } finally { await ctx.close(); }
@@ -223,17 +219,17 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
         assert.equal(header.img, true);
         assert.equal(header.svg, null);
         assert.equal(header.shape, null);
-        const corrupt = all.find((item) => item.where === `strip:${runs.corrupt.run_id}`);
+        const corrupt = all.find((item) => item.where === `inbox:${runs.corrupt.run_id}`);
         await page.waitForFunction((id) => document.querySelector(`[data-run-id="${id}"] [data-rs-avatar] svg`), runs.corrupt.run_id, { timeout: 3000 });
         all = await avatars(page);
-        const fallen = all.find((item) => item.where === `strip:${runs.corrupt.run_id}`);
+        const fallen = all.find((item) => item.where === `inbox:${runs.corrupt.run_id}`);
         assert.ok(corrupt);
         assert.equal(fallen.img, false);
         assert.deepEqual([fallen.shape, fallen.color], ['pebble', 'magenta']);
-        const unknown = all.find((item) => item.where === `strip:${runs.unknown.run_id}`);
+        const unknown = all.find((item) => item.where === `inbox:${runs.unknown.run_id}`);
         assert.equal(unknown.svg, null);
         assert.equal(unknown.initials, 'UA');
-        const plain = all.find((item) => item.where === `strip:${runs.nocolour.run_id}`);
+        const plain = all.find((item) => item.where === `inbox:${runs.nocolour.run_id}`);
         assert.deepEqual([plain.shape, plain.color], ['blob', 'default']);
         assert.equal(hex(plain.svg.fill), token(theme, '--rs-accent'));
       } finally { await ctx.close(); }
@@ -264,15 +260,7 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
         });
         assert.equal(facts.initials, 'UA');
         assert.equal(facts.radius, '50%');
-        const lum = (c) => {
-          const [r, g, b] = c.match(/\d+/g).slice(0, 3).map((v) => {
-            const x = Number(v) / 255;
-            return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
-          });
-          return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        };
-        const [a, b] = [lum(facts.fg), lum(facts.bg)].sort((x, y) => y - x);
-        assert.ok((a + 0.05) / (b + 0.05) >= 4.5);
+        assert.ok(contrast(hex(facts.fg), hex(facts.bg)) >= 4.5);
       } finally { await ctx.close(); }
     });
 
@@ -291,9 +279,9 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
         assert.equal(header.name, 'Registry Agent');
         // a quiet byline: the name muted and regular, the report title in ink
         assert.equal(header.weight, '400');
-        assert.equal(hex(header.nameColor), header.muted.toLowerCase());
+        assert.equal(hex(header.nameColor), hex(header.muted));
         assert.equal(header.line, 'Registry shape');   // the report title, never a time (K11)
-        assert.equal(hex(header.lineColor), header.ink.toLowerCase());
+        assert.equal(hex(header.lineColor), hex(header.ink));
         await page.click('#rs-more-btn');
         const menu = (await avatars(page)).find((item) => item.where === 'menu');
         assert.deepEqual([menu.shape, menu.color, menu.width, menu.height], ['tablet', 'green', 24, 24]);
@@ -302,13 +290,13 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
       } finally { await ctx.close(); }
     });
 
-    test(`${theme}: the strip button's accessible name is the bot name and the report title`, async () => {
+    test(`${theme}: an inbox row's accessible name is the report title, then the bot name`, async () => {
       const { ctx, page } = await open(runs.registry.run_id, theme);
       try {
-        const button = page.locator(`#rs-strip button[data-run-id="${shapeRuns.hex.run_id}"]`);
-        // name first, then the title (then "new" while unread); the avatar adds nothing
-        assert.match(await button.ariaSnapshot(), /^- button "Hex Agent · Shape hex( · \S+)?"$/);
-        assert.equal(await button.evaluate((b) => b.querySelector('[data-rs-avatar]').getAttribute('aria-hidden')), 'true');
+        const row = page.locator(`#rs-inbox a[data-run-id="${shapeRuns.hex.run_id}"]`);
+        // the title first, then "bot · hint" (then "new" while unread); the avatar adds nothing
+        assert.match(await row.ariaSnapshot(), /^- link "Shape hex Hex Agent · [^"]+"/);
+        assert.equal(await row.evaluate((b) => b.querySelector('[data-rs-avatar]').getAttribute('aria-hidden')), 'true');
       } finally { await ctx.close(); }
     });
 
@@ -319,7 +307,7 @@ describe('shape avatars (served, headless Edge)', { skip }, () => {
           const boot = JSON.parse(document.getElementById('rs-boot').textContent);
           return (await fetch('/api/run/' + id, { headers: { 'X-RS-CSRF': boot.csrf } })).json();
         }, shapeRuns.blob.run_id);
-        const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--rs-accent').trim().toLowerCase());
+        const accent = hex(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--rs-accent').trim()));
         const expected = detail.identity.accent_fallback.includes(theme)
           ? token(theme, '--rs-accent')
           : token(theme, '--rs-avatar-blue');

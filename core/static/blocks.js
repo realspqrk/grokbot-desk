@@ -24,6 +24,8 @@
   var REF_LABEL_MAX = 120;
   var GLYPHS = { ok: '✓', warn: '!', fail: '✕', open: '○' };
   var STATE_KEYS = { ok: 'blk_state_ok', warn: 'blk_state_warn', fail: 'blk_state_fail', open: 'blk_state_open' };
+  /* the status a state shows in colour (data-rs-status, calm K6) */
+  var STATUS_TONES = { ok: 'ok', warn: 'warn', fail: 'danger' };
   var NUMERIC = { number: true, money: true, percent: true, delta: true };
   var MINUS = '−';
   /* a number column shows the value as written (0.001 stays 0,001) */
@@ -62,6 +64,8 @@
     var span = make('span', cls);
     var tone = dir === 'flat' || !good ? 'neutral' : (dir === good ? 'good' : 'bad');
     span.setAttribute('data-tone', tone);
+    /* a status colour on a small mark only (calm K6) */
+    if (tone !== 'neutral') span.setAttribute('data-rs-status', tone === 'good' ? 'ok' : 'danger');
     var glyph = dir === 'up' ? '▲' : (dir === 'down' ? '▼' : '');
     span.textContent = (glyph ? glyph + ' ' : '') + deltaText(ctx, value);
     if (tone !== 'neutral') span.appendChild(vh(' ' + ctx.t(tone === 'good' ? 'blk_delta_better' : 'blk_delta_worse')));
@@ -76,6 +80,7 @@
     span.setAttribute('data-state', state);
     var mark = make('span', 'rs-glyph', GLYPHS[state]);
     mark.setAttribute('aria-hidden', 'true');
+    if (STATUS_TONES[state]) mark.setAttribute('data-rs-status', STATUS_TONES[state]);
     span.appendChild(mark);
     span.appendChild(document.createTextNode(' ' + ctx.t(STATE_KEYS[state])));
     return span;
@@ -340,12 +345,15 @@
       li.setAttribute('data-state', item.state);
       var mark = make('span', 'rs-check-item__mark rs-glyph', GLYPHS[item.state]);
       mark.setAttribute('aria-hidden', 'true');
+      if (STATUS_TONES[item.state]) mark.setAttribute('data-rs-status', STATUS_TONES[item.state]);
       li.appendChild(mark);
       var body = make('span', 'rs-check-item__body');
       body.appendChild(make('span', 'rs-check-item__label', item.label));
       if (item.detail) body.appendChild(make('span', 'rs-check-item__detail', item.detail));
       li.appendChild(body);
-      li.appendChild(make('span', 'rs-check-item__state', ctx.t(STATE_KEYS[item.state])));
+      var word = make('span', 'rs-check-item__state', ctx.t(STATE_KEYS[item.state]));
+      if (item.state === 'warn' || item.state === 'fail') word.setAttribute('data-rs-status', STATUS_TONES[item.state]);
+      li.appendChild(word);
       list.appendChild(li);
     });
     return list;

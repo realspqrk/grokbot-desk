@@ -1,18 +1,21 @@
-// Per-bot identity in the served shell (headless Edge): strip + header
+// Per-bot identity in the served shell (headless Edge): inbox + header
 // avatar/initials/name and the per-report accent, light and dark. The
-// strip shows foreign runs' avatar (name + title as its accessible name) but
-// never their accent (C16/K1).
+// inbox shows other reports' avatar, title and bot name but never their
+// accent (C16/K1).
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
-import { parseColor, toHex } from '../tools/colour.mjs';
+import { e2ePort } from '../tools/node-tests.mjs';
+import { contrast, parseColor, toHex } from '../tools/colour.mjs';
 
-const PORT = Number(process.env.RS_E2E_PORT || 18900) + 5;
-if (PORT === 18742) throw new Error('refusing the product port');
-const STARTER = path.join(ROOT, 'templates/builtin/_starter');
-const golden = JSON.parse(readFileSync(path.join(STARTER, 'fixtures/golden.json'), 'utf8'));
+const PORT = e2ePort('identity.e2e.test.mjs');
+/* an approve report: its primary is enabled at once and carries the accent */
+const REPORT = {
+  ask: 'approve', action: 'deploy', why: 'The release passed staging.',
+  blocks: [{ type: 'facts', items: [{ label: 'Version', value: '4.2.0' }] }],
+};
 const tokensCss = readFileSync(path.join(ROOT, 'core/static/tokens.css'), 'utf8');
 const DEFAULT_ACCENT = {
   light: toHex(parseColor(tokensCss.match(/:root\s*\{[^}]*?--rs-accent:\s*(#[0-9a-f]{6}|oklch\([^)]*\))/i)[1])),
@@ -39,7 +42,7 @@ function hex(rgb) {
   return m ? '#' + m.slice(0, 3).map((x) => Number(x).toString(16).padStart(2, '0')).join('') : String(rgb);
 }
 
-describe('bot identity in strip and header (served, headless Edge)', { skip }, () => {
+describe('bot identity in inbox and header (served, headless Edge)', { skip }, () => {
   let server;
   let browser;
   const runs = {};
@@ -50,7 +53,7 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
     writeFileSync(path.join(server.dataDir, 'bots.json'), JSON.stringify({
       'example-user-bot': { name: 'Desk Agent', accent: OTHER },
     }), 'utf8');
-    const show = (title, bot, identity) => server.show(golden, {
+    const show = (title, bot, identity) => server.show(REPORT, {
       title, bot, ...(identity === undefined ? {} : { identity }),
     });
     runs.initials = show('Initials report', 'operations-agent');            // shipped legacy string form
@@ -78,12 +81,12 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(server.url(`?client=test&run=${runId}`));
     /* ready alone can belong to a first render of another open run; wait
-       for the requested run, as the strip switches below do */
+       for the requested run, as the inbox switches below do */
     await page.waitForFunction((id) => window.RS?.activeRun === id && document.documentElement.dataset.rsReady === '1', runId, { timeout: 8000 });
     return { ctx, page, errors };
   }
 
-  const accentOf = (page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--rs-accent').trim());
+  const accentOf = async (page) => hex(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--rs-accent').trim()));
 
   async function header(page) {
     return page.evaluate(() => {
@@ -105,20 +108,16 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
     });
   }
 
-  async function stripItems(page) {
-    return page.evaluate(() => [...document.querySelectorAll('#rs-strip .rs-strip__run')].map((run) => {
-      const box = run.querySelector('[data-rs-avatar]');
+  async function inboxItems(page) {
+    return page.evaluate(() => [...document.querySelectorAll('#rs-inbox a[data-run-id]')].map((row) => {
+      const box = row.querySelector('[data-rs-avatar]');
       const rect = box.getBoundingClientRect();
-      const unread = !!run.querySelector('.rs-strip__dot[data-new]');
-      const parts = run.getAttribute('aria-label').split(' · ');
-      if (unread) parts.pop();   // " · neu" while unread
-      const [name, ...rest] = parts;
       return {
-        id: run.getAttribute('data-run-id'),
-        current: run.hasAttribute('aria-current'),
-        unread,
-        name,
-        meta: rest.join(' · '),
+        id: row.getAttribute('data-run-id'),
+        current: row.hasAttribute('aria-current'),
+        unread: !!row.querySelector('.rs-inbox__dot[data-new]'),
+        name: row.querySelector('.rs-inbox__bot').textContent,
+        title: row.querySelector('.rs-inbox__title').textContent,
         width: rect.width, height: rect.height,
         img: Boolean(box.querySelector('img')),
         initials: box.getAttribute('data-initials'),
@@ -126,11 +125,11 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
     }));
   }
 
-  // every colour the strip paints (text, fills, borders, outlines, pseudo fills)
-  const stripColours = (page) => page.evaluate(() => {
+  // every colour the inbox paints (text, fills, borders, outlines, pseudo fills)
+  const inboxColours = (page) => page.evaluate(() => {
     const out = new Set();
     const props = ['color', 'backgroundColor', 'borderTopColor', 'borderBottomColor', 'borderLeftColor', 'borderRightColor', 'outlineColor'];
-    for (const el of document.querySelectorAll('#rs-strip-nav, #rs-strip-nav *')) {
+    for (const el of document.querySelectorAll('#rs-inbox, #rs-inbox *')) {
       for (const pseudo of [null, '::before', '::after']) {
         const s = getComputedStyle(el, pseudo);
         for (const p of props) if (s[p] && !/rgba\(0, 0, 0, 0\)/.test(s[p])) out.add(s[p]);
@@ -155,8 +154,7 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
         assert.equal(h.img.fit, 'cover');
         assert.match(h.img.src, /^\/avatar\/[0-9a-f]{64}$/);
         await page.waitForFunction(() => document.querySelector('#rs-bot img')?.complete);
-        // the primary takes the custom accent once enabled
-        await page.click('rs-action-row button[value="erledigt"]');
+        // the primary carries the custom accent
         const fill = await page.evaluate(() => getComputedStyle(document.querySelector('#rs-submit')).backgroundColor);
         assert.equal(hex(fill), expectedAccent);
         await page.hover('#rs-submit');
@@ -169,27 +167,27 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
           })).json();
         }, runs.custom.run_id);
         assert.deepEqual(fallback.identity.accent_fallback, ['light']);
-        // strip: every open run shows a 32 px avatar, named by its bot and
-        // the report title, never an accent
-        const items = await stripItems(page);
+        // inbox: every open report shows a 24 px avatar, its title and its
+        // bot's name, never an accent
+        const items = await inboxItems(page);
         assert.ok(items.length >= 6);
         for (const item of items) {
-          assert.equal(item.width, 32, item.id);
-          assert.equal(item.height, 32, item.id);
+          assert.equal(item.width, 24, item.id);
+          assert.equal(item.height, 24, item.id);
           assert.ok(item.name, item.id);
         }
         const names = Object.fromEntries(items.map((item) => [item.id, item]));
         assert.equal(names[runs.inbox.run_id].name, 'Inbox Agent');
-        assert.equal(names[runs.inbox.run_id].meta, 'Default report');
-        assert.equal(names[runs.user.run_id].meta, 'User registry report');
+        assert.equal(names[runs.inbox.run_id].title, 'Default report');
+        assert.equal(names[runs.user.run_id].title, 'User registry report');
         assert.equal(names[runs.inbox.run_id].img, false);
         assert.equal(names[runs.inbox.run_id].initials, 'IA');
         assert.equal(names[runs.initials.run_id].name, 'Operations Agent');
         assert.equal(names[runs.initials.run_id].initials, 'OA');
         assert.equal(names[runs.user.run_id].name, 'Desk Agent');
-        const colours = (await stripColours(page)).map(hex);
+        const colours = (await inboxColours(page)).map(hex);
         for (const accent of [CUSTOM, OTHER, LOW, DEFAULT_ACCENT.light, DEFAULT_ACCENT.dark]) {
-          assert.ok(!colours.includes(accent), `strip paints accent ${accent}: ${colours.join(' ')}`);
+          assert.ok(!colours.includes(accent), `inbox paints accent ${accent}: ${colours.join(' ')}`);
         }
         assert.deepEqual(errors, []);
       } finally { await ctx.close(); }
@@ -199,11 +197,11 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
       const { ctx, page } = await open(runs.custom.run_id, theme);
       try {
         assert.equal(await accentOf(page), theme === 'light' ? DEFAULT_ACCENT.light : CUSTOM);
-        await page.click(`#rs-strip [data-run-id="${runs.user.run_id}"]`);
+        await page.click(`#rs-inbox [data-run-id="${runs.user.run_id}"]`);
         await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', runs.user.run_id);
         assert.equal(await accentOf(page), OTHER);
         assert.equal((await header(page)).name, 'Desk Agent');
-        await page.click(`#rs-strip [data-run-id="${runs.inbox.run_id}"]`);
+        await page.click(`#rs-inbox [data-run-id="${runs.inbox.run_id}"]`);
         await page.waitForFunction((id) => window.RS.activeRun === id && document.documentElement.dataset.rsReady === '1', runs.inbox.run_id);
         assert.equal(await accentOf(page), DEFAULT_ACCENT[theme]);
         const sheets = await page.evaluate(() => document.querySelectorAll('style[data-rs-accent]').length);
@@ -225,7 +223,6 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
           return (await fetch('/api/run/' + id, { headers: { 'X-RS-CSRF': boot.csrf } })).json();
         }, runs.low.run_id);
         assert.deepEqual(detail.identity.accent_fallback, ['light']);
-        await page.click('rs-action-row button[value="erledigt"]');
         const s = await page.evaluate(() => {
           const st = getComputedStyle(document.querySelector('#rs-submit'));
           return { bg: st.backgroundColor, fg: st.color };
@@ -249,22 +246,12 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
           assert.equal(h.initials, initials);
           assert.equal(h.initialsText, `"${initials}"`);
           assert.equal(h.width, 24);
-          const ratio = await page.evaluate(([fg, bg]) => {
-            const lum = (c) => {
-              const [r, g, b] = c.match(/\d+/g).slice(0, 3).map((v) => {
-                const x = Number(v) / 255;
-                return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
-              });
-              return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-            };
-            const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x);
-            return (a + 0.05) / (b + 0.05);
-          }, [h.fg, h.bg]);
+          const ratio = contrast(hex(h.fg), hex(h.bg));
           assert.ok(ratio >= 4.5, `initials contrast ${ratio}`);
           // initials stay neutral: the avatar fill is not chromatic
-          const [r, g, b] = h.bg.match(/\d+/g).map(Number);
+          const [r, g, b] = parseColor(hex(h.bg)).map((c) => Math.round(c * 255));
           assert.ok(Math.max(r, g, b) - Math.min(r, g, b) <= 12, `neutral avatar ${h.bg}`);
-          const item = (await stripItems(page)).find((x) => x.id === run.run_id);
+          const item = (await inboxItems(page)).find((x) => x.id === run.run_id);
           assert.equal(item.initials, initials);
           assert.equal(item.img, false);
         } finally { await ctx.close(); }
@@ -278,7 +265,7 @@ describe('bot identity in strip and header (served, headless Edge)', { skip }, (
       const h = await header(page);
       assert.equal(h.name, '<b>Bold</b> Agent');
       assert.equal(h.nameHtml, '&lt;b&gt;Bold&lt;/b&gt; Agent');
-      assert.equal(await page.evaluate(() => document.querySelectorAll('#rs-bot b, #rs-strip b').length), 0);
+      assert.equal(await page.evaluate(() => document.querySelectorAll('#rs-bot b, #rs-inbox b').length), 0);
       assert.match(await page.title(), /Markup name report · <b>Bold<\/b> Agent$/);
     } finally { await ctx.close(); }
   });

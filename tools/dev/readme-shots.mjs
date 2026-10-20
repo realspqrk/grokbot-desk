@@ -4,9 +4,9 @@
 // before it is copied to docs/img. All dark.
 //   hero-grokbot-dark.png  the desk pop-up over an illustrative chat-app
 //                          skeleton (tools/dev/readme-scene/grokbot-skeleton.html)
-//   hero-strip-dark.png    three open reports, avatar strip, a compact deploy first
-//   hero-popup-dark.png    one open approve-one report (supplier quote), no strip
-//   hero-report-dark.png   a review-doc status report (task.kind fyi)
+//   hero-inbox-dark.png    three open reports in the inbox, a compact deploy first
+//   hero-popup-dark.png    one open approve report (supplier quote), no inbox
+//   hero-report-dark.png   a read report (weekly status: table, checks, a note)
 //   hero-done.png          the supplier decision after it was sent, framed tight
 // The README shows the four tiles at about 400 px, so they share one narrow
 // viewport (TILE_WIDTH, or the third argument) and are as tall as their
@@ -17,7 +17,9 @@
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { browserChannel, startServer, loadChromium, ROOT } from './rs-server.mjs';
+import {
+  browserChannel, startServer, loadChromium, ROOT, fixtureMedia, payloadFixture,
+} from './rs-server.mjs';
 
 const args = process.argv.slice(2);
 const out = path.resolve(args[0] || 'tools/dev/out/readme');
@@ -37,11 +39,6 @@ const SKELETON = path.join(ROOT, 'tools', 'dev', 'readme-scene', 'grokbot-skelet
 
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const fixture = (template, name = 'golden') => {
-  const dir = path.join(ROOT, 'templates', 'builtin', template);
-  const raw = readFileSync(path.join(dir, 'fixtures', `${name}.json`), 'utf8');
-  return JSON.parse(raw.split('%RS_TEMPLATE%').join(JSON.stringify(dir).slice(1, -1)));
-};
 
 /* "due Friday": the next Friday at least one day ahead */
 function nextFriday() {
@@ -51,115 +48,95 @@ function nextFriday() {
   return ymd(d);
 }
 
+/* every report is a payload@2 report built from blocks */
 const INVOICES = {
-  template: 'decide-list',
   title: 'Three invoices this week',
   identity: { name: 'Office Bot', avatar_shape: 'blob', avatar_color: 'orange' },
-  task: { kind: 'approve_bot_acts', why: 'Hosting is due Friday.' },
-  data: {
-    labels: { approve: 'Pay', reject: "Don't pay", defer: 'Next week' },
-    items: [
-      { id: 'hosting', kind: 'Invoice', source: 'Web hosting', title: 'Hosting for the web shop, 89 EUR', due: nextFriday() },
-      { id: 'toner', kind: 'Invoice', source: 'Office supplies', title: 'Toner for the office printer, 132.90 EUR' },
-      { id: 'domain', kind: 'Invoice', source: 'Domain registrar', title: 'Domain renewal for one year, 12 EUR' },
-    ],
-  },
+  ask: 'approve',
+  why: 'Hosting is due Friday.',
+  blocks: [
+    {
+      type: 'decide', id: 'invoices', labels: { approve: 'Pay', reject: "Don't pay", later: 'Next week' },
+      items: [
+        { id: 'hosting', title: 'Hosting for the web shop', meta: '89 EUR', due: nextFriday() },
+        { id: 'toner', title: 'Toner for the office printer', meta: '132.90 EUR' },
+        { id: 'domain', title: 'Domain renewal for one year', meta: '12 EUR' },
+      ],
+    },
+  ],
 };
 
 const CHAIRS = {
-  template: 'approve-one',
   title: 'Accept the supplier quote for office chairs?',
   identity: { name: 'Purchasing Agent', avatar_shape: 'squircle', avatar_color: 'green' },
-  data: {
-    summary: 'Twelve office chairs for the second floor. The quote is within budget.',
-    approve_label: 'Accept quote',
-    facts: [
+  ask: 'approve',
+  action: 'order the chairs',
+  label: 'Accept quote',
+  why: 'Twelve office chairs for the second floor. The quote is within budget.',
+  blocks: [
+    { type: 'facts', items: [
       { label: 'Supplier', value: 'Northwind Seating' },
       { label: 'Total', value: '2,340 EUR' },
       { label: 'Delivery', value: 'In 2 weeks' },
-    ],
-    checks: [
-      { label: 'Within the furniture budget', state: 'ok' },
-    ],
-  },
+    ] },
+    { type: 'checks', items: [{ label: 'Within the furniture budget', state: 'ok' }] },
+  ],
 };
 
 const DEPLOY = {
-  template: 'approve-one',
   title: 'Deploy web shop v2.4.0?',
   identity: { name: 'Ops Agent', avatar_shape: 'squircle', avatar_color: 'blue' },
-  data: {
-    summary: 'Staging passed. Deploy tonight at 18:00?',
-    approve_label: 'Approve deploy',
-    allow_changes: true,
-    points_title: 'What changes',
-    points: [
-      'New checkout with saved addresses',
-      'Faster search',
-    ],
-    checks: [
+  ask: 'approve',
+  action: 'deploy',
+  label: 'Approve deploy',
+  why: 'Staging passed. Deploy tonight at 18:00?',
+  blocks: [
+    { type: 'text', title: 'What changes', md: '- New checkout with saved addresses\n- Faster search' },
+    { type: 'checks', items: [
       { label: 'Tests', detail: '214 passed', state: 'ok' },
       { label: 'Smoke test', detail: 'All flows OK', state: 'ok' },
       { label: 'Bundle size', detail: '+18 KB', state: 'warn' },
-    ],
-  },
+    ] },
+  ],
 };
 
 const WEEKLY = {
-  template: 'review-doc',
   title: 'Weekly operations report',
   identity: { name: 'Ops Agent', avatar_shape: 'squircle', avatar_color: 'blue' },
-  task: { kind: 'fyi' },
-  data: {
-    summary: 'Week 41 across the two sites.',
-    doc: [
-      '**Both sites ran normally; one delivery is late.**',
-      '',
-      '| Site | Status |',
-      '|---|---|',
-      '| North warehouse | Normal |',
-      '| City shop | Normal |',
-      '',
-      '- [x] Backups finished every night',
-      '- [x] Payroll file sent to the bank',
-      '- [ ] Packaging supplier confirms a new date',
-      '',
-      '> [!WARNING]',
-      '> One delivery is late. Stock lasts until next Friday.',
-    ].join('\n'),
-  },
+  ask: 'read',
+  why: 'Week 41 across the two sites. Both sites ran normally; one delivery is late.',
+  blocks: [
+    { type: 'table', columns: [{ key: 'site', label: 'Site' }, { key: 'status', label: 'Status' }], rows: [
+      { site: 'North warehouse', status: 'Normal' },
+      { site: 'City shop', status: 'Normal' },
+    ] },
+    { type: 'checks', items: [
+      { label: 'Backups finished every night', state: 'ok' },
+      { label: 'Payroll file sent to the bank', state: 'ok' },
+      { label: 'Packaging supplier confirms a new date', state: 'open' },
+    ] },
+    { type: 'text', md: '> [!WARNING]\n> One delivery is late. Stock lasts until next Friday.' },
+  ],
 };
-
-/* three bots for the strip; the first is the visible one (newest) */
-const STRIP = [
-  DEPLOY,
-  {
-    template: 'preview-post',
-    title: 'Autumn menu post: approve before Monday',
-    identity: { name: 'Social Agent', avatar_shape: 'blob', avatar_color: 'orange' },
-    data: fixture('preview-post'),
-  },
-  {
-    template: 'review-doc',
-    title: 'Spring opening announcement: review the draft',
-    identity: { name: 'Garden Club Agent', avatar_shape: 'teardrop', avatar_color: 'yellow' },
-    data: fixture('review-doc'),
-  },
-];
 
 const chromium = await loadChromium();
 if (!chromium) throw new Error('playwright-core not found (set RS_PLAYWRIGHT_CORE)');
-const server = await startServer({ port, mediaRoots: [ROOT], env: { RS_LANG: 'en' } });
+const media = fixtureMedia();
+const server = await startServer({ port, mediaRoots: [media.dir], env: { RS_LANG: 'en' } });
+
+/* three bots in the inbox; the first is the visible one */
+const INBOX = [
+  DEPLOY,
+  { ...payloadFixture('approve-post'), title: 'Autumn menu post: approve before Monday', identity: { name: 'Social Agent', avatar_shape: 'blob', avatar_color: 'orange' } },
+  { ...payloadFixture('review'), title: 'Spring opening announcement: review the draft', identity: { name: 'Garden Club Agent', avatar_shape: 'teardrop', avatar_color: 'yellow' } },
+].map((report) => media.map(report));
+
 let browser;
 const written = [];
 
 function showReport(report, index = 0) {
-  return server.show(report.data, {
-    template: report.template,
-    title: report.title,
+  return server.show(report, {
     bot: `example-readme-bot-${index + 1}`,
-    identity: report.identity,
-    ...(report.task ? { task: report.task } : {}),
     created: iso(Date.now() - (index + 1) * 60e3),
   });
 }
@@ -349,12 +326,12 @@ try {
     rmSync(popupFile, { force: true });
   }
 
-  // ------------------------------------------------------ 2. the strip --
+  // ------------------------------------------------------- 2. the inbox --
   await server.clearRuns();
-  const three = STRIP.map(showReport);
-  await tile(three[0].run_id, 'hero-strip-dark.png', {
+  const three = INBOX.map(showReport);
+  await tile(three[0].run_id, 'hero-inbox-dark.png', {
     before: async (page) => {
-      // the last one stays new: its dot is filled, the others are rings
+      // the last one stays new: its dot is filled
       await markRead(page, three.slice(0, 2).map((r) => r.run_id));
       await page.reload();
       await ready(page);
@@ -373,25 +350,21 @@ try {
   await server.clearRuns();
   await tile(showReport(CHAIRS).run_id, 'hero-done.png', {
     before: async (page) => {
-      // approve-one: the footer primary is the decision, one click
+      // approve: the footer primary is the decision, one click
       await page.click('#rs-submit');
-      await page.waitForSelector('.rs-banner[data-done]');
+      await page.waitForSelector('#rs-task[data-state="decided"]');
       await page.waitForFunction(() => !document.querySelector('.rs-toast'), null, { timeout: 5000 });
     },
-    // tight: the header, the title, the decided banner and "Sent to bot"
+    // tight: the header, the title and the decided line ("what happened")
     clip: (page) => page.evaluate((width) => {
-      const bottoms = [...document.querySelectorAll('.rs-banner[data-done], .rs-banner[data-done] *')]
-        .map((el) => el.getBoundingClientRect().bottom);
-      // the template's first line follows closely: stop short of it
-      const banner = document.querySelector('.rs-banner[data-done]');
-      let next = banner.nextElementSibling;
-      while (next && !next.getBoundingClientRect().height) next = next.nextElementSibling;
-      const limit = next ? next.getBoundingClientRect().top - 8 : Infinity;
-      return { x: 0, y: 0, width, height: Math.ceil(Math.min(Math.max(...bottoms) + 16, limit)) };
+      const task = document.getElementById('rs-task').getBoundingClientRect();
+      return { x: 0, y: 0, width, height: Math.ceil(task.bottom + 16) };
     }, TILE_WIDTH),
   });
 } finally {
-  try { if (browser) await browser.close(); } finally { await server.stop(); }
+  try { if (browser) await browser.close(); } finally {
+    try { await server.stop(); } finally { media.cleanup(); }
+  }
 }
 
 for (const file of written) {

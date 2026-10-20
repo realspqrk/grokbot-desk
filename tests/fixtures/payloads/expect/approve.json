@@ -1,0 +1,37 @@
+{
+  "flow": [
+    {
+      "fill": [
+        "#rs-note",
+        "Go ahead after 17:00."
+      ]
+    },
+    {
+      "click": "#rs-submit"
+    }
+  ],
+  "keyboard": [
+    {
+      "press": "Tab",
+      "repeat": 3
+    },
+    {
+      "type": "Go ahead after 17:00."
+    },
+    {
+      "press": "Tab",
+      "repeat": 3
+    },
+    {
+      "press": "Enter"
+    }
+  ],
+  "result": {
+    "decision": "approve",
+    "note": "Go ahead after 17:00.",
+    "refs": []
+  },
+  "copies": {
+    "b3-1": "deploy rollback --to 4.1.3"
+  }
+}

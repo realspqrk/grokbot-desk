@@ -854,6 +854,8 @@
     meta.appendChild(document.createTextNode(' ' + t('sep') + ' '));
     var hintEl = textNode('span', 'rs-inbox__hint', hint.text);
     if (hint.tone) hintEl.setAttribute('data-tone', hint.tone);
+    /* a status colour on a short word only (calm K6) */
+    if (hint.tone === 'urgent') hintEl.setAttribute('data-rs-status', 'danger');
     meta.appendChild(hintEl);
     text.appendChild(meta);
     a.appendChild(text);

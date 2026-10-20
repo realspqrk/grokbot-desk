@@ -22,7 +22,7 @@ from test_doorbell import KEY, URL, FakeBell, events
 
 OLD = "20261011-090000-old-abcd"
 STAMP = "2026-10-11T09:30:00+02:00"
-V1 = {"schema": "report-shell/payload@1", "template": "decide-list", "version": 1, "bot": "old-bot",
+V1 = {"schema": "report-shell/payload@1", "template": "legacy-list", "version": 1, "bot": "old-bot",
       "title": "Old", "created": "2026-10-11T09:00:00+02:00", "data": {}}
 
 

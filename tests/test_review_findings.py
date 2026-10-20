@@ -102,10 +102,11 @@ def test_finding_2_successful_snapshot_without_text_needs_no_restore(monkeypatch
     }
 
 
-def test_copy_measurement_with_too_few_cases_never_reads_or_writes_clipboard(
+def test_copy_measurement_without_copy_cases_never_reads_or_writes_clipboard(
     monkeypatch, capsys
 ):
-    monkeypatch.setattr(measure_copy, "_expected_copy_count", lambda: 1)
+    # the 20 C5 samples cycle through the fixtures' copy cases; none is an error
+    monkeypatch.setattr(measure_copy, "_expected_copy_count", lambda: 0)
     monkeypatch.setattr(measure_copy, "_clipboard", pytest.fail)
     monkeypatch.setattr(measure_copy.subprocess, "run", pytest.fail)
     monkeypatch.setattr(measure_copy, "write_text", pytest.fail)
@@ -113,8 +114,12 @@ def test_copy_measurement_with_too_few_cases_never_reads_or_writes_clipboard(
     assert measure_copy.main() == 1
     output = json.loads(capsys.readouterr().out)
     assert output["ok"] is False
-    assert output["total"] == 1
-    assert "at least 20" in output["error"]
+    assert output["total"] == 0
+    assert "at least one copy case" in output["error"]
+
+
+def test_copy_cases_are_counted_from_the_payload_fixture_expect_files():
+    assert measure_copy._expected_copy_count() >= 10
 
 
 def test_round_2_finding_8_sufficient_copy_count_reaches_snapshot(monkeypatch, capsys):

@@ -440,6 +440,8 @@
           li.setAttribute('data-state', task.done ? 'done' : 'open');
           var mark = make('span', 'rs-md__mark', task.done ? '✓' : '○');
           mark.setAttribute('aria-hidden', 'true');
+          /* a status colour on a small mark only (calm K6) */
+          if (task.done) mark.setAttribute('data-rs-status', 'ok');
           li.appendChild(mark);
           li.appendChild(make('span', 'rs-vh', t(task.done ? 'blk_task_done' : 'blk_task_open') + ': '));
           host = make('span', 'rs-md__task-text');

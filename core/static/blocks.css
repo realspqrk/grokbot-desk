@@ -32,6 +32,9 @@
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+/* bold text keeps the one strong weight of the scale (calm K4), never the
+   browser's 700 */
+.rs-report :is(strong, b, th) { font-weight: var(--rs-fw-strong); }
 .rs-md__h { font-weight: var(--rs-fw-strong); line-height: var(--rs-lh-tight); }
 .rs-md__h--1 { font-size: var(--rs-fs-lg); }
 .rs-md__h--2, .rs-md__h--3 { font-size: var(--rs-fs-md); }

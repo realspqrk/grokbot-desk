@@ -1,5 +1,5 @@
 {
-  "_doc": "One URL policy for the payload schema (decide-list url), the page (RS.externalLink) and the server opener (core/urls.py). both: all three accept. opener_only: the schema is narrower on purpose, page and opener accept. bad: all three reject.",
+  "_doc": "One URL policy for the payload schema (decide block item url), the page (RS.externalLink) and the server opener (core/urls.py). both: all three accept. opener_only: the schema is narrower on purpose, page and opener accept. bad: all three reject.",
   "both": [
     "https://example.com/a@b",
     "https://example.com/a?x=@",

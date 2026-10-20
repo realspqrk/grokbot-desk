@@ -1,0 +1,60 @@
+{
+  "flow": [
+    {
+      "click": "#inp-invoices-r0-approve"
+    },
+    {
+      "click": "#inp-invoices-r1-later"
+    },
+    {
+      "click": "#inp-invoices-r2-reject"
+    },
+    {
+      "click": "#rs-submit"
+    }
+  ],
+  "keyboard": [
+    {
+      "press": "Tab",
+      "repeat": 4
+    },
+    {
+      "press": "a"
+    },
+    {
+      "press": "l"
+    },
+    {
+      "press": "x"
+    },
+    {
+      "press": "Enter"
+    }
+  ],
+  "result": {
+    "decision": "submit",
+    "note": "",
+    "refs": [],
+    "blocks": {
+      "invoices": {
+        "items": [
+          {
+            "id": "hosting",
+            "choice": "approve"
+          },
+          {
+            "id": "toner",
+            "choice": "later"
+          },
+          {
+            "id": "parking",
+            "choice": "reject"
+          }
+        ]
+      }
+    }
+  },
+  "copies": {
+    "invoices-hosting-1": "INV-1043"
+  }
+}

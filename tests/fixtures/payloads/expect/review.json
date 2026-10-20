@@ -1,0 +1,33 @@
+{
+  "flow": [
+    {
+      "fill": [
+        "#rs-note",
+        "Fine for the wiki."
+      ]
+    },
+    {
+      "click": "#rs-submit"
+    }
+  ],
+  "keyboard": [
+    {
+      "press": "Tab",
+      "repeat": 6
+    },
+    {
+      "type": "Fine for the wiki."
+    },
+    {
+      "press": "Control+Enter"
+    }
+  ],
+  "result": {
+    "decision": "accept",
+    "note": "Fine for the wiki.",
+    "refs": []
+  },
+  "copies": {
+    "b2-1": "Handbook / Onboarding / Guide"
+  }
+}

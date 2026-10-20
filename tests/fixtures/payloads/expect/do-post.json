@@ -1,0 +1,10 @@
+{
+  "copies": {
+    "inp-b1-instagram-text": "How we fix a bike chain in under two minutes.\n\n#repair",
+    "inp-b1-instagram-hashtags": "#repair",
+    "inp-b1-instagram-link": "https://social.example.com/posts/123",
+    "inp-b1-facebook-text": "How we fix a bike chain in under two minutes.\n\n#repair",
+    "inp-b1-facebook-hashtags": "#repair",
+    "inp-b1-facebook-link": "https://social.example.com/posts/123"
+  }
+}

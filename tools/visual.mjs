@@ -1,12 +1,20 @@
 #!/usr/bin/env node
+// Screenshots of every payload fixture (tests/fixtures/payloads), light and
+// dark at 1500x1000, against goldens in tests/fixtures/payloads/golden/:
+//   --check <fixture|--all>   compare with the goldens (tools/pngdiff.py)
+//   --update <fixture|--all>  record goldens: only after a person approved
+//                             the screenshots (AGENTS.md), never to pass a test
+//   --shots <dir>             write <fixture>.<theme>.png for a review
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { browserChannel, PYTHON, startServer, loadChromium, ROOT } from './dev/rs-server.mjs';
+import {
+  browserChannel, PYTHON, startServer, loadChromium, ROOT,
+  PAYLOAD_FIXTURES, fixtureMedia, payloadFixture, payloadFixtureNames,
+} from './dev/rs-server.mjs';
 import { isSameOriginPath } from './dev/browser-safety.mjs';
-import { resolvedTemplates } from './template-registry.mjs';
 
 const PORT = Number(process.env.RS_TOOL_PORT || 18920);
 const FIXTURE_CREATED = '2026-10-08T10:39:00Z';
@@ -24,40 +32,23 @@ while (cliArguments.length) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const runNetwork = { requests: [], responses: [], errors: [] };
 
-function readJson(file) {
-  return JSON.parse(readFileSync(file, 'utf8'));
-}
+const GOLDEN_DIR = path.join(PAYLOAD_FIXTURES, 'golden');
 
-const MEASUREMENT_BOT_ID = readJson(
-  path.join(ROOT, 'tools', 'measurement.json'),
-).bot_id;
-
-function discover(selected, goldenOnly = false) {
-  const output = [];
-  for (const { dir, manifest } of resolvedTemplates(ROOT, selected)) {
-    const names = goldenOnly ? ['golden.json'] : readdirSync(path.join(dir, 'fixtures'))
-      .filter((name) => name === 'golden.json' || /^edge-.*\.json$/.test(name))
-      .sort();
-    for (const name of names) output.push({
-      dir, manifest, fixture: path.basename(name, '.json'),
-      data: readJson(path.join(dir, 'fixtures', name)),
-    });
+function discover(selected) {
+  const all = payloadFixtureNames();
+  const names = selected && selected !== '--all' ? [selected] : all;
+  for (const name of names) {
+    if (!all.includes(name)) throw new Error(`no payload fixture ${name} in tests/fixtures/payloads`);
   }
-  if (!output.length) throw new Error(`no visual fixtures found for ${selected || '--all'}`);
-  return output;
+  return names.map((fixture) => ({ fixture, data: payloadFixture(fixture) }));
 }
+
+let media = null;
 
 async function shot(browser, server, item, theme, destination) {
   await server.clearRuns();
-  const namespace = item.manifest.namespace;
-  const run = server.show(item.data, {
-    template: item.manifest.id,
-    version: item.manifest.version,
-    bot: namespace === 'global' ? MEASUREMENT_BOT_ID : namespace,
-    title: `${item.manifest.title_de} ${item.fixture}`.slice(0, 80),
-    created: FIXTURE_CREATED,
-  });
-  await server.assertOpen(run.run_id, `${item.manifest.id}/${item.fixture}/${theme}`);
+  const run = server.show(media.map(item.data), { created: FIXTURE_CREATED });
+  await server.assertOpen(run.run_id, `${item.fixture}/${theme}`);
   const context = await browser.newContext({
     viewport: { width: 1500, height: 1000 }, deviceScaleFactor: 1,
     colorScheme: theme, reducedMotion: 'reduce',
@@ -111,14 +102,14 @@ function persistNetworkLog() {
   writeFileSync(destination, `${JSON.stringify({
     schema: 'report-shell/netlog@1',
     mode: `visual:${action?.slice(2)}`,
-    template: argument,
+    fixture: argument,
     ...runNetwork,
   })}\n`, 'utf8');
   return destination;
 }
 
 if (!['--update', '--check', '--shots'].includes(action) || !argument) {
-  console.error('usage: node tools/visual.mjs --update <id|--all> | --check <id|--all> | --shots <dir>');
+  console.error('usage: node tools/visual.mjs --update <fixture|--all> | --check <fixture|--all> | --shots <dir>');
   process.exit(2);
 }
 
@@ -128,38 +119,37 @@ let output;
 try {
   const chromium = await loadChromium();
   if (!chromium) throw new Error('playwright-core not found; set RS_PLAYWRIGHT_CORE');
+  media = fixtureMedia();
   server = await startServer({
     port: PORT,
-    mediaRoots: [ROOT],
+    mediaRoots: [media.dir],
     env: { RS_CLOCK_ANCHOR: FIXTURE_CLOCK_ANCHOR },
   });
   browser = await chromium.launch({ channel: browserChannel(), headless: true });
   const isShots = action === '--shots';
-  const items = discover(isShots ? '--all' : argument, isShots);
+  const items = discover(isShots ? '--all' : argument);
   const results = [];
   const temp = path.join(server.dataDir, 'visual');
   mkdirSync(temp, { recursive: true });
   if (isShots) mkdirSync(path.resolve(argument), { recursive: true });
   for (const item of items) {
     for (const theme of ['light', 'dark']) {
-      const filename = isShots
-        ? `${item.manifest.id}.${theme}.png`
-        : `${item.fixture}.${theme}.png`;
+      const filename = `${item.fixture}.${theme}.png`;
       const target = isShots
         ? path.join(path.resolve(argument), filename)
-        : path.join(item.dir, 'golden', filename);
+        : path.join(GOLDEN_DIR, filename);
       if (action === '--update' || isShots) {
         mkdirSync(path.dirname(target), { recursive: true });
         await shot(browser, server, item, theme, target);
-        results.push({ template: item.manifest.id, fixture: item.fixture, theme, path: target, pass: true });
+        results.push({ fixture: item.fixture, theme, path: target, pass: true });
       } else {
         if (!existsSync(target)) {
-          results.push({ template: item.manifest.id, fixture: item.fixture, theme, path: target, pass: false, error: 'golden image missing' });
+          results.push({ fixture: item.fixture, theme, path: target, pass: false, error: 'golden image missing' });
           continue;
         }
-        const actual = path.join(temp, `${item.manifest.id}.${item.fixture}.${theme}.png`);
+        const actual = path.join(temp, filename);
         await shot(browser, server, item, theme, actual);
-        results.push({ template: item.manifest.id, fixture: item.fixture, theme, path: target, ...compare(target, actual) });
+        results.push({ fixture: item.fixture, theme, path: target, ...compare(target, actual) });
       }
     }
   }
@@ -168,7 +158,9 @@ try {
 } catch (error) {
   output = { mode: action?.slice(2), ok: false, error: error.stack || String(error) };
 } finally {
-  try { if (browser) await browser.close(); } finally { if (server) await server.stop(); }
+  try { if (browser) await browser.close(); } finally {
+    try { if (server) await server.stop(); } finally { if (media) media.cleanup(); }
+  }
 }
 try {
   output.netlog = persistNetworkLog();

@@ -1,12 +1,12 @@
 // Isolated grokbot-desk server for browser tests and dev screenshots.
-// Never uses the product port or the real %LOCALAPPDATA%\spqrk-report-shell:
+// Never uses the product port or the real data folder:
 // every server gets its own temp RS_DATA_DIR.
 import { spawn, spawnSync } from 'node:child_process';
 import {
   closeSync,
-  cpSync,
   existsSync,
   mkdtempSync,
+  readdirSync,
   openSync,
   readFileSync,
   rmSync,
@@ -15,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import zlib from 'node:zlib';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -108,15 +109,6 @@ export async function loadChromium() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function copyUserTemplates(dataDir, environment) {
-  const sourceDataDir = environment.RS_DATA_DIR || process.env.RS_DATA_DIR;
-  if (!sourceDataDir || path.resolve(sourceDataDir) === path.resolve(dataDir)) return;
-  const source = path.join(sourceDataDir, 'templates');
-  if (existsSync(source)) {
-    cpSync(source, path.join(dataDir, 'templates'), { recursive: true });
-  }
-}
-
 function processHasExited(proc) {
   return proc.exitCode !== null || proc.signalCode != null;
 }
@@ -153,7 +145,6 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
   const ownsDataDir = dataDir == null;
   if (ownsDataDir) {
     dataDir = mkdtempSync(path.join(tmpdir(), 'rs-test-'));
-    copyUserTemplates(dataDir, environment);
     if (mediaRoots.length) {
       writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({
         port,
@@ -211,7 +202,7 @@ export async function startServer({ port, mediaRoots = [], env: environment = {}
   const server = {
     port, dataDir, env, proc,
     url: (q = '') => `http://127.0.0.1:${port}/${q}`,
-    show(data, extra = {}) { return show(server, data, extra); },
+    show(payload, extra = {}) { return show(server, payload, extra); },
     assertOpen(runId, context) { return assertRunOpen(server, runId, context); },
     result(runId) {
       const p = path.join(dataDir, 'results', runId + '.json');
@@ -252,23 +243,32 @@ export async function assertRunOpen(server, runId, context = 'fixture') {
 }
 
 let seq = 0;
-/** Registers a run. `data` = template data; `extra` = envelope overrides (title, created, template, ...). */
-export function show(server, data, extra = {}) {
+/* A small read report: what a test registers when only the envelope matters. */
+export const PLAIN_REPORT = Object.freeze({
+  ask: 'read',
+  why: 'The nightly check finished.',
+  blocks: [{ type: 'facts', items: [{ label: 'Duration', value: '42 min' }] }],
+});
+
+/** Registers a payload@2 report through the CLI (`show --data`), as a bot
+ *  does. `payload` = a payload or a fixture (tests/fixtures/payloads);
+ *  `extra` = envelope overrides (title, bot, identity, created, ...). The
+ *  report is created now unless `extra.created` says otherwise, and a
+ *  fixture's dedupe key is dropped, so the same fixture can be shown twice. */
+export function show(server, payload = PLAIN_REPORT, extra = {}) {
   seq += 1;
-  const template = extra.template || '_starter';
+  const { dedupe_key: _key, dedupe_hours: _hours, ...body } = payload;
   const envelope = {
-    schema: 'report-shell/payload@1',
-    template,
-    version: 1,
+    schema: 'grokbot-desk/payload@2',
     bot: MEASUREMENT_BOT_ID,
     title: 'Testbericht ' + seq,
+    ...body,
     created: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
-    data,
     ...extra,
   };
   const file = path.join(server.dataDir, `payload-${process.pid}-${seq}.json`);
   writeFileSync(file, JSON.stringify(envelope), 'utf8');
-  const out = spawnSync(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(server.port), 'show', template, '--data', file, '--no-window'], {
+  const out = spawnSync(PYTHON, [path.join(ROOT, 'report_shell.py'), '--port', String(server.port), 'show', '--data', file, '--no-window'], {
     cwd: ROOT,
     env: server.env,
     encoding: 'utf8',
@@ -278,6 +278,72 @@ export function show(server, data, extra = {}) {
   });
   if (out.status !== 0) throw new Error(`show failed (${out.status}): ${out.stderr}`);
   return JSON.parse(out.stdout.trim().split('\n').pop());
+}
+
+export const PAYLOAD_FIXTURES = path.join(ROOT, 'tests', 'fixtures', 'payloads');
+
+/** A payload fixture from tests/fixtures/payloads by name. */
+export function payloadFixture(name) {
+  return JSON.parse(readFileSync(path.join(PAYLOAD_FIXTURES, `${name}.json`), 'utf8'));
+}
+
+/** The names of the valid payload fixtures (one per ask row, plus report-long). */
+export function payloadFixtureNames() {
+  return readdirSync(PAYLOAD_FIXTURES).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)).sort();
+}
+
+/* a small real PNG (a soft gradient), so fixture images load without errors */
+export function png(width, height) {
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(body) >>> 0);
+    return Buffer.concat([len, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4);
+  header[8] = 8; header[9] = 2;
+  const rows = [];
+  for (let y = 0; y < height; y++) {
+    const row = Buffer.alloc(1 + width * 3);
+    for (let x = 0; x < width; x++) {
+      row[1 + x * 3] = 120 + Math.round(60 * x / width);
+      row[2 + x * 3] = 140 + Math.round(50 * y / height);
+      row[3 + x * 3] = 170;
+    }
+    rows.push(row);
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** The media of the payload fixtures (/srv/media/...) in a temp folder:
+ *  images are small PNGs, a video is a stub no browser can play (the page
+ *  must stay calm). `map(payload)` points a fixture's paths into it; pass
+ *  `dir` as a media root to startServer. */
+export function fixtureMedia() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rs-fixture-media-'));
+  const names = new Set();
+  for (const name of payloadFixtureNames()) {
+    JSON.stringify(payloadFixture(name), (key, value) => {
+      if (typeof value === 'string' && value.startsWith('/srv/media/')) names.add(path.posix.basename(value));
+      return value;
+    });
+  }
+  for (const name of names) {
+    writeFileSync(path.join(dir, name), /\.(webm|mp4)$/i.test(name) ? Buffer.from('1a45dfa3', 'hex') : png(480, 270));
+  }
+  return {
+    dir,
+    map(payload) {
+      return JSON.parse(JSON.stringify(payload), (key, value) => (
+        typeof value === 'string' && value.startsWith('/srv/media/') ? path.join(dir, path.posix.basename(value)) : value
+      ));
+    },
+    cleanup() { rmSync(dir, { recursive: true, force: true }); },
+  };
 }
 
 export async function stopServer(

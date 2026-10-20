@@ -2,76 +2,60 @@
 // the authoritative result exactly once. The server announces the decision
 // twice (SSE `runs`, then `run`), so the page fetches the run detail twice;
 // whichever response comes later must not remount the decided report the user
-// is already reading (open decision card, selected social tab, open approval
-// disclosure, focused copy) or move focus back to the result banner.
+// is already reading (an opened disclosure, a focused copy) or move focus
+// back to the result banner.
 // Real backend and real SSE: page.route only holds and orders the two real
 // GET /api/run/<id> responses. Isolated server, temp RS_DATA_DIR, headless Edge.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { browserChannel, startServer, loadChromium, ROOT } from '../tools/dev/rs-server.mjs';
+import { browserChannel, startServer, loadChromium, fixtureMedia, payloadFixture } from '../tools/dev/rs-server.mjs';
+import { e2ePort } from '../tools/node-tests.mjs';
 
-const PORT = Number(process.env.RS_E2E_PORT || 18900) + 9;
+const PORT = e2ePort('hydration.e2e.test.mjs');
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const read = (dir, f) => JSON.parse(readFileSync(path.join(ROOT, dir, f), 'utf8'));
 
-const TEMPLATES = {
-  _starter: {
-    dir: 'templates/builtin/_starter',
-    draft: (page) => page.click('rs-action-row button[value="erledigt"]'),
-    sent: () => ({ choice: 'spaeter', note: 'AUTHORITATIVE' }),
-    field: '#starter-note',
-    /* keyboard copy of the decided report */
-    async read(page) { await tabTo(page, '[data-copy-id="starter-copy"] .rs-copy__btn'); },
-  },
-  'decide-list': {
-    dir: 'templates/builtin/decide-list',
-    draft: (page) => page.click('rs-action-row[data-item="travel-workshop"] button[value="approve"]'),
-    sent: (expect) => ({ ...expect.result, note: 'AUTHORITATIVE' }),
-    field: '#dl-note',
-    /* open the first decision card */
-    async read(page, data) {
-      await tabTo(page, `[data-item-id="${data.items[0].id}"] .dl-row`);
-      await page.keyboard.press('Space');
-      await page.waitForFunction((id) => document.querySelector('[data-current]')?.dataset.itemId === id, data.items[0].id);
-    },
-  },
-  'preview-post': {
-    dir: 'templates/builtin/preview-post',
-    draft: (page) => page.check('#approve-x'),
-    sent: () => ({
-      decision: 'request_changes', platforms: [], comment: 'AUTHORITATIVE',
-      per_platform: Object.fromEntries(['x', 'linkedin', 'instagram', 'facebook'].map((p) => [p, {
-        mode: p === 'x' ? 'manual' : 'auto', decision: 'changes_requested', note: 'AUTHORITATIVE',
-      }])),
-    }),
-    field: '#pp-comment',
-    /* move from X to another platform tab */
+/* One report per kind of reading state. draft = what the person had
+   started; sent = what another client decided; read = how the person
+   then reads the decided report (the view the later answer must keep). */
+const REPORTS = {
+  read: {
+    draft: async (page) => { await page.click('[data-rs-note-open]'); await page.fill('#rs-note', 'LOCAL'); },
+    sent: { decision: 'read', note: 'AUTHORITATIVE', refs: [] },
+    /* open the collapsed text block */
     async read(page) {
-      await tabTo(page, '[role="tab"][aria-selected="true"]');
-      const first = await page.evaluate(() => document.activeElement.id);
-      await page.keyboard.press('ArrowRight');
-      await page.keyboard.press('ArrowRight');
-      await page.waitForFunction((id) => document.activeElement.getAttribute('role') === 'tab'
-        && document.activeElement.id !== id && document.activeElement.getAttribute('aria-selected') === 'true', first);
+      await tabTo(page, 'details > summary');
+      await page.keyboard.press('Space');
+      await page.waitForFunction(() => document.querySelector('.rs-report details')?.open === true);
     },
   },
-  'approve-one': {
-    dir: 'templates/builtin/approve-one',
+  'approve-decide': {
+    draft: (page) => page.click('#inp-invoices-r0-approve'),
+    sent: {
+      decision: 'submit', note: 'AUTHORITATIVE', refs: [],
+      blocks: { invoices: { items: [
+        { id: 'hosting', choice: 'approve' }, { id: 'toner', choice: 'later' }, { id: 'parking', choice: 'reject' },
+      ] } },
+    },
+    /* keyboard to the first copy button */
+    async read(page) { await tabTo(page, '.rs-report .rs-copy__btn'); },
+  },
+  'approve-post': {
+    draft: (page) => page.click('[data-rs-leave-out="x"]'),
+    sent: {
+      decision: 'approve', note: 'AUTHORITATIVE', refs: [],
+      blocks: { post: { platforms: [{ platform: 'x', included: true }, { platform: 'linkedin', included: false }] } },
+    },
+    /* the keyboard on a platform copy */
+    async read(page) { await tabTo(page, '.rs-report .rs-copy__btn'); },
+  },
+  approve: {
     draft: async (page) => {
-      await page.locator('#rs-submitbar .rs-btn--quiet', { hasText: read('core/i18n', 'de.json').request_changes }).click();
-      await page.fill('#ao-comment', 'LOCAL');
+      await page.click('#rs-alt-2');
+      await page.fill('#rs-note', 'LOCAL');
     },
-    sent: () => ({ decision: 'request_changes', comment: 'AUTHORITATIVE' }),
-    field: '#ao-comment',
-    /* expand the reference disclosure */
-    async read(page) {
-      await tabTo(page, '[data-ao="reference-box"] > summary');
-      await page.keyboard.press('Space');
-      await page.waitForFunction(() => document.querySelector('[data-ao="reference-box"]')?.open === true);
-    },
+    sent: { decision: 'revise', note: 'AUTHORITATIVE', refs: [] },
+    async read(page) { await tabTo(page, '.rs-report .rs-copy__btn'); },
   },
 };
 
@@ -88,11 +72,10 @@ const viewState = (page) => page.evaluate(() => {
   const focused = document.activeElement;
   return {
     focus: focused.id || focused.className,
-    focusInTemplate: !!focused.closest('.rs-tpl'),
-    current: document.querySelector('[data-current]')?.dataset.itemId || null,
+    focusInReport: !!focused.closest('.rs-report'),
     selectedTab: document.querySelector('[role="tab"][aria-selected="true"]')?.id || null,
-    referenceOpen: document.querySelector('[data-ao="reference-box"]')?.open || false,
-    sameTemplate: document.querySelector('.rs-tpl')?.dataset.hydrationProbe === '1',
+    openDetails: document.querySelectorAll('.rs-report details[open]').length,
+    sameReport: document.querySelector('.rs-report')?.dataset.hydrationProbe === '1',
   };
 });
 
@@ -124,14 +107,19 @@ const skip = chromium ? false : 'playwright-core not found (set RS_PLAYWRIGHT_CO
 describe('external decision hydrates once (served, headless Edge)', { skip }, () => {
   let server;
   let browser;
+  let media;
 
   before(async () => {
-    server = await startServer({ port: PORT, mediaRoots: [ROOT] });
+    media = fixtureMedia();
+    server = await startServer({ port: PORT, mediaRoots: [media.dir] });
     browser = await chromium.launch({ channel: browserChannel(), headless: true });
   });
 
   after(async () => {
-    try { if (browser) await browser.close(); } finally { if (server) await server.stop(); }
+    try { if (browser) await browser.close(); } finally {
+      if (server) await server.stop();
+      if (media) media.cleanup();
+    }
   });
 
   async function submitElsewhere(runId, data) {
@@ -149,13 +137,10 @@ describe('external decision hydrates once (served, headless Edge)', { skip }, ()
    * started reading; `delay` adds a pause before that.
    */
   async function scenario(name, theme, order, delay) {
-    const spec = TEMPLATES[name];
-    const data = read(spec.dir, 'fixtures/golden.json');
-    const sent = spec.sent(read(spec.dir, 'fixtures/expect/golden.json'));
+    const spec = REPORTS[name];
+    const sent = spec.sent;
     await server.clearRuns();
-    const run = server.show(data, {
-      template: name, title: `Hydration ${name} ${theme} ${order}`, ...(spec.bot ? { bot: spec.bot } : {}),
-    });
+    const run = server.show(media.map(payloadFixture(name)), { title: `Hydration ${name} ${theme} ${order}` });
     const ctx = await browser.newContext({
       viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, colorScheme: theme, reducedMotion: 'reduce',
     });
@@ -170,7 +155,8 @@ describe('external decision hydrates once (served, headless Edge)', { skip }, ()
       await page.goto(server.url('?client=test&run=' + run.run_id));
       await page.waitForFunction(() => document.documentElement.dataset.rsReady === '1');
       await spec.draft(page);
-      await page.click('#rs-more-btn'); await page.click('#rs-discard');
+      // a report that can be discarded has the confirmation open meanwhile (read has no Discard)
+      if (name !== 'read') { await page.click('#rs-more-btn'); await page.click('#rs-discard'); }
       const details = holdDetails(page, run.run_id);
       assert.equal(await submitElsewhere(run.run_id, sent), 200);
       // both SSE messages ask for the run detail before either answer arrives
@@ -178,22 +164,23 @@ describe('external decision hydrates once (served, headless Edge)', { skip }, ()
       const [early, late] = order === 'first' ? details.held : [...details.held].reverse();
 
       await early.deliver();
-      await page.waitForFunction(({ field }) => document.querySelector(field)?.value === 'AUTHORITATIVE', { field: spec.field });
+      await page.waitForFunction(() => document.querySelector('#rs-note')?.value === 'AUTHORITATIVE');
       assert.equal(await page.locator('dialog[open]').count(), 0, 'Discard confirmation closed');
       // the transition to the authoritative result announces it once
       assert.equal(await page.evaluate(() => document.activeElement.classList.contains('rs-banner')
         || !!document.activeElement.closest('.rs-banner')), true, 'focus at the result banner');
-      await page.evaluate(() => { document.querySelector('.rs-tpl').dataset.hydrationProbe = '1'; });
+      await page.evaluate(() => { document.querySelector('.rs-report').dataset.hydrationProbe = '1'; });
 
-      await spec.read(page, data);
+      await spec.read(page);
       const before = await viewState(page);
-      assert.equal(before.focusInTemplate, true);
+      assert.equal(before.focusInReport, true);
+      assert.equal(before.sameReport, true);
       if (delay) await sleep(delay);
       await late.deliver();
       await sleep(600);
       const after = await viewState(page);
       assert.deepEqual(after, before, 'the later identical response keeps the reader\'s view');
-      assert.equal(await page.inputValue(spec.field), 'AUTHORITATIVE');
+      assert.equal(await page.inputValue('#rs-note'), 'AUTHORITATIVE');
       assert.equal(await page.isVisible('.rs-banner[data-banner="submitted"]'), true);
       assert.deepEqual(server.result(run.run_id).data, sent, 'stored result unchanged');
       assert.deepEqual(errors, []);
@@ -205,9 +192,9 @@ describe('external decision hydrates once (served, headless Edge)', { skip }, ()
 
   /* cancelled elsewhere: the `run` message shows it; the later detail answer is a no-op */
   async function cancelled(theme) {
-    const spec = TEMPLATES._starter;
+    const spec = REPORTS.approve;
     await server.clearRuns();
-    const run = server.show(read(spec.dir, 'fixtures/golden.json'), { title: 'Hydration cancelled ' + theme });
+    const run = server.show(payloadFixture('approve'), { title: 'Hydration cancelled ' + theme });
     const ctx = await browser.newContext({
       viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, colorScheme: theme, reducedMotion: 'reduce',
     });
@@ -240,7 +227,7 @@ describe('external decision hydrates once (served, headless Edge)', { skip }, ()
   test('external cancel light: the later detail answer keeps focused copy', () => cancelled('light'));
   test('external cancel dark: the later detail answer keeps focused copy', () => cancelled('dark'));
 
-  for (const name of Object.keys(TEMPLATES)) {
+  for (const name of Object.keys(REPORTS)) {
     for (const theme of ['light', 'dark']) {
       test(`${name} ${theme}: the second response after the first keeps the view`, () => scenario(name, theme, 'first', 0));
       test(`${name} ${theme}: the first response after the second keeps the view`, () => scenario(name, theme, 'second', 0));

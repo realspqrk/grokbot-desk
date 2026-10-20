@@ -139,6 +139,9 @@
       /* ids by position with fixed suffixes: item ids cannot collide */
       var key = 'inp-' + idPart(block.id) + '-r' + index;
       var li = make('li', 'rs-drow');
+      /* one decision item: the calm checker counts its controls (K2) and
+         the gaps between items (K7) */
+      li.setAttribute('data-rs-item', '');
       li.setAttribute('data-item-id', item.id);
       li.setAttribute('data-state', 'open');
       var main = make('div', 'rs-drow__main');
@@ -715,7 +718,9 @@
       var tab = tabs[p];
       tab.el.setAttribute('data-state', s);
       tab.mark.textContent = GLYPH[s];
+      /* a status colour on a small mark only (calm K6) */
       if (s === 'blocked') tab.mark.setAttribute('data-rs-status', 'danger');
+      else if (s === 'included' || s === 'posted') tab.mark.setAttribute('data-rs-status', 'ok');
       else tab.mark.removeAttribute('data-rs-status');
       tab.spoken.textContent = SPOKEN[s] ? ', ' + t(SPOKEN[s]) : '';
       panels[p].setAttribute('data-state', s);
@@ -726,6 +731,7 @@
         if (s !== 'none') {
           var glyph = make('span', 'rs-post__glyph', GLYPH[s]);
           glyph.setAttribute('aria-hidden', 'true');
+          if (s === 'included') glyph.setAttribute('data-rs-status', 'ok');
           c.stateLine.appendChild(glyph);
           c.stateLine.appendChild(document.createTextNode(t(s === 'included' ? 'inp_post_goes_out' : 'inp_post_left_out_line', { platform: names[p] })));
           glyph.textContent = s === 'blocked' ? GLYPH['left-out'] : GLYPH[s];

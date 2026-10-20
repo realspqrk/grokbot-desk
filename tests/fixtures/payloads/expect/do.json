@@ -1,0 +1,25 @@
+{
+  "flow": [
+    {
+      "click": "#rs-submit"
+    }
+  ],
+  "keyboard": [
+    {
+      "press": "Tab",
+      "repeat": 7
+    },
+    {
+      "press": "Enter"
+    }
+  ],
+  "result": {
+    "decision": "done",
+    "note": "",
+    "refs": []
+  },
+  "copies": {
+    "b2-1": "Heating repair, flat 4",
+    "b2-2": "Dear Sir or Madam, the heating repair promised for October 5 has not happened yet. Please name a date this week. Kind regards"
+  }
+}

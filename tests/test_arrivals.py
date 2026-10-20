@@ -278,10 +278,10 @@ def test_a_summary_never_reads_a_result_that_does_not_answer_its_report(tmp_path
         _submitted(base, run_id, data, bot="social-agent")
     # a result of a payload@1 report: readable, never summarised
     (base / "runs" / "legacy-run.json").write_text(json.dumps({"payload": {
-        "schema": "report-shell/payload@1", "template": "preview-post", "run_id": "legacy-run", "title": "Old",
+        "schema": "report-shell/payload@1", "template": "legacy-post", "run_id": "legacy-run", "title": "Old",
     }}), encoding="utf-8")
     (base / "results" / "legacy-run.json").write_text(json.dumps({
-        "schema": "report-shell/result@1", "run_id": "legacy-run", "bot": "social-agent", "template": "preview-post",
+        "schema": "report-shell/result@1", "run_id": "legacy-run", "bot": "social-agent", "template": "legacy-post",
         "status": "submitted", "decided": STAMP,
         "data": {"decision": "approve", "platforms": ["linkedin"], "comment": "",
                  "per_platform": {"linkedin": {"mode": "auto", "decision": "approved"}}},
@@ -534,7 +534,7 @@ def test_a_payload_1_record_is_skipped_with_a_log_line_and_keeps_its_run_id(tmp_
     data_dir = ensure_layout(tmp_path / "data")
     old_id = "20261011-090000-old-abcd"
     (data_dir / "runs" / f"{old_id}.json").write_text(json.dumps({
-        "payload": {"schema": "report-shell/payload@1", "template": "decide-list", "version": 1,
+        "payload": {"schema": "report-shell/payload@1", "template": "legacy-list", "version": 1,
                     "run_id": old_id, "bot": "old-bot", "title": "Old", "created": "2026-10-11T09:00:00+02:00",
                     "data": {}},
         "state": "open", "expires": "2026-10-11T13:00:00+02:00",

@@ -12,11 +12,11 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { browserChannel, startServer, loadChromium, ROOT, PYTHON } from '../tools/dev/rs-server.mjs';
+import { e2ePort } from '../tools/node-tests.mjs';
 import { calmEvaluator, judgeCalmFacts, CALM_THRESHOLDS } from '../tools/calm.mjs';
 
 // tests use 18920-18939 only (AGENTS.md); never the product port
-const PORT = Number(process.env.RS_E2E_PORT || 18921);
-if (!Number.isInteger(PORT) || PORT < 18920 || PORT > 18939) throw new Error(`RS_E2E_PORT ${PORT} is outside 18920-18939`);
+const PORT = e2ePort('post.e2e.test.mjs');
 const de = JSON.parse(readFileSync(path.join(ROOT, 'core/i18n/de.json'), 'utf8'));
 const AXE = path.join(ROOT, 'vendor/axe.min.js');
 const FIXTURES = path.join(ROOT, 'tests/fixtures/payloads');

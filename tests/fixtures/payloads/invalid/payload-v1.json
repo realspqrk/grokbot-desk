@@ -57,6 +57,6 @@
       ]
     }
   ],
-  "template": "approve-one",
+  "template": "legacy-approval",
   "version": 1
 }

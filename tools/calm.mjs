@@ -22,24 +22,37 @@ export const CALM_THRESHOLDS = Object.freeze({
   motionMaxMs: 200,
 });
 
-// K10 (one wide mockup, stateful platform tabs) applies to the shipped social
-// post preview and any user template that extends it.
-export const SOCIAL_PREVIEW_TEMPLATES = Object.freeze(['preview-post']);
+// K10 (one wide mockup, stateful platform tabs) applies to a report with a
+// post block ([data-rs-block-type="post"], the social post preview).
 
-export function isSocialPreview(manifest) {
-  if (typeof manifest === 'string') return SOCIAL_PREVIEW_TEMPLATES.includes(manifest);
-  return Boolean(manifest) && (
-    SOCIAL_PREVIEW_TEMPLATES.includes(manifest.id)
-    || SOCIAL_PREVIEW_TEMPLATES.includes(manifest.extends)
-  );
+/** Whether K10 judges these facts: a post block on the page, or the
+ *  caller says so (synthetic pages). */
+export function judgesPostPreview(facts, options = {}) {
+  if (typeof options.post === 'boolean') return options.post;
+  return (facts?.K10?.post_blocks ?? 0) > 0;
 }
+
+/* A tab or segment names its platform's state: an approval word in its
+   name, or a post block tab state (data-state) that its name also speaks
+   ("X, goes out"). The page-side functions below repeat both, because a
+   function handed to the page cannot see this module. */
 
 export function focusedControlFacts() {
   const element = document.activeElement;
   if (!element || element === document.body || element === document.documentElement) {
     return { focused: false, copy_control: false, visible: false };
   }
-  const style = getComputedStyle(element);
+  /* a text field may hand its focus ring to its own frame (the composer
+     draws the ring around note and chips): then the frame's outline counts */
+  const ring = (() => {
+    const own = getComputedStyle(element);
+    if (own.outlineStyle !== 'none' || !element.matches('textarea,input')) return element;
+    const frame = element.parentElement;
+    const framed = frame && getComputedStyle(frame);
+    return framed && framed.outlineStyle !== 'none' && Number.parseFloat(framed.outlineWidth) >= 2
+      ? frame : element;
+  })();
+  const style = getComputedStyle(ring);
   const rect = element.getBoundingClientRect();
   let colorContext = null;
   const parseColor = (value) => {
@@ -84,7 +97,7 @@ export function focusedControlFacts() {
     };
   };
   const backgroundChain = [];
-  for (let current = element.parentElement; current; current = current.parentElement) {
+  for (let current = ring.parentElement; current; current = current.parentElement) {
     backgroundChain.push(current);
   }
   let outlineBackground = { r: 255, g: 255, b: 255, a: 1 };
@@ -371,11 +384,9 @@ async function auditCopyFocusState(page, stateIndex) {
     const rovingMembers = await page.evaluate(() => {
       const groupSelector = '[role=radiogroup],[role=toolbar],[role=tablist]';
       const group = document.activeElement?.closest?.(groupSelector);
-      // Arrows on the shell's report strip switch reports and it holds
-      // no copies (tools/e2e.mjs audits its arrows); template groups arrow
-      if (!group || (
-        group.id === 'rs-strip' && group.closest('#rs-strip-nav') && !group.closest('#rs-mount')
-      )) return 0;
+      // the shell's inbox is no role group (it holds no copies; tools/e2e.mjs
+      // audits its arrows); groups inside the report arrow
+      if (!group) return 0;
       const members = [...group.querySelectorAll(
         'button,input,select,textarea,a[href],summary,[tabindex]',
       )].filter((element) => element.closest(groupSelector) === group);
@@ -472,7 +483,10 @@ export async function auditPlatformSwitching(page) {
       ? [...container.querySelectorAll('[role=tab]')]
       : [...container.querySelectorAll('button[aria-pressed]')];
     const approvalPattern = /\b(?:approved|pending|rejected|draft|freigegeben|ausstehend|abgelehnt|entwurf)\b/iu;
+    const postStates = ['included', 'left-out', 'blocked', 'posted', 'skipped', 'open'];
     const stateful = controls.filter((control) => {
+      if (postStates.includes(control.getAttribute('data-state'))
+        && /,\s*\S/u.test(control.textContent || '')) return true;
       const explicit = control.getAttribute('data-rs-approval-state') || '';
       const label = [
         control.getAttribute('aria-label') || '',
@@ -536,6 +550,11 @@ export function calmEvaluator(options) {
   ].join(',');
   const elements = [...document.querySelectorAll('body *')];
   const rectOf = (element) => element.getBoundingClientRect();
+  /* text for assistive technology only: clipped to nothing, or a box of
+     at most 1x1 px that hides its overflow (the visually hidden pattern) */
+  const visuallyHidden = (style, rect) => /^rect\(0(px)?,? 0(px)?,? 0(px)?,? 0(px)?\)$/u.test(style.clip)
+    || (rect.width <= 1 && rect.height <= 1
+      && ['hidden', 'clip'].includes(style.overflowX) && ['hidden', 'clip'].includes(style.overflowY));
   const visible = (element) => {
     const rect = rectOf(element);
     if (rect.width <= 0 || rect.height <= 0) return false;
@@ -545,6 +564,7 @@ export function calmEvaluator(options) {
         style.display === 'none'
         || ['hidden', 'collapse'].includes(style.visibility)
         || Number.parseFloat(style.opacity || '1') <= 0.05
+        || visuallyHidden(style, rectOf(current))
       ) return false;
     }
     const documentWidth = Math.max(
@@ -793,6 +813,7 @@ export function calmEvaluator(options) {
           style.display === 'none'
           || ['hidden', 'collapse'].includes(style.visibility)
           || Number.parseFloat(style.opacity || '1') <= 0.05
+          || visuallyHidden(style, rectOf(current))
         ) {
           rendered = false;
           break;
@@ -987,11 +1008,16 @@ export function calmEvaluator(options) {
       const rovingIdentity = roving
         ? `group-${rovingGroups.indexOf(roving)}`
         : null;
+      /* the shell's inbox: one Tab stop once tools/e2e.mjs verified its
+         arrow keys (identity "inbox") */
+      const inboxList = verifiedRovingGroups.has('inbox')
+        ? element.closest('#rs-inbox:not(#rs-mount *)')
+        : null;
       const group = (
         oneKeyboardEntry && verifiedRovingGroups.has(rovingIdentity)
           ? roving
           : null
-      ) || segmented;
+      ) || inboxList || segmented;
       keys.add(group || element || index);
     });
     return keys.size;
@@ -1013,12 +1039,11 @@ export function calmEvaluator(options) {
       };
     });
 
-  // The inbox of open reports (older pages and fixtures: a strip or a rail)
-  const strip = document.getElementById('rs-inbox') || document.getElementById('rs-strip-nav') || [...document.querySelectorAll(
-    '.rs-strip,[data-rs-strip],.rs-rail,[data-rs-rail],nav[aria-label*="run" i]',
-  )].find((element) => !element.closest('#rs-mount')) || null;
-  const stripFocusable = strip
-    ? [...strip.querySelectorAll(interactiveSelector)].filter((element) => (
+  // The shell's inbox of open reports (never markup inside the report mount)
+  const inboxElement = document.getElementById('rs-inbox');
+  const inbox = inboxElement && !inboxElement.closest('#rs-mount') ? inboxElement : null;
+  const inboxFocusable = inbox
+    ? [...inbox.querySelectorAll(interactiveSelector)].filter((element) => (
       focusable(element)
       && !element.closest('[inert]')
       && element.getClientRects().length > 0
@@ -1047,6 +1072,11 @@ export function calmEvaluator(options) {
         paintedTextElements.add(element);
       }
     }
+  }
+  /* K4 judges the text scale of the page; labels drawn inside an SVG
+     figure (a chart's axis and value labels) belong to the figure */
+  for (const element of [...paintedTextElements]) {
+    if (element.closest('svg')) paintedTextElements.delete(element);
   }
   const fontSizes = [...new Set([...paintedTextElements].map((element) => (
     Number.parseFloat(getComputedStyle(element).fontSize)
@@ -1128,8 +1158,10 @@ export function calmEvaluator(options) {
   const offAccent = [];
   for (const element of elements.filter((item) => visible(item) && outsideMockupText(item))) {
     const rect = rectOf(element);
-    const statusException = element.hasAttribute('data-rs-status')
-      && rect.width * rect.height < innerWidth * innerHeight
+    const statusHost = element.closest('[data-rs-status]');
+    const hostRect = statusHost ? rectOf(statusHost) : rect;
+    const statusException = Boolean(statusHost)
+      && hostRect.width * hostRect.height < innerWidth * innerHeight
         * thresholds.statusViewportAreaMax;
     if (statusException) continue;
     const bannerBox = taskBanner?.contains(element)
@@ -1168,8 +1200,28 @@ export function calmEvaluator(options) {
     const siblings = [...parent.children]
       .filter((element) => element.hasAttribute('data-rs-item') && visible(element))
       .sort((left, right) => rectOf(left).top - rectOf(right).top);
+    /* what an item paints: its text, controls and media, so rows divided
+       by a hairline with padding inside measure the space a reader sees */
+    const painted = (item) => {
+      const rects = [];
+      const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent.trim() || !visible(node.parentElement)) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        rects.push(...[...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0));
+      }
+      for (const element of item.querySelectorAll(`${interactiveSelector},img,svg,video`)) {
+        if (visible(element)) rects.push(rectOf(element));
+      }
+      if (!rects.length) return rectOf(item);
+      return {
+        top: Math.min(...rects.map((r) => r.top)),
+        bottom: Math.max(...rects.map((r) => r.bottom)),
+      };
+    };
     for (let index = 1; index < siblings.length; index += 1) {
-      itemGaps.push(rectOf(siblings[index]).top - rectOf(siblings[index - 1]).bottom);
+      itemGaps.push(painted(siblings[index]).top - painted(siblings[index - 1]).bottom);
     }
   }
   const textCanvas = document.createElement('canvas');
@@ -1177,13 +1229,15 @@ export function calmEvaluator(options) {
   const blockDisplays = new Set([
     'block', 'flow-root', 'list-item', 'table-cell', 'flex', 'grid',
   ]);
+  /* the text a block owns directly (not through a nested block) */
+  const ownedNodes = new Map();
   const readingBlocks = elements.filter((element) => {
     if (!visible(element) || !outsideMockup(element)) return false;
     if (element.matches('body,nav,header,footer,form,button,input,select,textarea,h1,h2,h3,h4,h5,h6,summary')) {
       return false;
     }
     if (!blockDisplays.has(getComputedStyle(element).display)) return false;
-    const ownedText = renderedTextNodes
+    const owned = renderedTextNodes
       .filter(({ node }) => {
         let owner = node.parentElement;
         while (
@@ -1193,12 +1247,26 @@ export function calmEvaluator(options) {
         ) owner = owner.parentElement;
         return owner === element;
       })
-      .map(({ node }) => node.textContent)
+      .map(({ node }) => node);
+    ownedNodes.set(element, owned);
+    const ownedText = owned
+      .map((node) => node.textContent)
       .join(' ')
       .replace(/\s+/gu, ' ')
       .trim();
     return ownedText.length >= 20;
   });
+  /* how wide the block's lines are drawn: a short line in a wide box is
+     not a long line (a check's detail stretches across its grid column) */
+  const textExtent = (element) => {
+    const rects = (ownedNodes.get(element) || []).flatMap((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
+    });
+    if (!rects.length) return rectOf(element).width;
+    return Math.max(...rects.map((rect) => rect.right)) - Math.min(...rects.map((rect) => rect.left));
+  };
   const wideText = readingBlocks
     .map((element) => {
       const style = getComputedStyle(element);
@@ -1214,7 +1282,7 @@ export function calmEvaluator(options) {
       const ch = textContext.measureText('0').width || Number.parseFloat(style.fontSize) / 2;
       return {
         identity: identity(element),
-        width: rectOf(element).width,
+        width: Math.min(rectOf(element).width, textExtent(element)),
         max_width: domMeasure || thresholds.readingWidthMaxCh * ch,
       };
     })
@@ -1225,11 +1293,17 @@ export function calmEvaluator(options) {
     '', 'text', 'search', 'email', 'url', 'tel', 'password', 'number',
     'date', 'datetime-local', 'month', 'time', 'week',
   ]);
+  /* the one footer composer (#rs-note in the submit bar, never in the
+     report) is the decision's own note and may stay open; any other text
+     input waits behind a disclosure */
+  const footerNote = (element) => element.id === 'rs-note'
+    && Boolean(element.closest('#rs-submitbar')) && !element.closest('#rs-mount');
   const visibleInputs = [...document.querySelectorAll('input,textarea')]
     .filter((element) => (
       element.matches('textarea')
       || textInputTypes.has(String(element.getAttribute('type') || '').toLowerCase())
     ))
+    .filter((element) => !footerNote(element))
     .filter(visible).map(identity);
   const secondaryPattern = /\b(?:handled items?|newsletters?|kept|agent note details?|metadata|erledigte elemente?|newsletter|behalten|agentennotiz(?:en)?|metadaten)\b/iu;
   const secondaryLabels = elements.filter((element) => {
@@ -1273,12 +1347,14 @@ export function calmEvaluator(options) {
         list.getAttribute('role') === 'tablist' ? '[role=tab]' : 'button[aria-pressed]',
       )].filter(visible);
       const approvalPattern = /\b(?:approved|pending|rejected|draft|freigegeben|ausstehend|abgelehnt|entwurf)\b/iu;
+      const postStates = ['included', 'left-out', 'blocked', 'posted', 'skipped', 'open'];
       return {
         kind: list.getAttribute('role') === 'tablist' ? 'tablist' : 'segmented',
         tabs: tabs.length,
         stateful_tabs: tabs.filter((tab) => (
           (tab.hasAttribute('aria-selected') || tab.hasAttribute('aria-pressed'))
-          && approvalPattern.test([
+          && ((postStates.includes(tab.getAttribute('data-state')) && /,\s*\S/u.test(tab.textContent || ''))
+          || approvalPattern.test([
             tab.getAttribute('data-rs-approval-state') || '',
             tab.getAttribute('aria-label') || '',
             tab.textContent || '',
@@ -1286,7 +1362,7 @@ export function calmEvaluator(options) {
               status.getAttribute('aria-label') || '',
               status.textContent || '',
             ]),
-          ].join(' '))
+          ].join(' ')))
         )).length,
       };
     });
@@ -1409,9 +1485,9 @@ export function calmEvaluator(options) {
     K2: { items },
     K3: {
       open_runs: options.openRuns,
-      strip_rendered: Boolean(strip && visible(strip) && rectOf(strip).width > 0),
-      strip_width: strip ? rectOf(strip).width : 0,
-      focusable_descendants: stripFocusable,
+      inbox_rendered: Boolean(inbox && visible(inbox) && rectOf(inbox).width > 0),
+      inbox_width: inbox ? rectOf(inbox).width : 0,
+      focusable_descendants: inboxFocusable,
     },
     K4: { font_sizes: fontSizes, font_weights: fontWeights },
     K5: {
@@ -1437,7 +1513,7 @@ export function calmEvaluator(options) {
     },
     K8: { visible_inputs: visibleInputs, open_secondary: openSecondary },
     K9: { visible_interactive_above_fold: countedControls(aboveFold) },
-    K10: { mockups, tablists },
+    K10: { post_blocks: document.querySelectorAll('[data-rs-block-type="post"]').length, mockups, tablists },
     K11: { noise, header_titles: headerTitles, header_controls: headerControls },
     K12: {
       reduced_motion: matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -1488,10 +1564,10 @@ export function judgeCalmFacts(facts, options = {}) {
   const k3Samples = facts.K3.samples || [facts.K3];
   for (const sample of k3Samples) {
     if (sample.open_runs === 1 && (
-      sample.strip_rendered || sample.strip_width !== 0 || sample.focusable_descendants !== 0
-    )) k3Reasons.push('K3 strip must not render for 1 open run');
-    if (sample.open_runs >= 2 && !sample.strip_rendered) {
-      k3Reasons.push(`K3 strip must render for ${sample.open_runs} open runs`);
+      sample.inbox_rendered || sample.inbox_width !== 0 || sample.focusable_descendants !== 0
+    )) k3Reasons.push('K3 inbox must not render for 1 open report');
+    if (sample.open_runs >= 2 && !sample.inbox_rendered) {
+      k3Reasons.push(`K3 inbox must render for ${sample.open_runs} open reports`);
     }
   }
   set('K3', k3Reasons);
@@ -1540,7 +1616,7 @@ export function judgeCalmFacts(facts, options = {}) {
     || facts.K9.visible_interactive_above_fold <= thresholds.aboveFoldInteractiveMax
     ? [] : [`K9 found ${facts.K9.visible_interactive_above_fold} visible controls above the fold`]);
 
-  if (isSocialPreview(options.manifest || options.templateId)) {
+  if (judgesPostPreview(facts, options)) {
     const wide = facts.K10.mockups.filter((item) => item.width >= thresholds.socialMockupMinPx);
     const tablist = facts.K10.tablists.find((item) => item.tabs > 0);
     const interaction = facts.K10.interaction;
