@@ -49,6 +49,6 @@ On macOS every desk command is `./report-shell <arguments>`. On Windows, step 2 
 
 8. Ask which bots use the desk, if you do not already know. For each one, send one line. Name the clone folder. Tell that bot to read `skills/grokbot-desk/SKILL.md` from the clone, and not to keep a pasted copy, so a later update arrives. Tell it to set `identity.name` to its exact Grok Bot name. The desk id must match `^[a-z0-9-]{1,40}$` and be unique. When the slug of that name is not a good id, it chooses any valid unique id, and `identity.name` stays the exact name. On Windows, tell it the Python call you remembered, and to run that call with `report_shell.py` for every command. On macOS, tell it to run `./report-shell`. Then run `python report_shell.py doorbell test --to "<name>"` with that same name. The wake line always says `report_shell.py`. That skill tells a macOS bot to run `./report-shell` with the same arguments.
 
-If a command fails, report that in one line. Use `status` to see whether the desk is running. Use `paths` when you need the data folder. Use `doctor` when the question is the template registry. Do not invent a fix.
+If a command fails, report that in one line. Use `status` to see whether the desk is running. Use `paths` when you need the data folder. Use `doctor` to check bot identities and the doorbell. Use `check FILE` to test a payload before `show`. Do not invent a fix.
 
 `python report_shell.py doorbell off` turns the doorbell off. Run it only when the person asks.
