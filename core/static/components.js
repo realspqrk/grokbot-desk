@@ -162,8 +162,11 @@
   // checkbox. Children: <button value="...">. Other children (no value
   // attribute) are left alone. Attributes: label (accessible name), value
   // (selected value), disabled. Property: value. Event: change
-  // {detail:{value}}. Click, Enter or Space picks the focused segment; the
-  // arrow keys, Home and End only move focus (a stray arrow never decides).
+  // {detail:{value, key}} (key: true when an arrow key chose). The WAI-ARIA
+  // radio group pattern: Tab enters on the chosen segment (else the first);
+  // the arrow keys, Home and End move to a segment and choose it; click,
+  // Enter or Space choose the focused one. Answers stay reversible until
+  // the report is sent.
   class RsSegmented extends HTMLElement {
     static get observedAttributes() { return ['label', 'value', 'disabled']; }
     constructor() {
@@ -200,12 +203,12 @@
     set value(v) { this._set(v === null || v === undefined ? '' : String(v), false); }
     get disabled() { return this.hasAttribute('disabled'); }
     set disabled(v) { if (v) this.setAttribute('disabled', ''); else this.removeAttribute('disabled'); }
-    _set(v, emit) {
+    _set(v, emit, key) {
       if (v === this._value) return;
       this._value = v;
       if (v) this.setAttribute('value', v); else this.removeAttribute('value');
       this._sync();
-      if (emit) this.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { value: v } }));
+      if (emit) this.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { value: v, key: !!key } }));
     }
     /* the segment that takes Tab: the chosen one, else the first */
     get current() {
@@ -251,8 +254,8 @@
         default: return;
       }
       e.preventDefault();
-      btns.forEach(function (x, k) { x.tabIndex = k === j ? 0 : -1; });
       btns[j].focus();
+      this._set(btns[j].value, true, true);
     }
   }
 

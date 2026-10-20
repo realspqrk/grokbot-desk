@@ -1445,6 +1445,13 @@
         if (state.input && run.state !== 'open' && typeof state.input.lock === 'function') state.input.lock();
         renderBar();
       },
+      /* a keyboard decision that completes the input moves on to the
+         primary; false when there is no enabled primary to go to */
+      focusPrimary: function () {
+        if (!live() || !el.submit || el.submit.disabled || el.submit.hidden) return false;
+        el.submit.focus();
+        return true;
+      },
       changed: function () {
         if (!live()) return;
         markTouched();

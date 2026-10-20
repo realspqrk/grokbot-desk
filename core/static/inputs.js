@@ -135,13 +135,15 @@
       return ctx.t(LABEL_KEYS[value]);
     }
 
-    block.items.forEach(function (item) {
+    block.items.forEach(function (item, index) {
+      /* ids by position with fixed suffixes: item ids cannot collide */
+      var key = 'inp-' + idPart(block.id) + '-r' + index;
       var li = make('li', 'rs-drow');
       li.setAttribute('data-item-id', item.id);
       li.setAttribute('data-state', 'open');
       var main = make('div', 'rs-drow__main');
       var title = make('p', 'rs-drow__title', item.title);
-      title.id = 'inp-' + idPart(block.id) + '-' + idPart(item.id) + '-title';
+      title.id = key + '-title';
       main.appendChild(title);
       var meta = [];
       if (item.meta) meta.push(item.meta);
@@ -183,7 +185,7 @@
       var offered = CHOICES[ask].filter(function (c) { return !item.choices || item.choices.indexOf(c) >= 0; });
       group.setAttribute('data-count', String(offered.length));
       offered.forEach(function (value) {
-        group.appendChild(segment(value, labelOf(item, value), 'inp-' + idPart(block.id) + '-' + idPart(item.id) + '-' + value));
+        group.appendChild(segment(value, labelOf(item, value), key + '-' + value));
       });
       act.appendChild(group);
       var reply = null;
@@ -195,9 +197,13 @@
       list.appendChild(li);
       var row = { id: item.id, item: item, li: li, group: group, offered: offered, reply: reply };
       rows.push(row);
-      group.addEventListener('change', function () {
+      group.addEventListener('change', function (e) {
+        var before = rows.filter(function (r) { return r !== row && !r.group.value; }).length;
         render(row);
         ctx.changed();
+        /* an arrow that answers the last undecided row: on to the primary */
+        if (e.detail && e.detail.key && !before && !row.wasSet) ctx.focusPrimary();
+        row.wasSet = true;
       });
     });
     el.appendChild(list);
@@ -216,6 +222,7 @@
     function set(row, value) {
       if (row.offered.indexOf(value) < 0) return false;
       row.group.value = value;
+      row.wasSet = true;
       render(row);
       return true;
     }
@@ -235,6 +242,7 @@
       if (!has(KEYS[ask], key)) return;
       e.preventDefault();
       if (!set(row, KEYS[ask][key])) return;
+      row.wasSet = true;
       ctx.changed();
       var at = rows.indexOf(row);
       var next = null;
@@ -242,6 +250,8 @@
         var candidate = rows[(at + k) % rows.length];
         if (!candidate.group.value) next = candidate;
       }
+      /* nothing left to decide: the primary sends */
+      if (!next && ctx.focusPrimary()) return;
       var target = (next || row).group.current;
       if (target) target.focus();
     });
@@ -275,12 +285,16 @@
         return items.length ? { items: items } : null;
       },
       restore: restore,
+      /* decided: show exactly what was sent (nothing for reject or revise) */
       lock: function () {
         locked = true;
         rows.forEach(function (r) {
           if (r.reply) { r.reply.remove(); r.reply = null; }
-          r.group.disabled = true;
+          r.group.value = '';
+          render(r);
         });
+        restore(sentAnswer(block, run));
+        rows.forEach(function (r) { r.group.disabled = true; });
       }
     };
   }
@@ -298,7 +312,7 @@
     var replies = [];
     block.options.forEach(function (option, i) {
       byId[option.id] = option;
-      var key = 'inp-' + idPart(block.id) + '-' + idPart(option.id);
+      var key = 'inp-' + idPart(block.id) + '-o' + i;
       var card = make('button', 'rs-pick__card');
       card.type = 'button';
       card.id = key;
@@ -379,10 +393,13 @@
       hint: function () { return null; },
       snapshot: function () { return group.value ? { choice: group.value } : null; },
       restore: restore,
+      /* decided: show exactly what was sent (nothing for None of these) */
       lock: function () {
         locked = true;
         replies.forEach(function (r) { r.remove(); });
         replies = [];
+        group.value = '';
+        restore(sentAnswer(block, run));
         group.disabled = true;
       }
     };
@@ -776,12 +793,16 @@
       if (typeof saved.tab === 'string' && platforms.indexOf(saved.tab) >= 0) select(saved.tab, false);
     }
 
-    var sent = sentAnswer(block, run);
-    /* decided without an answer (rejected, changes requested): nothing reads as chosen */
-    if (locked && !sent && auto) platforms.forEach(function (p) { if (!blocked[p]) state[p] = null; });
+    /* a decided report shows exactly what was sent; without an answer
+       (rejected, changes requested) nothing reads as chosen */
+    function reconcile() {
+      platforms.forEach(function (p) { if (!blocked[p]) state[p] = auto ? null : ''; });
+      restore(sentAnswer(block, run));
+      platforms.forEach(renderPlatform);
+    }
     platforms.forEach(renderPlatform);
     select(selected, false);
-    if (sent) restore(sent);
+    if (locked) reconcile();
 
     function answer() {
       if (auto) {
@@ -821,6 +842,7 @@
       restore: restore,
       lock: function () {
         locked = true;
+        reconcile();
         platforms.forEach(function (p) {
           var c = controls[p];
           if (c.toggle) { c.toggle.remove(); c.toggle = null; }
