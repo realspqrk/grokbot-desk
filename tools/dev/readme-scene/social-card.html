@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Social card</title>
+<!--
+  Social preview card: the icon and name, a headline, a subline and a
+  footer beside (wide) or above (square, tall) the desk scene over the
+  chat-app skeleton. Self-contained: no external requests.
+  tools/dev/readme-shots.mjs calls render() with the copy, the format and
+  the scene (a bare grokbot-skeleton.html screenshot). The scene is scaled
+  so the whole pop-up shows; where height limits it, the chat above the
+  person's message is cropped and fades in. It fades out below the pop-up. The chat app bleeds off
+  the right edge (wide) or shows whole around a centred pop-up (stacked).
+-->
+<style>
+  :root {
+    --ink: #f4f4f5;
+    --muted: #a3a7b3;
+    --faint: #8e93a0;
+    --accent: #ff6700;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    position: relative;
+    overflow: hidden;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(900px 700px at 92% 18%, #2a3140 0%, rgba(42, 49, 64, 0) 70%),
+      radial-gradient(800px 600px at 0% 100%, #1f2430 0%, rgba(31, 36, 48, 0) 70%),
+      radial-gradient(500px 400px at 70% 70%, rgba(255, 103, 0, .10) 0%, rgba(255, 103, 0, 0) 70%),
+      #12141a;
+  }
+  .text {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand img { display: block; border-radius: 22%; }
+  .brand span { font-weight: 600; letter-spacing: -.01em; }
+  h1 {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: -.025em;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+  p { margin: 0; color: var(--muted); line-height: 1.3; text-wrap: pretty; }
+  .foot {
+    position: absolute;
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    color: var(--faint);
+  }
+  .foot b { color: var(--muted); font-weight: 600; }
+  #scene { position: absolute; display: block; }
+
+  /* 1280 x 640: text left, scene right */
+  .wide .text { left: 64px; top: 60px; width: 480px; }
+  .wide .brand img { width: 44px; height: 44px; }
+  .wide .brand span { font-size: 26px; }
+  .wide h1 { font-size: 60px; margin-top: 64px; }
+  .wide p { font-size: 26px; margin-top: 22px; }
+  .wide .foot { left: 64px; bottom: 48px; width: 480px; flex-direction: column; gap: 6px; font-size: 23px; }
+
+  /* 1080 x 1080 and 1080 x 1350: text above, scene below */
+  .square .text, .tall .text { left: 72px; right: 72px; top: 64px; }
+  .square .brand img, .tall .brand img { width: 48px; height: 48px; }
+  .square .brand span, .tall .brand span { font-size: 28px; }
+  .square h1 { font-size: 68px; margin-top: 44px; }
+  .tall h1 { font-size: 80px; margin-top: 64px; }
+  .square p { font-size: 28px; margin-top: 18px; }
+  .tall p { font-size: 32px; margin-top: 24px; }
+  .square .foot, .tall .foot { left: 72px; right: 72px; bottom: 32px; font-size: 25px; }
+</style>
+</head>
+<body>
+<div class="text">
+  <div class="brand"><img id="icon" alt=""><span>grokbot-desk</span></div>
+  <h1 id="headline"></h1>
+  <p id="subline"></p>
+</div>
+<img id="scene" alt="">
+<div class="foot"><span id="foot-left"></span><b id="foot-right"></b></div>
+
+<script>
+  /* format: wide, square or tall at width x height; scene: { src, width,
+     height, popLeft, popRight, popBottom, appLeft, appRight, meTop } in
+     scene CSS px */
+  window.render = async ({ format, width, height, headline, subline, footLeft, footRight, icon, scene }) => {
+    const size = { width, height };
+    document.body.className = format;
+    document.body.style.width = `${size.width}px`;
+    document.body.style.height = `${size.height}px`;
+    document.getElementById('headline').textContent = headline;
+    document.getElementById('subline').textContent = subline;
+    document.getElementById('foot-left').textContent = footLeft;
+    document.getElementById('foot-right').textContent = footRight;
+    const iconImg = document.getElementById('icon');
+    iconImg.src = icon;
+    const img = document.getElementById('scene');
+    img.src = scene.src;
+    await Promise.all([iconImg.decode(), img.decode(), document.fonts.ready]);
+
+    // the scene starts at `top` and must show the pop-up down to `bottom`
+    let top;
+    let bottom;
+    let maxWidth;
+    if (format === 'wide') {
+      top = 24;
+      bottom = size.height - 24;
+      maxWidth = size.width - 64 - 480 - 32;
+    } else {
+      top = document.querySelector('.text').getBoundingClientRect().bottom + 24;
+      bottom = size.height - 84;
+      maxWidth = size.width - 80;
+    }
+    const wide = format === 'wide' ? scene.width : scene.appRight - scene.appLeft;
+    // when height limits the scale, the chat above the person's message is
+    // cropped (only as much as the width allows), so the pop-up is larger;
+    // the 60 px keep the message clear of the fade
+    const widthScale = maxWidth / wide;
+    const crop = Math.max(0, Math.min(scene.meTop - 60, scene.popBottom - (bottom - top) / widthScale));
+    const scale = Math.min((bottom - top) / (scene.popBottom - crop), widthScale);
+    img.style.width = `${scene.width * scale}px`;
+    img.style.height = `${scene.height * scale}px`;
+    img.style.top = `${top - crop * scale}px`;
+    // wide: the chat app's right edge sits just past the card edge;
+    // stacked: the pop-up is centred and the whole chat app shows
+    img.style.left = format === 'wide'
+      ? `${size.width - (scene.appRight + 2) * scale}px`
+      : `${Math.min(Math.max(size.width / 2 - (scene.popLeft + scene.popRight) / 2 * scale,
+        40 - scene.appLeft * scale), size.width - 40 - scene.appRight * scale)}px`;
+    // the chat fades in at the crop and out below the pop-up (image px)
+    const edge = format === 'wide' ? crop * scale - top : crop * scale;
+    const fade = scene.popBottom * scale;
+    const fadeIn = crop ? `transparent ${edge}px, #000 ${edge + 56}px,` : '';
+    img.style.maskImage = `linear-gradient(to bottom, ${fadeIn} #000 ${fade}px, transparent ${fade + 20}px)`;
+  };
+</script>
+</body>
+</html>

@@ -8,13 +8,17 @@
 //   hero-popup-dark.png    one open approve report (supplier quote), no inbox
 //   hero-report-dark.png   a read report (weekly status: table, checks, a note)
 //   hero-done.png          the supplier decision after it was sent, framed tight
+//   social/<scene>-<format>.png  social preview cards: four scenes over the
+//                          skeleton (tools/dev/readme-scene/social-card.html)
+//                          in three formats (CARD_FORMATS)
 // The README shows the four tiles at about 400 px, so they share one narrow
 // viewport (TILE_WIDTH, or the third argument) and are as tall as their
 // content. Shots are taken at deviceScaleFactor 2 and downscaled in the
-// browser only when a PNG is larger than MAX_BYTES.
+// browser only when a PNG is larger than MAX_BYTES. Social cards are taken
+// at their exact size (1x) and must stay under CARD_MAX_BYTES.
 // Usage: node tools/dev/readme-shots.mjs <out-dir> [port] [tile-width]
 //        (defaults: tools/dev/out/readme, 18923, 480)
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -36,6 +40,11 @@ const MAX_HEIGHT = 1200;
 const HERO_POPUP_WIDTH = 560;
 const SCENE_WIDTH = 840;
 const SKELETON = path.join(ROOT, 'tools', 'dev', 'readme-scene', 'grokbot-skeleton.html');
+const CARD = path.join(ROOT, 'tools', 'dev', 'readme-scene', 'social-card.html');
+const POST_IMAGE_PAGE = path.join(ROOT, 'tools', 'dev', 'readme-scene', 'post-image.html');
+/* GitHub's social preview, a square and a portrait feed post */
+const CARD_FORMATS = { wide: [1280, 640], square: [1080, 1080], tall: [1080, 1350] };
+const CARD_MAX_BYTES = 1000 * 1024; // GitHub's social preview limit is 1 MB
 
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -130,6 +139,52 @@ const INBOX = [
   { ...payloadFixture('approve-post'), title: 'Autumn menu post: approve before Monday', identity: { name: 'Social Agent', avatar_shape: 'blob', avatar_color: 'orange' } },
   { ...payloadFixture('review'), title: 'Spring opening announcement: review the draft', identity: { name: 'Garden Club Agent', avatar_shape: 'teardrop', avatar_color: 'yellow' } },
 ].map((report) => media.map(report));
+
+/* the approve-post fixture for one platform, with a drawn image in place of
+   its grey placeholder (rendered from POST_IMAGE_PAGE in section 6) */
+const POST_IMAGE = path.join(media.dir, 'post-opening-hours.png');
+const POST = (() => {
+  const fixture = payloadFixture('approve-post');
+  const { notes, variants, ...post } = fixture.blocks[0];
+  const image = { path: POST_IMAGE, alt: 'New opening hours: fresh bread from 6:30', ratio: '1.91:1' };
+  return { ...fixture, title: 'Post: new opening hours', identity: { name: 'Social Agent', avatar_shape: 'blob', avatar_color: 'orange' }, blocks: [{ ...post, platforms: ['x'], image }] };
+})();
+
+const FOOT_LEFT = 'For Grok Bot and any agent. MIT.';
+const FOOT_RIGHT = 'github.com/realspqrk/grokbot-desk';
+
+/* social cards: the report(s), the chat behind the pop-up, and the copy */
+const SOCIAL = [
+  {
+    name: 'invoices', reports: () => [INVOICES],
+    chat: { name: 'Office Bot', color: '#ff6700', me: "Pay this week's invoices, check them first.", bot: 'I put the three invoices on your desk.' },
+    headline: 'You decide what gets paid',
+    subline: 'Office Bot lists three invoices. Pay, skip, or next week.',
+  },
+  {
+    // short titles and names: the three report tabs fit the pop-up
+    name: 'inbox', reports: () => [
+      { ...CHAIRS, title: 'Accept the chair quote?', identity: { ...CHAIRS.identity, name: 'Buyer Agent' } },
+      { ...INBOX[0], title: 'Deploy v2.4.0?' },
+      { ...INBOX[1], title: 'Autumn menu post' },
+    ],
+    chat: { name: 'Buyer Agent', color: '#1fa45a', me: 'What did the bots send today?', bot: 'Three reports are on your desk.' },
+    headline: 'One window for every bot',
+    subline: 'Buyer, Ops and Social each wait for you in one desk.',
+  },
+  {
+    name: 'post', reports: () => [POST],
+    chat: { name: 'Social Agent', color: '#ff6700', me: 'Draft a post about our new opening hours.', bot: 'The post is on your desk to approve.' },
+    headline: 'The post waits for your yes',
+    subline: 'Social Agent publishes only after you approve it.',
+  },
+  {
+    name: 'deploy', reports: () => [DEPLOY],
+    chat: { name: 'Ops Agent', color: '#0e74e0', me: 'Is web shop v2.4.0 ready?', bot: 'The deploy is on your desk.' },
+    headline: 'Ship only when you approve',
+    subline: 'Tests, smoke test and bundle size are in. You decide.',
+  },
+];
 
 let browser;
 const written = [];
@@ -275,6 +330,56 @@ async function save(page, name, cssWidth, clip) {
   return file;
 }
 
+/** The desk pop-up for the first of `reports` (shown runs) over the
+ *  chat-app skeleton; with several, all but the last are marked read.
+ *  Returns the scene page (the caller saves and closes it) and its geometry
+ *  in CSS px. `chat` swaps the bot and the conversation; `bare` drops the
+ *  scene background and widens it for a social card. */
+async function scene(reports, label, { chat, bare = false } = {}) {
+  let popup;
+  let popHeight;
+  {
+    const { ctx, page, errors } = await open(reports[0].run_id, 'dark');
+    if (reports.length > 1) {
+      await markRead(page, reports.slice(0, -1).map((r) => r.run_id));
+      await page.reload();
+      await ready(page);
+    }
+    popHeight = await settleFitted(page, HERO_POPUP_WIDTH, await fitHeight(page, HERO_POPUP_WIDTH));
+    await warnIfScrolls(page, label);
+    popup = await page.screenshot();
+    if (errors.length) console.error(label, errors.join(' | '));
+    await ctx.close();
+  }
+  const html = readFileSync(SKELETON, 'utf8');
+  checkSkeletonBlob(html);
+  const ctx = await browser.newContext({ viewport: { width: SCENE_WIDTH, height: MAX_HEIGHT }, deviceScaleFactor: SCALE, colorScheme: 'dark' });
+  const page = await ctx.newPage();
+  // self-contained page: refuse anything that is not the file itself or inline data
+  await page.route('**/*', (r) => (/^(file|data):/.test(r.request().url()) ? r.continue() : r.abort()));
+  await page.goto(pathToFileURL(SKELETON).href);
+  const geometry = await page.evaluate(async ({ src, height, chat, bare }) => {
+    document.documentElement.style.setProperty('--pop-h', `${height}px`);
+    if (bare) document.body.classList.add('bare');
+    if (chat) window.setChat(chat);
+    const img = document.getElementById('popup-shot');
+    img.src = src;
+    await img.decode();
+    await document.fonts.ready;
+    const body = document.body.getBoundingClientRect();
+    const pop = document.querySelector('.popup').getBoundingClientRect();
+    const me = document.getElementById('chat-me').getBoundingClientRect();
+    const app = document.querySelector('.app').getBoundingClientRect();
+    return {
+      width: Math.ceil(body.width), height: Math.ceil(body.height),
+      popLeft: pop.left, popRight: pop.right, popBottom: pop.bottom, appLeft: app.left, appRight: app.right, meTop: me.top,
+    };
+  }, { src: `data:image/png;base64,${popup.toString('base64')}`, height: popHeight, chat, bare });
+  // the scene's size follows the pop-up (body size in the skeleton)
+  await page.setViewportSize({ width: geometry.width, height: geometry.height });
+  return { ctx, page, geometry };
+}
+
 /** One README tile: the tile width, as tall as the content (or `clip`). */
 async function tile(runId, name, { before, clip } = {}) {
   const { ctx, page, errors } = await open(runId, 'dark');
@@ -291,40 +396,9 @@ try {
 
   // ----------------------------------------------- 1. hero over chat app --
   await server.clearRuns();
-  const invoices = showReport(INVOICES);
-  const popupFile = path.join(out, '_popup-invoices-dark.png');
-  let popHeight;
-  {
-    const { ctx, page, errors } = await open(invoices.run_id, 'dark');
-    popHeight = await settleFitted(page, HERO_POPUP_WIDTH, await fitHeight(page, HERO_POPUP_WIDTH));
-    await warnIfScrolls(page, 'invoices');
-    await page.screenshot({ path: popupFile });
-    if (errors.length) console.error('invoices', errors.join(' | '));
-    await ctx.close();
-  }
-  {
-    const html = readFileSync(SKELETON, 'utf8');
-    checkSkeletonBlob(html);
-    const scene = { width: SCENE_WIDTH, height: MAX_HEIGHT };
-    const ctx = await browser.newContext({ viewport: scene, deviceScaleFactor: SCALE, colorScheme: 'dark' });
-    const page = await ctx.newPage();
-    // self-contained page: refuse anything that is not the file itself or inline data
-    await page.route('**/*', (r) => (/^(file|data):/.test(r.request().url()) ? r.continue() : r.abort()));
-    await page.goto(pathToFileURL(SKELETON).href);
-    await page.evaluate(async ({ src, height }) => {
-      document.documentElement.style.setProperty('--pop-h', `${height}px`);
-      const img = document.getElementById('popup-shot');
-      img.src = src;
-      await img.decode();
-    }, { src: `data:image/png;base64,${readFileSync(popupFile).toString('base64')}`, height: popHeight });
-    await page.evaluate(() => document.fonts.ready);
-    // the scene's height follows the pop-up (body height in the skeleton)
-    scene.height = await page.evaluate(() => Math.ceil(document.body.getBoundingClientRect().height));
-    await page.setViewportSize(scene);
-    await save(page, 'hero-grokbot-dark.png', scene.width);
-    await ctx.close();
-    rmSync(popupFile, { force: true });
-  }
+  const hero = await scene([showReport(INVOICES)], 'invoices');
+  await save(hero.page, 'hero-grokbot-dark.png', SCENE_WIDTH);
+  await hero.ctx.close();
 
   // ------------------------------------------------------- 2. the inbox --
   await server.clearRuns();
@@ -363,6 +437,38 @@ try {
       return { x: 0, y: 0, width, height: Math.ceil(bottom + 16) };
     }, TILE_WIDTH),
   });
+
+  // ------------------------------------------------- 6. social cards --
+  mkdirSync(path.join(out, 'social'), { recursive: true });
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 628 } });
+    const page = await ctx.newPage();
+    await page.route('**/*', (r) => (/^(file|data):/.test(r.request().url()) ? r.continue() : r.abort()));
+    await page.goto(pathToFileURL(POST_IMAGE_PAGE).href);
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: POST_IMAGE });
+    await ctx.close();
+  }
+  const icon = `data:image/svg+xml;base64,${readFileSync(path.join(ROOT, 'core', 'static', 'icons', 'icon.svg')).toString('base64')}`;
+  for (const card of SOCIAL) {
+    await server.clearRuns();
+    const shot = await scene(card.reports().map(showReport), card.name, { chat: card.chat, bare: true });
+    const src = `data:image/png;base64,${(await shot.page.screenshot({ omitBackground: true })).toString('base64')}`;
+    await shot.ctx.close();
+    for (const [format, [width, height]] of Object.entries(CARD_FORMATS)) {
+      const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: 'dark', reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.route('**/*', (r) => (/^(file|data):/.test(r.request().url()) ? r.continue() : r.abort()));
+      await page.goto(pathToFileURL(CARD).href);
+      await page.evaluate((args) => window.render(args), {
+        format, width, height, headline: card.headline, subline: card.subline, footLeft: FOOT_LEFT, footRight: FOOT_RIGHT, icon,
+        scene: { src, ...shot.geometry },
+      });
+      const file = await save(page, path.join('social', `${card.name}-${format}.png`), width);
+      if (statSync(file).size > CARD_MAX_BYTES) throw new Error(`${file}: larger than ${CARD_MAX_BYTES} bytes`);
+      await ctx.close();
+    }
+  }
 } finally {
   try { if (browser) await browser.close(); } finally {
     try { await server.stop(); } finally { media.cleanup(); }

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post image</title>
+<!--
+  The image of the example bakery's post (social cards): new opening
+  hours, 1200 x 628 (1.91:1). Self-contained: no external requests.
+  tools/dev/readme-shots.mjs renders it to a PNG in the media folder.
+-->
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    width: 1200px;
+    height: 628px;
+    overflow: hidden;
+    position: relative;
+    font-family: Georgia, "Times New Roman", serif;
+    color: #3b2412;
+    background:
+      radial-gradient(700px 500px at 82% 30%, #ffe2b0 0%, rgba(255, 226, 176, 0) 70%),
+      linear-gradient(160deg, #fbecd3 0%, #f3d4a4 100%);
+  }
+  .text { position: absolute; left: 80px; top: 92px; width: 600px; }
+  .kicker {
+    font: 600 26px/1 "Segoe UI", system-ui, sans-serif;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: #b4561c;
+  }
+  h1 { margin: 26px 0 0; font-size: 92px; line-height: .98; font-weight: 700; }
+  .hours {
+    margin-top: 38px;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 18px;
+    padding: 16px 28px;
+    border-radius: 999px;
+    background: #3b2412;
+    color: #fff4e2;
+    font: 600 34px/1 "Segoe UI", system-ui, sans-serif;
+  }
+  .hours b { font-size: 46px; }
+  .name {
+    position: absolute;
+    left: 80px;
+    bottom: 56px;
+    font: 600 24px/1 "Segoe UI", system-ui, sans-serif;
+    color: #7a4a24;
+  }
+  svg { position: absolute; right: 40px; top: 70px; }
+</style>
+</head>
+<body>
+<div class="text">
+  <div class="kicker">From Monday</div>
+  <h1>Fresh bread<br>from 6:30</h1>
+  <div class="hours">Mon–Sat <b>6:30–18:00</b></div>
+</div>
+<div class="name">Example Bakery</div>
+<!-- a loaf and a croissant -->
+<svg width="480" height="480" viewBox="0 0 480 480" aria-hidden="true">
+  <ellipse cx="240" cy="420" rx="200" ry="26" fill="#c98a4b" opacity=".35"/>
+  <path d="M60 330c0-110 80-190 190-190s190 80 190 190c0 40-30 70-70 70H130c-40 0-70-30-70-70z" fill="#c9732e"/>
+  <path d="M75 330c0-100 75-175 175-175s175 75 175 175" fill="none" stroke="#e39a52" stroke-width="10" opacity=".6"/>
+  <path d="M150 230l40 70M225 205l35 80M300 215l30 75" stroke="#f6cf96" stroke-width="16" stroke-linecap="round"/>
+  <g transform="translate(250 300) rotate(-12)">
+    <path d="M-150 40c20-70 80-110 150-110s130 40 150 110c-40 30-100 45-150 45s-110-15-150-45z" fill="#e2a052"/>
+    <path d="M-80 -45c10 40 10 85 0 120M0 -70v150M80 -45c-10 40-10 85 0 120" stroke="#b86a28" stroke-width="10" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>
+</body>
+</html>

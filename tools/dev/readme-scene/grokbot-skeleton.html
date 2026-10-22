@@ -10,7 +10,9 @@
   Self-contained: no external requests. tools/dev/readme-shots.mjs fills
   #popup-shot with a screenshot of the real served shell and sets --pop-h
   (the pop-up image height in CSS px); the scene grows with it. The chat
-  app is cropped by the scene's right and bottom edge. The blob
+  app is cropped by the scene's right and bottom edge. For the social
+  cards the script also calls setChat() and sets body.bare: no background,
+  a wider scene, and the whole chat app window (the card crops it). The blob
   outline and eyes are the desk's own (core/static/avatar-shapes.json,
   shapes.blob); the script checks they match.
 -->
@@ -45,6 +47,8 @@
       #12141a;
     position: relative;
   }
+  body.bare { background: transparent; width: 900px; }
+  body.bare .app { right: 14px; }
   svg.av { display: block; flex: none; }
 
   /* ------------------------------------------------ the chat app window */
@@ -121,7 +125,7 @@
   .row.sel { background: var(--sel); }
   .row .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
   .row .av { width: 28px; height: 28px; }
-  .name { font-weight: 700; font-size: 13px; color: #f4f4f4; line-height: 1.1; }
+  .name { font-weight: 700; font-size: 13px; color: #f4f4f4; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sk {
     display: block;
     height: 8px;
@@ -170,6 +174,7 @@
     border-radius: 999px;
     font-weight: 700;
     font-size: 13.5px;
+    white-space: nowrap;
     z-index: 1;
   }
   .msgs {
@@ -307,23 +312,23 @@
 
   <main class="chat">
     <div class="pill">
-      <svg class="av" width="24" height="24" viewBox="0 0 48 48"><use href="#blob" fill="#ff6700"/><use href="#eyes" fill="#161616"/></svg>
-      Office Bot
+      <svg class="av" width="24" height="24" viewBox="0 0 48 48"><use href="#blob" fill="#ff6700" data-bot-color/><use href="#eyes" fill="#161616"/></svg>
+      <span data-bot-name>Office Bot</span>
     </div>
     <div class="msgs">
       <span class="when">Today 10:56 AM</span>
-      <div class="mine">Pay this week's invoices, check them first.</div>
+      <div class="mine" id="chat-me">Pay this week's invoices, check them first.</div>
       <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:50px"></span></div>
       <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:60px"></span><span class="sk" style="width:40px"></span></div>
       <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:56px"></span><span class="sk" style="width:64px"></span><span class="sk" style="width:30px"></span></div>
       <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:44px"></span></div>
       <div class="bot"><span class="sk" style="width:68px"></span><span class="sk" style="width:62px"></span><span class="sk" style="width:52px"></span></div>
       <div class="bot"><span class="sk" style="width:58px"></span></div>
-      <div class="bot text">I put the three invoices on your desk.</div>
+      <div class="bot text" id="chat-bot">I put the three invoices on your desk.</div>
     </div>
     <div class="composer">
       <span class="plus">+</span>
-      <span class="ph">Message Office Bot</span>
+      <span class="ph">Message <span data-bot-name>Office Bot</span></span>
       <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="#bdbdbd" stroke-width="1.6" stroke-linecap="round"><rect x="6.2" y="2" width="5.6" height="9" rx="2.8"/><path d="M3.5 8.6a5.5 5.5 0 0 0 11 0M9 14.2V16"/></svg>
       <span class="voice"><svg width="14" height="14" viewBox="0 0 16 16" fill="#ffffff"><rect x="2" y="6" width="2" height="4" rx="1"/><rect x="5.5" y="3.5" width="2" height="9" rx="1"/><rect x="9" y="5" width="2" height="6" rx="1"/><rect x="12.5" y="6.5" width="2" height="3" rx="1"/></svg></span>
     </div>
@@ -332,7 +337,7 @@
 
 <div class="popup">
   <div class="popup-bar">
-    <span class="title">Office Bot &middot; grokbot-desk</span>
+    <span class="title"><span data-bot-name>Office Bot</span> &middot; grokbot-desk</span>
     <span class="caption" aria-hidden="true"><span>&#x2500;</span><span>&#x25A1;</span><span>&#x2715;</span></span>
   </div>
   <img id="popup-shot" alt="">
@@ -353,14 +358,21 @@
     for (const [color, nameWidth, previewWidth] of rows) {
       const row = document.createElement('div');
       row.className = 'row' + (first ? ' sel' : '');
-      row.innerHTML = `<svg class="av" width="30" height="30" viewBox="0 0 48 48"><use href="#blob" fill="${color}"/><use href="#eyes" fill="#161616"/></svg>`
+      row.innerHTML = `<svg class="av" width="30" height="30" viewBox="0 0 48 48"><use href="#blob" fill="${color}"${first ? ' data-bot-color' : ''}/><use href="#eyes" fill="#161616"/></svg>`
         + '<span class="txt">'
-        + (first ? '<span class="name">Office Bot</span>' : `<span class="sk b" style="width:${nameWidth}px"></span>`)
+        + (first ? '<span class="name" data-bot-name>Office Bot</span>' : `<span class="sk b" style="width:${nameWidth}px"></span>`)
         + `<span class="sk" style="width:${previewWidth}px"></span></span>`;
       list.append(row);
       first = false;
     }
   }
+  /* another bot and conversation (social cards); defaults are the README hero */
+  window.setChat = ({ name, color, me, bot }) => {
+    document.querySelectorAll('[data-bot-name]').forEach((el) => { el.textContent = name; });
+    document.querySelectorAll('[data-bot-color]').forEach((el) => el.setAttribute('fill', color));
+    document.getElementById('chat-me').textContent = me;
+    document.getElementById('chat-bot').textContent = bot;
+  };
 </script>
 </body>
 </html>
